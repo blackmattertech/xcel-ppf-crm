@@ -25,7 +25,8 @@ export default function LoginPage() {
         
         // Check if credentials are still valid (not expired)
         if (expiresAt > new Date()) {
-          setEmail(credentials.email)
+          setEmail(credentials.email || '')
+          setPassword(credentials.password || '')
           setRememberMe(true)
           
           // Check if session is still valid
@@ -80,6 +81,7 @@ export default function LoginPage() {
         if (rememberMe) {
           const credentials = {
             email,
+            password,
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
           }
           localStorage.setItem('remembered_credentials', JSON.stringify(credentials))
@@ -109,10 +111,10 @@ export default function LoginPage() {
           className="object-cover"
           priority
         />
-      </div>
+        </div>
 
-      {/* Typing Animation - Responsive positioning */}
-      <div className="hidden sm:block absolute left-4 md:left-8 lg:left-[700px] top-1/3 md:top-[200px] lg:top-[200px] z-30 max-w-[90%] md:max-w-none">
+      {/* Typing Animation - Hidden for now */}
+      {/* <div className="hidden sm:block absolute left-4 md:left-8 lg:left-[700px] top-1/3 md:top-[200px] lg:top-[200px] z-30 max-w-[90%] md:max-w-none">
         <h1 className="text-white text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold leading-tight md:leading-tight lg:leading-tight font-poppins">
           <TypingAnimation
             texts={[
@@ -122,7 +124,7 @@ export default function LoginPage() {
             ]}
           />
         </h1>
-      </div>
+      </div> */}
 
       {/* Login Card - Vertically centered and responsive */}
       <div className="absolute right-4 md:right-8 lg:right-[80px] top-1/2 -translate-y-1/2 z-20 w-[calc(100%-2rem)] md:w-[500px] lg:w-[546px] max-h-[90vh] lg:h-[740px] overflow-y-auto">
@@ -152,31 +154,31 @@ export default function LoginPage() {
                 <div className="flex flex-col gap-2 md:gap-[8px]">
                   <label htmlFor="email" className="text-white text-[10px] md:text-[11px] leading-[12px] font-sf-pro tracking-[0.3px] px-2 md:px-4 lg:px-[16px]">
                     Login
-                  </label>
+              </label>
                   <div className="relative h-12 md:h-[48px]">
-                    <input
-                      id="email"
+              <input
+                id="email"
                       type="text"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                       placeholder="Email or phone number"
                       required
                       className="w-full h-full px-3 md:px-4 lg:px-[16px] pr-8 md:pr-10 lg:pr-[40px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] rounded-md md:rounded-[6px] text-sm md:text-[15px] leading-[20px] font-roboto text-[#808080] placeholder:text-[#808080] focus:outline-none focus:ring-2 focus:ring-white/20"
-                    />
-                  </div>
+              />
+            </div>
                 </div>
 
                 {/* Password Input */}
                 <div className="flex flex-col gap-2 md:gap-[8px]">
                   <label htmlFor="password" className="text-[#f8e5e5] text-[10px] md:text-[11px] leading-[12px] font-sf-pro tracking-[0.3px] px-2 md:px-4 lg:px-[16px]">
-                    Password
-                  </label>
+                Password
+              </label>
                   <div className="relative h-12 md:h-[48px]">
-                    <input
-                      id="password"
+              <input
+                id="password"
                       type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                       placeholder="Enter password"
                       required
                       className="w-full h-full px-3 md:px-4 lg:px-[16px] pr-8 md:pr-10 lg:pr-[40px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] rounded-md md:rounded-[6px] text-sm md:text-[15px] leading-[20px] font-roboto text-[#808080] placeholder:text-[#808080] focus:outline-none focus:ring-2 focus:ring-white/20"
@@ -203,7 +205,11 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setRememberMe(!rememberMe)}
-                      className="relative w-10 md:w-[40px] h-5 md:h-[20px] rounded-[36.5px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] transition-all cursor-pointer flex-shrink-0"
+                      className={`relative w-10 md:w-[40px] h-5 md:h-[20px] rounded-[36.5px] border-[0.5px] transition-all cursor-pointer flex-shrink-0 ${
+                        rememberMe 
+                          ? 'bg-[#ed1b24] border-[#ed1b24]' 
+                          : 'bg-[#f2f2f2] border-[#e5e5e5]'
+                      }`}
                     >
                       <div
                         className={`absolute top-[2px] w-4 md:w-[16px] h-4 md:h-[16px] bg-white rounded-full shadow-[1px_1px_2px_-1px_rgba(51,51,51,0.3)] transition-all duration-300 ${
@@ -221,20 +227,20 @@ export default function LoginPage() {
                   >
                     Forgot password?
                   </button>
-                </div>
-              </div>
+            </div>
+          </div>
 
               {/* Divider */}
               <div className="h-[0.5px] bg-[#e5e5e5] w-full my-2 md:my-[8px]" />
 
               {/* Login Button */}
-              <button
-                type="submit"
-                disabled={loading}
+            <button
+              type="submit"
+              disabled={loading}
                 className="w-full h-10 md:h-[40px] bg-[#ed1b24] rounded-md md:rounded-[6px] flex items-center justify-center text-white text-sm md:text-[15px] font-bold leading-[20px] font-roboto tracking-[0.3px] hover:bg-[#d0171f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+            >
                 {loading ? 'Logging in...' : 'Login in'}
-              </button>
+            </button>
             </form>
           </div>
         </div>
