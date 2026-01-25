@@ -25,11 +25,25 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [followUpAlerts, setFollowUpAlerts] = useState<{
+    overdue: number
+    upcoming: number
+    adminNotifications?: number
+  } | null>(null)
 
   useEffect(() => {
     checkAuth()
     fetchAnalytics()
   }, [])
+
+  useEffect(() => {
+    if (userRole === 'tele_caller') {
+      fetchFollowUpAlerts()
+      // Refresh alerts every 5 minutes
+      const interval = setInterval(fetchFollowUpAlerts, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [userRole])
 
   async function checkAuth() {
     const supabase = createClient()
@@ -65,6 +79,22 @@ export default function DashboardPage() {
     }
   }
 
+  async function fetchFollowUpAlerts() {
+    try {
+      const response = await fetch('/api/followups/notifications')
+      if (response.ok) {
+        const data = await response.json()
+        setFollowUpAlerts({
+          overdue: data.overdue?.length || 0,
+          upcoming: data.upcoming?.length || 0,
+          adminNotifications: data.adminNotifications?.length || 0,
+        })
+      }
+    } catch (error) {
+      console.error('Failed to fetch follow-up alerts:', error)
+    }
+  }
+
 
   if (loading) {
     return (
@@ -79,6 +109,81 @@ export default function DashboardPage() {
       <div className="p-8">
         <div className="max-w-7xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
+
+          {/* Follow-up Alerts for Tele-callers */}
+          {userRole === 'tele_caller' && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
+            <div className="mb-6">
+              {followUpAlerts.overdue > 0 && (
+                <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-red-800">
+                        ⚠️ You have {followUpAlerts.overdue} overdue follow-up{followUpAlerts.overdue > 1 ? 's' : ''}!
+                      </h3>
+                      <div className="mt-2 text-sm text-red-700">
+                        <p>Please complete your overdue follow-ups as soon as possible.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {followUpAlerts.upcoming > 0 && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-yellow-800">
+                        📅 You have {followUpAlerts.upcoming} upcoming follow-up{followUpAlerts.upcoming > 1 ? 's' : ''} in the next 24 hours
+                      </h3>
+                      <div className="mt-2 text-sm text-yellow-700">
+                        <p>Make sure you're prepared for these scheduled calls.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Admin Follow-up Alerts */}
+          {(userRole === 'admin' || userRole === 'super_admin') && followUpAlerts && followUpAlerts.adminNotifications && followUpAlerts.adminNotifications > 0 && (
+            <div className="mb-6">
+              <div className="bg-orange-50 border-l-4 border-orange-400 p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-orange-800">
+                      ⚠️ {followUpAlerts.adminNotifications} Follow-up{followUpAlerts.adminNotifications > 1 ? 's' : ''} Pending for 1+ Day
+                    </h3>
+                    <div className="mt-2 text-sm text-orange-700">
+                      <p>There are follow-ups that have been pending for more than 1 day and need attention.</p>
+                    </div>
+                    <div className="mt-3">
+                      <Link
+                        href="/followups"
+                        className="text-sm font-medium text-orange-800 hover:text-orange-900 underline"
+                      >
+                        View All Follow-ups →
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow p-6">

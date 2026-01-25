@@ -17,6 +17,10 @@ export interface Database {
           name: string
           role_id: string
           branch_id: string | null
+          profile_image_url: string | null
+          address: string | null
+          dob: string | null
+          doj: string | null
           created_at: string
           updated_at: string
         }
@@ -27,6 +31,10 @@ export interface Database {
           name: string
           role_id: string
           branch_id?: string | null
+          profile_image_url?: string | null
+          address?: string | null
+          dob?: string | null
+          doj?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -37,6 +45,10 @@ export interface Database {
           name?: string
           role_id?: string
           branch_id?: string | null
+          profile_image_url?: string | null
+          address?: string | null
+          dob?: string | null
+          doj?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -379,6 +391,7 @@ export interface Database {
           id: string
           customer_id: string
           lead_id: string | null
+          product_id: string | null
           order_number: string
           status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
           payment_status: 'pending' | 'advance_received' | 'fully_paid'
@@ -401,10 +414,52 @@ export interface Database {
           id?: string
           customer_id?: string
           lead_id?: string | null
+          product_id?: string | null
           order_number?: string
           status?: 'pending' | 'in_progress' | 'completed' | 'cancelled'
           payment_status?: 'pending' | 'advance_received' | 'fully_paid'
           assigned_team?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      products: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          price: number
+          mrp: number
+          image_url: string | null
+          sku: string | null
+          is_active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string | null
+          price: number
+          mrp: number
+          image_url?: string | null
+          sku?: string | null
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string | null
+          price?: number
+          mrp?: number
+          image_url?: string | null
+          sku?: string | null
+          is_active?: boolean
+          created_by?: string | null
           created_at?: string
           updated_at?: string
         }

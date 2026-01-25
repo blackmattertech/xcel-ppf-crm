@@ -63,6 +63,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect authenticated users away from login/forgot-password pages
+  // But allow access to reset-password (needed for password reset flow)
   if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/forgot-password')) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'

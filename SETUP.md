@@ -106,7 +106,47 @@ Each role has specific permissions:
 
 When creating custom roles, you can assign any combination of these permissions.
 
-## Step 5: Configure Forgot Password Email Template
+## Step 5: Create Supabase Storage Bucket for User Profiles
+
+1. Go to your Supabase Dashboard → Storage
+2. Click "Create a new bucket"
+3. Name: `user-profiles`
+4. Make it **Public** (so profile images can be accessed)
+5. Click "Create bucket"
+6. Set up bucket policies:
+   - Go to "Policies" tab
+   - Add policy for authenticated users to upload:
+     - Policy name: "Allow authenticated uploads"
+     - Allowed operation: INSERT
+     - Target roles: authenticated
+     - Policy definition: `bucket_id = 'user-profiles'`
+   - Add policy for public read access:
+     - Policy name: "Public read access"
+     - Allowed operation: SELECT
+     - Target roles: anon, authenticated
+     - Policy definition: `bucket_id = 'user-profiles'`
+
+## Step 6: Create Supabase Storage Bucket for Product Images
+
+1. Go to your Supabase Dashboard → Storage
+2. Click "Create a new bucket"
+3. Name: `product-images`
+4. Make it **Public** (so product images can be accessed)
+5. Click "Create bucket"
+6. Set up bucket policies:
+   - Go to "Policies" tab
+   - Add policy for authenticated users to upload:
+     - Policy name: "Allow authenticated uploads"
+     - Allowed operation: INSERT
+     - Target roles: authenticated
+     - Policy definition: `bucket_id = 'product-images'`
+   - Add policy for public read access:
+     - Policy name: "Public read access"
+     - Allowed operation: SELECT
+     - Target roles: anon, authenticated
+     - Policy definition: `bucket_id = 'product-images'`
+
+## Step 7: Configure Forgot Password Email Template
 
 The forgot password functionality uses Supabase's email templates. To customize the password reset email:
 

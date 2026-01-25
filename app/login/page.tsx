@@ -17,6 +17,18 @@ export default function LoginPage() {
 
   // Load remembered credentials on mount and check session expiration
   useEffect(() => {
+    // Check if we have recovery tokens in the URL hash (password reset flow)
+    const hashParams = new URLSearchParams(window.location.hash.substring(1))
+    const accessToken = hashParams.get('access_token')
+    const type = hashParams.get('type')
+    
+    if (accessToken && type === 'recovery') {
+      // Redirect to reset password page with the tokens
+      const hash = window.location.hash
+      router.push(`/reset-password${hash}`)
+      return
+    }
+
     const stored = localStorage.getItem('remembered_credentials')
     if (stored) {
       try {
@@ -54,7 +66,7 @@ export default function LoginPage() {
         localStorage.removeItem('remembered_credentials')
       }
     }
-  }, [])
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -112,8 +124,8 @@ export default function LoginPage() {
       </div>
 
       {/* Typing Animation - Responsive positioning */}
-      <div className="hidden sm:block absolute left-4 md:left-8 lg:left-[700px] top-1/3 md:top-[200px] lg:top-[200px] z-30 max-w-[90%] md:max-w-none">
-        <h1 className="text-white text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold leading-tight md:leading-tight lg:leading-tight font-poppins">
+      {/* <div className="hidden sm:block absolute left-4 md:left-8 lg:left-[700px] top-1/3 md:top-[200px] lg:top-[200px] z-30 max-w-[90%] md:max-w-none">
+        <h1 className="text-white text-1xl md:text-4xl lg:text-2xl xl:text-2xl font-bold leading-tight md:leading-tight lg:leading-tight font-poppins">
           <TypingAnimation
             texts={[
               'Protecting Performance.\nPreserving Perfection.',
@@ -122,7 +134,7 @@ export default function LoginPage() {
             ]}
           />
         </h1>
-      </div>
+      </div> */}
 
       {/* Login Card - Vertically centered and responsive */}
       <div className="absolute right-4 md:right-8 lg:right-[80px] top-1/2 -translate-y-1/2 z-20 w-[calc(100%-2rem)] md:w-[500px] lg:w-[546px] max-h-[90vh] lg:h-[740px] overflow-y-auto">
@@ -215,12 +227,12 @@ export default function LoginPage() {
                       Remember me
                     </span>
                   </div>
-                  <button
-                    type="button"
+                  <a
+                    href="/forgot-password"
                     className="text-white text-[11px] md:text-[12px] leading-[20px] font-sf-pro tracking-[0.3px] text-right hover:underline flex-shrink-0"
                   >
                     Forgot password?
-                  </button>
+                  </a>
                 </div>
               </div>
 
@@ -237,16 +249,7 @@ export default function LoginPage() {
               </button>
             </form>
           </div>
-
-          <div className="text-center">
-            <a
-              href="/forgot-password"
-              className="text-sm text-indigo-600 hover:text-indigo-500"
-            >
-              Forgot your password?
-            </a>
-          </div>
-        </form>
+        </div>
       </div>
 
       {/* Error Message */}

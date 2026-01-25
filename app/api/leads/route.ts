@@ -33,6 +33,10 @@ export async function GET(request: NextRequest) {
       return authResult.error
     }
 
+    const { user } = authResult
+    const userRole = user.role.name
+    const userId = user.id
+
     const searchParams = request.nextUrl.searchParams
     const filters = {
       status: searchParams.get('status') || undefined,
@@ -40,6 +44,8 @@ export async function GET(request: NextRequest) {
       assignedTo: searchParams.get('assignedTo') || undefined,
       limit: searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined,
       offset: searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : undefined,
+      userId: userRole === 'tele_caller' ? userId : undefined, // Filter by user ID for tele_callers
+      userRole: userRole, // Pass user role for filtering
     }
 
     const leads = await getAllLeads(filters)

@@ -24,6 +24,11 @@ const menuItems: MenuItem[] = [
     icon: '👥',
   },
   {
+    name: 'Follow-ups',
+    href: '/followups',
+    icon: '📅',
+  },
+  {
     name: 'Customers',
     href: '/customers',
     icon: '🏢',
@@ -37,6 +42,12 @@ const menuItems: MenuItem[] = [
     name: 'Quotations',
     href: '/quotations',
     icon: '📄',
+  },
+  {
+    name: 'Products',
+    href: '/products',
+    icon: '🛍️',
+    roles: ['super_admin', 'admin', 'marketing'],
   },
   {
     name: 'Roles & Permissions',
@@ -58,10 +69,32 @@ export default function Sidebar() {
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userName, setUserName] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  const [followUpCount, setFollowUpCount] = useState(0)
 
   useEffect(() => {
     checkAuth()
   }, [])
+
+  useEffect(() => {
+    if (userRole === 'tele_caller') {
+      fetchFollowUpCount()
+      // Refresh count every 5 minutes
+      const interval = setInterval(fetchFollowUpCount, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [userRole])
+
+  async function fetchFollowUpCount() {
+    try {
+      const response = await fetch('/api/followups/notifications')
+      if (response.ok) {
+        const data = await response.json()
+        setFollowUpCount(data.totalPending || 0)
+      }
+    } catch (error) {
+      console.error('Failed to fetch follow-up count:', error)
+    }
+  }
 
   async function checkAuth() {
     const supabase = createClient()
@@ -121,42 +154,55 @@ export default function Sidebar() {
 
   if (loading) {
     return (
-      <div className="w-64 bg-gray-900 min-h-screen flex items-center justify-center">
+      <div className="fixed left-0 top-0 w-64 h-screen bg-gray-900 flex items-center justify-center z-50">
         <div className="text-white">Loading...</div>
       </div>
     )
   }
 
   return (
-    <div className="w-64 bg-gray-900 min-h-screen flex flex-col">
+    <div className="fixed left-0 top-0 w-64 h-screen bg-gray-900 flex flex-col z-50 overflow-y-auto">
       {/* Logo/Brand */}
-      <div className="p-6 border-b border-gray-800">
+      <div className="p-6 border-b border-gray-800 flex-shrink-0">
         <h1 className="text-xl font-bold text-white">Xcel CRM</h1>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {filteredMenuItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
+          const showBadge = item.href === '/leads' && userRole === 'tele_caller' && followUpCount > 0
+          
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+              className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
                 isActive
                   ? 'bg-indigo-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
             >
-              <span className="text-xl">{item.icon}</span>
-              <span className="font-medium">{item.name}</span>
+              <div className="flex items-center space-x-3">
+                <span className="text-xl">{item.icon}</span>
+                <span className="font-medium">{item.name}</span>
+              </div>
+              {showBadge && (
+                <span className={`px-2 py-1 text-xs font-bold rounded-full ${
+                  isActive 
+                    ? 'bg-red-500 text-white' 
+                    : 'bg-red-600 text-white'
+                }`}>
+                  {followUpCount}
+                </span>
+              )}
             </Link>
           )
         })}
       </nav>
 
       {/* User Info & Logout */}
-      <div className="p-4 border-t border-gray-800">
+      <div className="p-4 border-t border-gray-800 flex-shrink-0">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold">
             {userName ? userName.charAt(0).toUpperCase() : 'U'}

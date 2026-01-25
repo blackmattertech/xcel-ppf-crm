@@ -9,20 +9,25 @@ const updateUserSchema = z.object({
   phone: z.string().nullable().optional(),
   roleId: z.string().uuid(),
   branchId: z.string().uuid().nullable().optional(),
+  profileImageUrl: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  dob: z.string().nullable().optional(),
+  doj: z.string().nullable().optional(),
 })
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.USERS_READ)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    const user = await getUserById(params.id)
+    const user = await getUserById(id)
     return NextResponse.json({ user })
   } catch (error) {
     return NextResponse.json(
@@ -34,9 +39,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.USERS_UPDATE)
     
     if ('error' in authResult) {
@@ -44,9 +50,19 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { name, phone, roleId, branchId } = updateUserSchema.parse(body)
+    const { name, phone, roleId, branchId, profileImageUrl, address, dob, doj } = updateUserSchema.parse(body)
 
-    const user = await updateUser(params.id, name, phone || null, roleId, branchId || null)
+    const user = await updateUser(
+      id, 
+      name, 
+      phone || null, 
+      roleId, 
+      branchId || null,
+      profileImageUrl || null,
+      address || null,
+      dob || null,
+      doj || null
+    )
 
     return NextResponse.json({ user })
   } catch (error) {
@@ -66,16 +82,17 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.USERS_DELETE)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    await deleteUser(params.id)
+    await deleteUser(id)
     return NextResponse.json({ message: 'User deleted successfully' })
   } catch (error) {
     return NextResponse.json(

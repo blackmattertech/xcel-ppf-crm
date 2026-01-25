@@ -4,16 +4,17 @@ import { getQuotationById, updateQuotationStatus } from '@/backend/services/quot
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    const quotation = await getQuotationById(params.id)
+    const quotation = await getQuotationById(id)
     return NextResponse.json({ quotation })
   } catch (error) {
     return NextResponse.json(
@@ -25,9 +26,10 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
@@ -44,7 +46,7 @@ export async function PATCH(
       )
     }
 
-    const quotation = await updateQuotationStatus(params.id, status)
+    const quotation = await updateQuotationStatus(id, status)
     return NextResponse.json({ quotation })
   } catch (error) {
     return NextResponse.json(

@@ -11,6 +11,10 @@ const createUserSchema = z.object({
   phone: z.string().nullable().optional(),
   roleId: z.string().uuid(),
   branchId: z.string().uuid().nullable().optional(),
+  profileImageUrl: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  dob: z.string().nullable().optional(),
+  doj: z.string().nullable().optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -40,9 +44,20 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { email, password, name, phone, roleId, branchId } = createUserSchema.parse(body)
+    const { email, password, name, phone, roleId, branchId, profileImageUrl, address, dob, doj } = createUserSchema.parse(body)
 
-    const user = await createUser(email, password, name, phone || null, roleId, branchId || null)
+    const user = await createUser(
+      email, 
+      password, 
+      name, 
+      phone || null, 
+      roleId, 
+      branchId || null,
+      profileImageUrl || null,
+      address || null,
+      dob || null,
+      doj || null
+    )
 
     return NextResponse.json({ user }, { status: 201 })
   } catch (error) {

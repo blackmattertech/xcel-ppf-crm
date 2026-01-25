@@ -51,24 +51,35 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Use Supabase's resetPasswordForEmail to send the password reset email
-    // This will use the configured email template from Supabase dashboard
-    const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '') || 'http://localhost:3000'}/reset-password`
+    // Use Supabase client with anon key to send password reset email
+    // resetPasswordForEmail requires the anon key, not the service key
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                   process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '') || 
+                   'http://localhost:3000'
+    const redirectTo = `${siteUrl}/reset-password`
     
-    // Create a client instance to use resetPasswordForEmail
-    // This method automatically sends the email using Supabase's email service
-    const client = createClient(
+    // Create a client with anon key to use resetPasswordForEmail
+    // This method actually sends the email (unlike generateLink which just creates the link)
+    const anonClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
     )
     
-    const { error: emailError } = await client.auth.resetPasswordForEmail(email, {
+    // Send password reset email
+    const { error: emailError } = await anonClient.auth.resetPasswordForEmail(email, {
       redirectTo: redirectTo,
     })
 
     if (emailError) {
       console.error('Error sending reset email:', emailError)
-      // Still return success for security (don't reveal if email exists)
+      // Log the error for debugging but don't reveal to user for security
+      // Still return success message
       return NextResponse.json({
         message: 'If an account with that email exists, you will receive a password reset link.',
       })
@@ -85,7 +96,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid email address', details: error.errors },
+        { error: 'Invalid email address', details: error.issues || [] },
         { status: 400 }
       )
     }
