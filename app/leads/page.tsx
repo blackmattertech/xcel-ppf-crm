@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import Image from 'next/image'
 import Layout from '@/components/Layout'
 
 interface Lead {
@@ -14,12 +15,38 @@ interface Lead {
   email: string | null
   source: string
   status: string
+  interest_level: 'hot' | 'warm' | 'cold' | null
   assigned_user: {
     id: string
     name: string
     email: string
+    profile_picture?: string
   } | null
   created_at: string
+  first_contact_at: string | null
+  updated_at: string
+}
+
+interface LeadStats {
+  untouched: number
+  hotLeads: number
+  conversions: number
+}
+
+const sourceLogos: Record<string, string> = {
+  meta: '/assets/icons/meta-logo.svg',
+  whatsapp: '/assets/icons/whatsapp-logo.svg',
+  form: '/assets/icons/form-logo.svg',
+  manual: '/assets/icons/manual-logo.svg',
+  ivr: '/assets/icons/ivr-logo.svg',
+}
+
+const sourceLabels: Record<string, string> = {
+  meta: 'Meta',
+  whatsapp: 'WhatsApp',
+  form: 'Form',
+  manual: 'Manual',
+  ivr: 'IVR',
 }
 
 interface TeleCaller {
@@ -52,7 +79,8 @@ export default function LeadsPage() {
   useEffect(() => {
     checkAuth()
     fetchLeads()
-  }, [])
+    fetchStats()
+  }, [currentPage, rowsPerPage])
 
   async function checkAuth() {
     const supabase = createClient()
@@ -95,12 +123,35 @@ export default function LeadsPage() {
     }
   }
 
-  async function fetchLeads() {
+  async function fetchStats() {
     try {
       const response = await fetch('/api/leads')
       if (response.ok) {
         const data = await response.json()
-        setAllLeads(data.leads || [])
+        const allLeads = data.leads || []
+        
+        // Calculate stats
+        const untouched = allLeads.filter((lead: Lead) => lead.status === 'new').length
+        const hotLeads = allLeads.filter((lead: Lead) => lead.interest_level === 'hot').length
+        const converted = allLeads.filter((lead: Lead) => lead.status === 'converted').length
+        const total = allLeads.length
+        const conversions = total > 0 ? Math.round((converted / total) * 100) : 0
+        
+        setStats({ untouched, hotLeads, conversions })
+      }
+    } catch (error) {
+      console.error('Failed to fetch stats:', error)
+    }
+  }
+
+  async function fetchLeads() {
+    try {
+      const offset = (currentPage - 1) * rowsPerPage
+      const response = await fetch(`/api/leads?limit=${rowsPerPage}&offset=${offset}`)
+      if (response.ok) {
+        const data = await response.json()
+        setLeads(data.leads || [])
+        setTotalLeads(data.total || data.leads?.length || 0)
       }
     } catch (error) {
       console.error('Failed to fetch leads:', error)

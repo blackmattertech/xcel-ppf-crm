@@ -3,25 +3,31 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 
 interface MenuItem {
   name: string
   href: string
   icon: string
-  roles?: string[] // If specified, only show for these roles
+  roles?: string[]
 }
 
 const menuItems: MenuItem[] = [
   {
     name: 'Dashboard',
     href: '/dashboard',
-    icon: '📊',
+    icon: '/assets/icons/group-14.svg',
+  },
+  {
+    name: 'Customers',
+    href: '/customers',
+    icon: '/assets/icons/group-15.svg',
   },
   {
     name: 'Leads',
     href: '/leads',
-    icon: '👥',
+    icon: '/assets/icons/group-16.svg',
   },
   {
     name: 'Follow-ups',
@@ -34,14 +40,14 @@ const menuItems: MenuItem[] = [
     icon: '🏢',
   },
   {
-    name: 'Orders',
-    href: '/orders',
-    icon: '📦',
+    name: 'Reports',
+    href: '/reports',
+    icon: '/assets/icons/group-23.svg',
   },
   {
-    name: 'Quotations',
-    href: '/quotations',
-    icon: '📄',
+    name: 'Integrations',
+    href: '/integrations',
+    icon: '/assets/icons/group-24.svg',
   },
   {
     name: 'Products',
@@ -52,14 +58,27 @@ const menuItems: MenuItem[] = [
   {
     name: 'Roles & Permissions',
     href: '/admin/roles',
-    icon: '🔐',
+    icon: '/assets/icons/group-25.svg',
     roles: ['super_admin', 'admin'],
   },
   {
     name: 'User Management',
     href: '/admin/users',
-    icon: '👤',
+    icon: '/assets/icons/group-25.svg',
     roles: ['super_admin', 'admin'],
+  },
+]
+
+const bottomMenuItems: MenuItem[] = [
+  {
+    name: 'Settings',
+    href: '/settings',
+    icon: '/assets/icons/group-25.svg',
+  },
+  {
+    name: 'Help center',
+    href: '/help',
+    icon: '/assets/icons/icon-help.svg',
   },
 ]
 
@@ -73,6 +92,11 @@ export default function Sidebar() {
 
   useEffect(() => {
     checkAuth()
+    // Load collapsed state from localStorage
+    const savedState = localStorage.getItem('sidebarCollapsed')
+    if (savedState !== null) {
+      setIsCollapsed(JSON.parse(savedState))
+    }
   }, [])
 
   useEffect(() => {
@@ -131,7 +155,6 @@ export default function Sidebar() {
       }
     } else if (userError) {
       console.error('Error fetching user:', userError)
-      // User exists in Auth but not in users table
       if (userError.code === 'PGRST116') {
         console.warn('User not found in database. Please run: npx tsx scripts/add-user-to-db.ts <your-email> "<your-name>" <role>')
       }
@@ -157,6 +180,66 @@ export default function Sidebar() {
       <div className="fixed left-0 top-0 w-64 h-screen bg-gray-900 flex items-center justify-center z-50">
         <div className="text-white">Loading...</div>
       </div>
+    )
+  }
+
+  const renderMenuItem = (item: MenuItem) => {
+    const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
+    const isLeads = item.href === '/leads'
+    
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={`relative h-[48px] flex items-center transition-colors ${
+          isActive
+            ? 'bg-transparent'
+            : 'bg-transparent hover:bg-gray-800'
+        }`}
+      >
+        {/* Icon - 24px, positioned at 24px from left */}
+        <div className="absolute left-[24px] top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center">
+          {item.icon.startsWith('/') ? (
+            <Image
+              src={item.icon}
+              alt={item.name}
+              width={24}
+              height={24}
+              className="w-6 h-6"
+              style={{
+                filter: isActive && isLeads
+                  ? 'none' // Red color for active Leads
+                  : isActive
+                    ? 'brightness(0) invert(1)' // White for other active items
+                    : 'brightness(0) saturate(100%) invert(67%) sepia(8%) saturate(500%) hue-rotate(180deg) brightness(95%) contrast(88%)' // Gray for inactive
+              }}
+            />
+          ) : (
+            <span className="text-xl">{item.icon}</span>
+          )}
+        </div>
+        
+        {/* Text - 16px, positioned at 71px from left (24px icon + 23px gap) */}
+        {!isCollapsed && (
+          <p 
+            className={`absolute left-[71px] top-1/2 -translate-y-1/2 font-medium text-base leading-none ${
+              isActive && isLeads
+                ? 'text-white'
+                : isActive
+                  ? 'text-white'
+                  : 'text-gray-400'
+            }`}
+            style={{ fontFamily: 'Poppins, sans-serif' }}
+          >
+            {item.name}
+          </p>
+        )}
+        
+        {/* Red vertical bar for active Leads */}
+        {isActive && isLeads && (
+          <div className="absolute right-0 top-0 bottom-0 w-1 bg-[#de0510]" />
+        )}
+      </Link>
     )
   }
 
@@ -214,13 +297,25 @@ export default function Sidebar() {
             </p>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition-colors"
-        >
-          <span>🚪</span>
-          <span>Logout</span>
-        </button>
+      </div>
+
+      {/* User Info */}
+      <div className="border-t border-gray-800 px-6 py-7">
+        {!isCollapsed && (
+          <div className="flex items-center gap-[15px]">
+            <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white font-semibold flex-shrink-0">
+              {userName ? userName.charAt(0).toUpperCase() : 'U'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-medium text-white truncate" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                {userName || 'User'}
+              </p>
+              <p className="text-xs text-gray-400 leading-[1.5]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                {userRole?.replace('_', ' ') || 'User'}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

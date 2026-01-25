@@ -24,7 +24,7 @@ interface Lead {
   email: string | null
   source: string
   status: string
-  interest_level: string | null
+  interest_level: 'hot' | 'warm' | 'cold' | null
   budget_range: string | null
   requirement: string | null
   timeline: string | null

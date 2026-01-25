@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/backend/middleware/auth'
 import { getAllLeads, createLead } from '@/backend/services/lead.service'
+import { createServiceClient } from '@/lib/supabase/service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
@@ -49,7 +50,28 @@ export async function GET(request: NextRequest) {
     }
 
     const leads = await getAllLeads(filters)
-    return NextResponse.json({ leads })
+    
+    // Get total count for pagination
+    const supabase = createServiceClient()
+    let countQuery = supabase.from('leads').select('*', { count: 'exact', head: true })
+    
+    if (filters?.status) {
+      countQuery = countQuery.eq('status', filters.status)
+    }
+    if (filters?.source) {
+      countQuery = countQuery.eq('source', filters.source)
+    }
+    if (filters?.assignedTo) {
+      countQuery = countQuery.eq('assigned_to', filters.assignedTo)
+    }
+    
+    const { count, error: countError } = await countQuery
+    
+    if (countError) {
+      console.error('Error getting count:', countError)
+    }
+    
+    return NextResponse.json({ leads, total: count || leads.length })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch leads' },
