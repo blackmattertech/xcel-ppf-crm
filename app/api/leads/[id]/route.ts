@@ -8,7 +8,23 @@ const updateLeadSchema = z.object({
   name: z.string().min(1).optional(),
   phone: z.string().min(1).optional(),
   email: z.string().email().nullable().optional(),
-  status: z.enum(['new', 'qualified', 'unqualified', 'quotation_shared', 'interested', 'negotiation', 'lost', 'converted']).optional(),
+  status: z.enum([
+    'new', 
+    'qualified', 
+    'unqualified', 
+    'quotation_shared',
+    'quotation_viewed',
+    'quotation_accepted',
+    'quotation_expired',
+    'interested', 
+    'negotiation', 
+    'lost', 
+    'converted',
+    'deal_won',
+    'payment_pending',
+    'advance_received',
+    'fully_paid'
+  ]).optional(),
   interest_level: z.enum(['hot', 'warm', 'cold']).nullable().optional(),
   budget_range: z.string().nullable().optional(),
   requirement: z.string().nullable().optional(),
@@ -19,40 +35,71 @@ const updateLeadSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_READ)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    const lead = await getLeadById(params.id)
+    const { user } = authResult
+    const userRole = user.role.name
+    const userId = user.id
+
+    const lead = await getLeadById(id, userId, userRole)
     return NextResponse.json({ lead })
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch lead'
+    const status = errorMessage.includes('Forbidden') ? 403 : 500
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to fetch lead' },
-      { status: 500 }
+      { error: errorMessage },
+      { status }
     )
   }
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_UPDATE)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
+    const { user } = authResult
+    const userRole = user.role.name
+    const userId = user.id
+
+    // For tele_callers, verify they can only update their assigned leads
+    if (userRole === 'tele_caller') {
+      const lead = await getLeadById(id, userId, userRole)
+      if ((lead as any).assigned_to !== userId) {
+        return NextResponse.json(
+          { error: 'Forbidden: You can only update leads assigned to you' },
+          { status: 403 }
+        )
+      }
+    }
+
     const body = await request.json()
     const updates = updateLeadSchema.parse(body)
 
-    const lead = await updateLead(params.id, updates)
+    // Tele_callers cannot reassign leads (only admins can)
+    if (userRole === 'tele_caller' && updates.assigned_to !== undefined) {
+      return NextResponse.json(
+        { error: 'Forbidden: Only administrators can reassign leads' },
+        { status: 403 }
+      )
+    }
+
+    const lead = await updateLead(id, updates)
 
     return NextResponse.json({ lead })
   } catch (error) {
@@ -63,25 +110,28 @@ export async function PUT(
       )
     }
 
+    const errorMessage = error instanceof Error ? error.message : 'Failed to update lead'
+    const status = errorMessage.includes('Forbidden') ? 403 : 500
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update lead' },
-      { status: 500 }
+      { error: errorMessage },
+      { status }
     )
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_DELETE)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    await deleteLead(params.id)
+    await deleteLead(id)
     return NextResponse.json({ message: 'Lead deleted successfully' })
   } catch (error) {
     return NextResponse.json(

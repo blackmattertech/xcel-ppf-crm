@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Check if first_contact_at is null before updating
     const { data: lead } = await supabase
       .from('leads')
-      .select('first_contact_at')
+      .select('first_contact_at, assigned_to')
       .eq('id', lead_id)
       .single()
     
@@ -67,6 +67,25 @@ export async function POST(request: NextRequest) {
           first_contact_at: new Date().toISOString(),
         })
         .eq('id', lead_id)
+    }
+
+    // Auto-create follow-up for certain call outcomes
+    if ((outcome === 'not_reachable' || outcome === 'call_later') && lead?.assigned_to) {
+      try {
+        const followUpDate = new Date()
+        followUpDate.setHours(followUpDate.getHours() + 24) // Default to 24 hours later
+
+        await supabase.from('follow_ups').insert({
+          lead_id,
+          assigned_to: lead.assigned_to,
+          scheduled_at: followUpDate.toISOString(),
+          notes: `Auto-scheduled follow-up after call: ${outcome === 'not_reachable' ? 'Not Reachable' : 'Call Later'}`,
+          status: 'pending',
+        } as any)
+      } catch (followUpError) {
+        // Log but don't fail the call creation
+        console.error('Failed to create automatic follow-up:', followUpError)
+      }
     }
 
     return NextResponse.json({ call: data }, { status: 201 })

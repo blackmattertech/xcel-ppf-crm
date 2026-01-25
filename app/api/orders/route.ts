@@ -18,6 +18,11 @@ export async function GET(request: NextRequest) {
         customer:customers (
           name,
           phone
+        ),
+        lead:leads (
+          id,
+          requirement,
+          meta_data
         )
       `)
       .order('created_at', { ascending: false })

@@ -12,16 +12,17 @@ const updateRoleSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.ROLES_READ)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    const role = await getRoleById(params.id)
+    const role = await getRoleById(id)
     return NextResponse.json({ role })
   } catch (error) {
     return NextResponse.json(
@@ -33,9 +34,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.ROLES_UPDATE)
     
     if ('error' in authResult) {
@@ -45,7 +47,7 @@ export async function PUT(
     const body = await request.json()
     const { name, description, permissionIds } = updateRoleSchema.parse(body)
 
-    const role = await updateRole(params.id, name, description || null, permissionIds)
+    const role = await updateRole(id, name, description || null, permissionIds)
 
     return NextResponse.json({ role })
   } catch (error) {
@@ -65,16 +67,17 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.ROLES_DELETE)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    await deleteRole(params.id)
+    await deleteRole(id)
     return NextResponse.json({ message: 'Role deleted successfully' })
   } catch (error) {
     return NextResponse.json(

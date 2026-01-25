@@ -106,6 +106,86 @@ Each role has specific permissions:
 
 When creating custom roles, you can assign any combination of these permissions.
 
+## Step 5: Create Supabase Storage Bucket for User Profiles
+
+1. Go to your Supabase Dashboard → Storage
+2. Click "Create a new bucket"
+3. Name: `user-profiles`
+4. Make it **Public** (so profile images can be accessed)
+5. Click "Create bucket"
+6. Set up bucket policies:
+   - Go to "Policies" tab
+   - Add policy for authenticated users to upload:
+     - Policy name: "Allow authenticated uploads"
+     - Allowed operation: INSERT
+     - Target roles: authenticated
+     - Policy definition: `bucket_id = 'user-profiles'`
+   - Add policy for public read access:
+     - Policy name: "Public read access"
+     - Allowed operation: SELECT
+     - Target roles: anon, authenticated
+     - Policy definition: `bucket_id = 'user-profiles'`
+
+## Step 6: Create Supabase Storage Bucket for Product Images
+
+1. Go to your Supabase Dashboard → Storage
+2. Click "Create a new bucket"
+3. Name: `product-images`
+4. Make it **Public** (so product images can be accessed)
+5. Click "Create bucket"
+6. Set up bucket policies:
+   - Go to "Policies" tab
+   - Add policy for authenticated users to upload:
+     - Policy name: "Allow authenticated uploads"
+     - Allowed operation: INSERT
+     - Target roles: authenticated
+     - Policy definition: `bucket_id = 'product-images'`
+   - Add policy for public read access:
+     - Policy name: "Public read access"
+     - Allowed operation: SELECT
+     - Target roles: anon, authenticated
+     - Policy definition: `bucket_id = 'product-images'`
+
+## Step 7: Configure Forgot Password Email Template
+
+The forgot password functionality uses Supabase's email templates. To customize the password reset email:
+
+1. Go to [Supabase Dashboard](https://supabase.com/dashboard)
+2. Navigate to **Authentication** → **Email Templates**
+3. Select the **Recovery** template (for password reset)
+4. Customize the email template with your branding
+
+### Available Template Variables
+
+You can use these variables in your email template:
+- `{{ .ConfirmationURL }}` - The password reset link
+- `{{ .Token }}` - 6-digit OTP (if using OTP instead of link)
+- `{{ .TokenHash }}` - Hashed token for custom email links
+- `{{ .SiteURL }}` - Your application's Site URL
+- `{{ .RedirectTo }}` - Redirect URL (should be `/reset-password`)
+- `{{ .Email }}` - User's email address
+- `{{ .Data }}` - User metadata for personalization
+
+### Configure Redirect URLs
+
+1. Go to **Authentication** → **URL Configuration**
+2. Set **Site URL** to your production URL (e.g., `https://yourdomain.com`)
+3. Add **Redirect URLs**:
+   - `http://localhost:3000/reset-password` (for development)
+   - `https://yourdomain.com/reset-password` (for production)
+
+### Example Email Template
+
+```html
+<h2>Reset Your Password</h2>
+<p>Click the link below to reset your password:</p>
+<p><a href="{{ .ConfirmationURL }}">Reset Password</a></p>
+<p>Or copy and paste this URL into your browser:</p>
+<p>{{ .ConfirmationURL }}</p>
+<p>This link will expire in 1 hour.</p>
+<p>If you didn't request this, please ignore this email.</p>
+```
+
 ## Troubleshooting
 
 ### "Role not found" error
@@ -120,3 +200,9 @@ When creating custom roles, you can assign any combination of these permissions.
 - Verify environment variables in `.env.local`
 - Check that the user was created in both `auth.users` and `public.users` tables
 - Ensure the user has a valid role assigned
+
+### Password reset email not received
+- Check spam/junk folder
+- Verify email template is configured in Supabase dashboard
+- Ensure redirect URLs are configured correctly
+- Check that `NEXT_PUBLIC_SITE_URL` environment variable is set (or it will default to localhost)

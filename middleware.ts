@@ -50,7 +50,11 @@ export async function middleware(request: NextRequest) {
   // Protect routes that require authentication
   // Don't redirect API routes - let them handle their own auth errors
   const isApiRoute = request.nextUrl.pathname.startsWith('/api')
-  const isPublicRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname === '/'
+  const isPublicRoute = 
+    request.nextUrl.pathname.startsWith('/login') || 
+    request.nextUrl.pathname === '/' ||
+    request.nextUrl.pathname.startsWith('/forgot-password') ||
+    request.nextUrl.pathname.startsWith('/reset-password')
   
   if (!user && !isPublicRoute && !isApiRoute) {
     const url = request.nextUrl.clone()
@@ -58,8 +62,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Redirect authenticated users away from login page
-  if (user && request.nextUrl.pathname === '/login') {
+  // Redirect authenticated users away from login/forgot-password pages
+  // But allow access to reset-password (needed for password reset flow)
+  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/forgot-password')) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)

@@ -12,6 +12,8 @@ export async function getAllLeads(filters?: {
   assignedTo?: string
   limit?: number
   offset?: number
+  userId?: string // Current user ID for role-based filtering
+  userRole?: string // Current user role for role-based filtering
 }) {
   const supabase = createServiceClient()
 
@@ -26,6 +28,14 @@ export async function getAllLeads(filters?: {
       )
     `)
     .order('created_at', { ascending: false })
+
+  // Exclude leads with FULLY_PAID status
+  query = query.neq('status', LEAD_STATUS.FULLY_PAID)
+
+  // Role-based filtering: tele_callers can only see their assigned leads
+  if (filters?.userRole === 'tele_caller' && filters?.userId) {
+    query = query.eq('assigned_to', filters.userId)
+  }
 
   if (filters?.status) {
     query = query.eq('status', filters.status)
@@ -53,13 +63,13 @@ export async function getAllLeads(filters?: {
     throw new Error(`Failed to fetch leads: ${error.message}`)
   }
 
-  return data
+  return data || []
 }
 
-export async function getLeadById(id: string) {
+export async function getLeadById(id: string, userId?: string, userRole?: string) {
   const supabase = createServiceClient()
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('leads')
     .select(`
       *,
@@ -70,10 +80,24 @@ export async function getLeadById(id: string) {
       )
     `)
     .eq('id', id)
-    .single()
+
+  const { data, error } = await query.single()
 
   if (error) {
+    // Check if it's a not found error or permission error
+    if (error.code === 'PGRST116') {
+      throw new Error('Lead not found')
+    }
     throw new Error(`Failed to fetch lead: ${error.message}`)
+  }
+
+  if (!data) {
+    throw new Error('Lead not found')
+  }
+
+  // Additional check: if tele_caller and lead is not assigned to them, throw error
+  if (userRole === 'tele_caller' && userId && (data as any).assigned_to !== userId) {
+    throw new Error('Forbidden: You can only view leads assigned to you')
   }
 
   return data
@@ -128,15 +152,186 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
   }
 
   // Create initial status history entry
+  // Only create if we have a valid user ID for changed_by
   const createdLead = data as any
-  await supabase.from('lead_status_history').insert({
-    lead_id: createdLead.id,
-    old_status: null,
-    new_status: createdLead.status,
-    changed_by: createdLead.assigned_to || createdLead.id, // Use assigned user or lead id as fallback
-  } as any)
+  if (createdLead.assigned_to) {
+    // Only insert status history if we have a valid assigned user
+    // The trigger will handle status changes, so we can skip initial entry if no user assigned
+    try {
+      await supabase.from('lead_status_history').insert({
+        lead_id: createdLead.id,
+        old_status: null,
+        new_status: createdLead.status,
+        changed_by: createdLead.assigned_to,
+      } as any)
+    } catch (historyError) {
+      // Log but don't fail the lead creation if status history fails
+      console.error('Failed to create status history:', historyError)
+    }
+  }
 
   return data
+}
+
+/**
+ * Batch create leads - much faster than individual creates
+ * Returns array of created leads and array of errors
+ */
+export async function createLeadsBatch(
+  leadsData: LeadInsert[],
+  autoAssign: boolean = true,
+  currentUserId: string | null = null
+): Promise<{ success: any[]; failed: Array<{ index: number; data: LeadInsert; error: string }> }> {
+  const supabase = createServiceClient()
+  const results = {
+    success: [] as any[],
+    failed: [] as Array<{ index: number; data: LeadInsert; error: string }>,
+  }
+
+  if (leadsData.length === 0) {
+    return results
+  }
+
+  // Get existing phones to check for duplicates
+  const phones = leadsData.map(lead => lead.phone).filter(Boolean)
+  const { data: existingLeads } = await supabase
+    .from('leads')
+    .select('phone, id')
+    .in('phone', phones)
+
+  const existingPhones = new Set(existingLeads?.map(l => l.phone) || [])
+
+  // Separate new leads from duplicates
+  const newLeads: LeadInsert[] = []
+  const duplicateMap = new Map<string, { index: number; data: LeadInsert; existingId: string }>()
+
+  leadsData.forEach((lead, index) => {
+    if (lead.phone && existingPhones.has(lead.phone)) {
+      const existing = existingLeads?.find(l => l.phone === lead.phone)
+      if (existing) {
+        duplicateMap.set(lead.phone, { index, data: lead, existingId: existing.id })
+      }
+    } else {
+      newLeads.push(lead)
+    }
+  })
+
+  // Auto-assign new leads in batch
+  if (autoAssign && newLeads.length > 0) {
+    const sourceCounts = new Map<string, number>()
+    newLeads.forEach(lead => {
+      if (lead.source && !lead.assigned_to) {
+        sourceCounts.set(lead.source, (sourceCounts.get(lead.source) || 0) + 1)
+      }
+    })
+
+    // Get assignments for each source
+    const assignmentPromises = Array.from(sourceCounts.keys()).map(async (source) => {
+      const count = sourceCounts.get(source) || 0
+      const assignments: string[] = []
+      for (let i = 0; i < count; i++) {
+        const userId = await assignLeadRoundRobin(source as 'meta' | 'manual' | 'form')
+        if (userId) assignments.push(userId)
+      }
+      return { source, assignments }
+    })
+
+    const assignments = await Promise.all(assignmentPromises)
+    const assignmentMap = new Map<string, string[]>()
+    assignments.forEach(({ source, assignments: userAssignments }) => {
+      assignmentMap.set(source, userAssignments)
+    })
+
+    // Assign users to leads
+    const sourceIndices = new Map<string, number>()
+    newLeads.forEach(lead => {
+      if (lead.source && !lead.assigned_to) {
+        const source = lead.source
+        const index = sourceIndices.get(source) || 0
+        const userAssignments = assignmentMap.get(source) || []
+        if (userAssignments[index]) {
+          lead.assigned_to = userAssignments[index]
+          sourceIndices.set(source, index + 1)
+        }
+      }
+    })
+  }
+
+  // Batch insert new leads
+  if (newLeads.length > 0) {
+    const leadsToInsert = newLeads.map(lead => ({
+      ...lead,
+      status: lead.status || LEAD_STATUS.NEW,
+    }))
+
+    const { data: insertedLeads, error: insertError } = await supabase
+      .from('leads')
+      .insert(leadsToInsert as any)
+      .select(`
+        *,
+        assigned_user:users!leads_assigned_to_fkey (
+          id,
+          name,
+          email
+        )
+      `)
+
+    if (insertError) {
+      // If batch insert fails, add all to failed
+      newLeads.forEach((lead, idx) => {
+        results.failed.push({
+          index: leadsData.indexOf(lead),
+          data: lead,
+          error: insertError.message,
+        })
+      })
+    } else {
+      // Add successful inserts
+      if (insertedLeads) {
+        results.success.push(...insertedLeads)
+
+        // Create status history entries in batch if we have user ID
+        if (currentUserId && insertedLeads.length > 0) {
+          const historyEntries = insertedLeads
+            .filter((lead: any) => lead.assigned_to)
+            .map((lead: any) => ({
+              lead_id: lead.id,
+              old_status: null,
+              new_status: lead.status || LEAD_STATUS.NEW,
+              changed_by: currentUserId,
+            }))
+
+          if (historyEntries.length > 0) {
+            try {
+              await supabase.from('lead_status_history').insert(historyEntries as any)
+            } catch (historyError) {
+              // Log but don't fail - leads were created successfully
+              console.error('Failed to create status history batch:', historyError)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Handle duplicates by updating existing leads
+  for (const [phone, { index, data: lead, existingId }] of duplicateMap.entries()) {
+    try {
+      const updated = await updateLead(existingId, {
+        ...lead,
+        status: lead.status || 'new',
+      } as Partial<LeadInsert>)
+      results.success.push(updated)
+    } catch (error) {
+      results.failed.push({
+        index,
+        data: lead,
+        error: error instanceof Error ? error.message : 'Failed to update duplicate lead',
+      })
+    }
+  }
+
+  return results
 }
 
 export async function updateLead(id: string, updates: Partial<LeadInsert>) {

@@ -11,9 +11,10 @@ const updateFollowUpSchema = z.object({
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
@@ -23,7 +24,7 @@ export async function PUT(
     const body = await request.json()
     const updates = updateFollowUpSchema.parse(body)
 
-    const followUp = await updateFollowUp(params.id, updates)
+    const followUp = await updateFollowUp(id, updates)
 
     return NextResponse.json({ followUp })
   } catch (error) {
@@ -43,9 +44,10 @@ export async function PUT(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
@@ -55,7 +57,7 @@ export async function POST(
     const body = await request.json()
     const { notes } = body
 
-    const followUp = await completeFollowUp(params.id, notes)
+    const followUp = await completeFollowUp(id, notes)
 
     return NextResponse.json({ followUp })
   } catch (error) {

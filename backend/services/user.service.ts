@@ -55,7 +55,11 @@ export async function createUser(
   name: string,
   phone: string | null,
   roleId: string,
-  branchId: string | null
+  branchId: string | null,
+  profileImageUrl?: string | null,
+  address?: string | null,
+  dob?: string | null,
+  doj?: string | null
 ) {
   const supabase = createServiceClient()
 
@@ -80,6 +84,10 @@ export async function createUser(
       phone,
       role_id: roleId,
       branch_id: branchId,
+      profile_image_url: profileImageUrl || null,
+      address: address || null,
+      dob: dob || null,
+      doj: doj || null,
     } as any)
     .select(`
       *,
@@ -106,19 +114,39 @@ export async function updateUser(
   name: string,
   phone: string | null,
   roleId: string,
-  branchId: string | null
+  branchId: string | null,
+  profileImageUrl?: string | null,
+  address?: string | null,
+  dob?: string | null,
+  doj?: string | null
 ) {
   const supabase = createServiceClient()
 
+  const updateData: any = {
+    name,
+    phone,
+    role_id: roleId,
+    branch_id: branchId,
+    updated_at: new Date().toISOString(),
+  }
+
+  // Only update fields that are provided
+  if (profileImageUrl !== undefined) {
+    updateData.profile_image_url = profileImageUrl
+  }
+  if (address !== undefined) {
+    updateData.address = address
+  }
+  if (dob !== undefined) {
+    updateData.dob = dob
+  }
+  if (doj !== undefined) {
+    updateData.doj = doj
+  }
+
   const { data, error } = await supabase
     .from('users')
-    .update({
-      name,
-      phone,
-      role_id: roleId,
-      branch_id: branchId,
-      updated_at: new Date().toISOString(),
-    } as any)
+    .update(updateData)
     .eq('id', id)
     .select(`
       *,

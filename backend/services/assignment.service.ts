@@ -6,14 +6,26 @@ type LeadSource = 'meta' | 'manual' | 'form'
 export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<string | null> {
   const supabase = createServiceClient()
 
-  // Get all users who can be assigned leads (tele_callers, marketing, admin, super_admin)
-  // For now, we'll get users with roles that have leads permissions
+  // Get only users with tele_caller role
+  const { data: teleCallerRole, error: roleError } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('name', 'tele_caller')
+    .single()
+
+  if (roleError || !teleCallerRole) {
+    console.error('Tele caller role not found:', roleError)
+    return null
+  }
+
+  // Get all users with tele_caller role only
   const { data: users, error: usersError } = await supabase
     .from('users')
     .select('id')
-    .limit(100) // Reasonable limit
+    .eq('role_id', teleCallerRole.id)
 
   if (usersError || !users || users.length === 0) {
+    console.error('No tele_caller users found:', usersError)
     return null
   }
 

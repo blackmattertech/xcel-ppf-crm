@@ -16,8 +16,17 @@ export async function convertLeadToCustomer(leadId: string) {
     throw new Error('Lead not found')
   }
 
-  if (lead.status !== LEAD_STATUS.CONVERTED) {
-    throw new Error('Lead must be in converted status before creating customer')
+  // Allow conversion from CONVERTED, FULLY_PAID, or any payment-related status
+  const allowedStatuses = [
+    LEAD_STATUS.CONVERTED,
+    LEAD_STATUS.FULLY_PAID,
+    LEAD_STATUS.DEAL_WON,
+    LEAD_STATUS.PAYMENT_PENDING,
+    LEAD_STATUS.ADVANCE_RECEIVED,
+  ]
+  
+  if (!allowedStatuses.includes(lead.status as any)) {
+    throw new Error(`Lead must be in a convertible status (deal_won, payment_pending, advance_received, converted, or fully_paid) before creating customer. Current status: ${lead.status}`)
   }
 
   // Check if customer already exists
