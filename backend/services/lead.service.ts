@@ -67,27 +67,6 @@ export async function getLeadById(id: string) {
         id,
         name,
         email
-      ),
-      status_history:lead_status_history (
-        *,
-        changed_by_user:users!lead_status_history_changed_by_fkey (
-          id,
-          name
-        )
-      ),
-      calls:calls (
-        *,
-        called_by_user:users!calls_called_by_fkey (
-          id,
-          name
-        )
-      ),
-      follow_ups:follow_ups (
-        *,
-        assigned_user:users!follow_ups_assigned_to_fkey (
-          id,
-          name
-        )
       )
     `)
     .eq('id', id)

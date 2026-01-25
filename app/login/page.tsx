@@ -137,7 +137,7 @@ export default function LoginPage() {
                 alt="XCEL Logo"
                 width={136}
                 height={65}
-                className="scale-y-[-1] w-24 h-auto md:w-32 lg:w-[136px]"
+                className="w-24 h-auto md:w-32 lg:w-[136px] scale-y-[-1]"
               />
             </div>
 
