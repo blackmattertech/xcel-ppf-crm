@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -16,6 +16,349 @@ import {
   CALL_OUTCOME,
   CALL_OUTCOME_LABELS
 } from '@/shared/constants/lead-status'
+
+// Interactive Time Picker Component
+function TimePicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [hours, setHours] = useState(9)
+  const [minutes, setMinutes] = useState(0)
+  const [period, setPeriod] = useState<'am' | 'pm'>('am')
+  const hoursRef = useRef<HTMLDivElement>(null)
+  const minutesRef = useRef<HTMLDivElement>(null)
+
+  // Parse initial value
+  useEffect(() => {
+    if (value) {
+      const [time] = value.split(' ')
+      if (time) {
+        const [h, m] = time.split(':')
+        const hour24 = parseInt(h || '9')
+        const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24)
+        setHours(hour12)
+        setMinutes(parseInt(m || '0'))
+        setPeriod(hour24 >= 12 ? 'pm' : 'am')
+      }
+    }
+  }, [value])
+
+  // Scroll to selected item when opening
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        if (hoursRef.current) {
+          const selectedHour = hoursRef.current.children[hours - 1] as HTMLElement
+          if (selectedHour) {
+            hoursRef.current.scrollTop = selectedHour.offsetTop - hoursRef.current.offsetHeight / 2 + selectedHour.offsetHeight / 2
+          }
+        }
+        if (minutesRef.current) {
+          const selectedMinute = minutesRef.current.children[minutes] as HTMLElement
+          if (selectedMinute) {
+            minutesRef.current.scrollTop = selectedMinute.offsetTop - minutesRef.current.offsetHeight / 2 + selectedMinute.offsetHeight / 2
+          }
+        }
+      }, 10)
+    }
+  }, [isOpen, hours, minutes])
+
+  // Convert to 24-hour format for output
+  const formatTime = (h: number, m: number, p: 'am' | 'pm'): string => {
+    let hour24 = h
+    if (p === 'pm' && h !== 12) hour24 = h + 12
+    if (p === 'am' && h === 12) hour24 = 0
+    return `${hour24.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
+  }
+
+  const handleTimeChange = (newHours: number, newMinutes: number, newPeriod: 'am' | 'pm') => {
+    setHours(newHours)
+    setMinutes(newMinutes)
+    setPeriod(newPeriod)
+    onChange(formatTime(newHours, newMinutes, newPeriod))
+  }
+
+  const handlePreset = (presetHours: number, presetPeriod: 'am' | 'pm') => {
+    handleTimeChange(presetHours, 0, presetPeriod)
+  }
+
+  const presets = [
+    { label: '9 am', hours: 9, period: 'am' as const },
+    { label: '12 pm', hours: 12, period: 'pm' as const },
+    { label: '4 pm', hours: 4, period: 'pm' as const },
+    { label: '6 pm', hours: 6, period: 'pm' as const },
+  ]
+
+  const displayValue = value ? (() => {
+    const [time] = value.split(' ')
+    if (time) {
+      const [h, m] = time.split(':')
+      const hour24 = parseInt(h || '9')
+      const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24)
+      const period = hour24 >= 12 ? 'pm' : 'am'
+      return `${hour12}:${m?.padStart(2, '0') || '00'} ${period}`
+    }
+    return ''
+  })() : ''
+
+  return (
+    <div className="relative">
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24] focus:border-[#ed1b24] bg-white text-left flex items-center justify-between hover:border-gray-400 transition-colors"
+      >
+        <span className={displayValue ? 'text-gray-900' : 'text-gray-500'}>
+          {displayValue || 'Select time'}
+        </span>
+        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="absolute z-50 mt-2 bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-sm p-4 left-0" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Time</h3>
+            </div>
+
+            {/* Time Picker Wheel */}
+            <div className="flex items-center justify-center gap-2 mb-6">
+              {/* Hours */}
+              <div className="relative w-20 h-48 overflow-hidden rounded-lg bg-gray-50 border border-gray-200">
+                <div className="absolute inset-0 pointer-events-none z-10" style={{ 
+                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.9) 0%, transparent 20%, transparent 80%, rgba(255,255,255,0.9) 100%)'
+                }} />
+                <div 
+                  ref={hoursRef}
+                  className="absolute inset-0 overflow-y-auto scrollbar-hide"
+                  style={{ scrollSnapType: 'y mandatory', scrollPaddingTop: '96px' }}
+                >
+                  <div className="h-24" /> {/* Spacer for centering */}
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                    <div
+                      key={h}
+                      onClick={() => handleTimeChange(h, minutes, period)}
+                      className={`h-12 flex items-center justify-center cursor-pointer transition-all scroll-snap-align-start ${
+                        hours === h
+                          ? 'bg-[#ed1b24] text-white text-lg font-semibold scale-110 rounded-lg mx-1'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {h}
+                    </div>
+                  ))}
+                  <div className="h-24" /> {/* Spacer for centering */}
+                </div>
+                <div className="absolute inset-0 pointer-events-none z-20 border-y-2 border-[#ed1b24] border-opacity-40" style={{ top: '50%', transform: 'translateY(-50%)', height: '48px' }} />
+              </div>
+
+              <span className="text-2xl font-semibold text-gray-400">:</span>
+
+              {/* Minutes */}
+              <div className="relative w-20 h-48 overflow-hidden rounded-lg bg-gray-50 border border-gray-200">
+                <div className="absolute inset-0 pointer-events-none z-10" style={{ 
+                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.9) 0%, transparent 20%, transparent 80%, rgba(255,255,255,0.9) 100%)'
+                }} />
+                <div 
+                  ref={minutesRef}
+                  className="absolute inset-0 overflow-y-auto scrollbar-hide"
+                  style={{ scrollSnapType: 'y mandatory', scrollPaddingTop: '96px' }}
+                >
+                  <div className="h-24" /> {/* Spacer for centering */}
+                  {Array.from({ length: 60 }, (_, i) => i).map((m) => (
+                    <div
+                      key={m}
+                      onClick={() => handleTimeChange(hours, m, period)}
+                      className={`h-12 flex items-center justify-center cursor-pointer transition-all scroll-snap-align-start ${
+                        minutes === m
+                          ? 'bg-[#ed1b24] text-white text-lg font-semibold scale-110 rounded-lg mx-1'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {m.toString().padStart(2, '0')}
+                    </div>
+                  ))}
+                  <div className="h-24" /> {/* Spacer for centering */}
+                </div>
+                <div className="absolute inset-0 pointer-events-none z-20 border-y-2 border-[#ed1b24] border-opacity-40" style={{ top: '50%', transform: 'translateY(-50%)', height: '48px' }} />
+              </div>
+
+              {/* AM/PM */}
+              <div className="relative w-16 h-48 overflow-hidden rounded-lg bg-gray-50 border border-gray-200">
+                <div className="absolute inset-0 pointer-events-none z-10" style={{ 
+                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.9) 0%, transparent 20%, transparent 80%, rgba(255,255,255,0.9) 100%)'
+                }} />
+                <div className="absolute inset-0 overflow-y-auto scrollbar-hide">
+                  <div className="h-12" /> {/* Spacer for centering */}
+                  {(['am', 'pm'] as const).map((p) => (
+                    <div
+                      key={p}
+                      onClick={() => handleTimeChange(hours, minutes, p)}
+                      className={`h-24 flex items-center justify-center cursor-pointer transition-all uppercase ${
+                        period === p
+                          ? 'bg-[#ed1b24] text-white text-lg font-semibold scale-110 rounded-lg mx-1'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </div>
+                  ))}
+                  <div className="h-12" /> {/* Spacer for centering */}
+                </div>
+                <div className="absolute inset-0 pointer-events-none z-20 border-y-2 border-[#ed1b24] border-opacity-40" style={{ top: '50%', transform: 'translateY(-50%)', height: '96px' }} />
+              </div>
+            </div>
+
+            {/* Presets */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Presets</span>
+              </div>
+              <div className="flex gap-2">
+                {presets.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => handlePreset(preset.hours, preset.period)}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      hours === preset.hours && period === preset.period
+                        ? 'bg-[#ed1b24] text-white border-2 border-[#ed1b24]'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:border-[#ed1b24] hover:text-[#ed1b24]'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Done Button */}
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="w-full py-3 bg-[#ed1b24] text-white rounded-lg font-semibold hover:bg-[#d11820] transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Date Picker Component with Presets
+function DatePicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(value || '')
+
+  useEffect(() => {
+    setSelectedDate(value || '')
+  }, [value])
+
+  const handlePreset = (preset: 'today' | 'tomorrow' | 'next_week') => {
+    const today = new Date()
+    let targetDate = new Date(today)
+
+    switch (preset) {
+      case 'today':
+        targetDate = today
+        break
+      case 'tomorrow':
+        targetDate.setDate(today.getDate() + 1)
+        break
+      case 'next_week':
+        targetDate.setDate(today.getDate() + 7)
+        break
+    }
+
+    const dateStr = targetDate.toISOString().split('T')[0]
+    setSelectedDate(dateStr)
+    onChange(dateStr)
+  }
+
+  const displayValue = selectedDate ? (() => {
+    const date = new Date(selectedDate)
+    const today = new Date()
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const nextWeek = new Date(today)
+    nextWeek.setDate(nextWeek.getDate() + 7)
+
+    if (date.toDateString() === today.toDateString()) {
+      return 'Today'
+    } else if (date.toDateString() === tomorrow.toDateString()) {
+      return 'Tomorrow'
+    } else if (date.toDateString() === nextWeek.toDateString()) {
+      return 'Next Week'
+    }
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  })() : ''
+
+  return (
+    <div className="relative">
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => handlePreset('today')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            selectedDate && new Date(selectedDate).toDateString() === new Date().toDateString()
+              ? 'bg-[#ed1b24] text-white border-2 border-[#ed1b24]'
+              : 'bg-white text-gray-700 border border-gray-300 hover:border-[#ed1b24] hover:text-[#ed1b24]'
+          }`}
+        >
+          Today
+        </button>
+        <button
+          type="button"
+          onClick={() => handlePreset('tomorrow')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            (() => {
+              const tomorrow = new Date()
+              tomorrow.setDate(tomorrow.getDate() + 1)
+              return selectedDate && new Date(selectedDate).toDateString() === tomorrow.toDateString()
+            })()
+              ? 'bg-[#ed1b24] text-white border-2 border-[#ed1b24]'
+              : 'bg-white text-gray-700 border border-gray-300 hover:border-[#ed1b24] hover:text-[#ed1b24]'
+          }`}
+        >
+          Tomorrow
+        </button>
+        <button
+          type="button"
+          onClick={() => handlePreset('next_week')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            (() => {
+              const nextWeek = new Date()
+              nextWeek.setDate(nextWeek.getDate() + 7)
+              return selectedDate && new Date(selectedDate).toDateString() === nextWeek.toDateString()
+            })()
+              ? 'bg-[#ed1b24] text-white border-2 border-[#ed1b24]'
+              : 'bg-white text-gray-700 border border-gray-300 hover:border-[#ed1b24] hover:text-[#ed1b24]'
+          }`}
+        >
+          Next Week
+        </button>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={(e) => {
+            setSelectedDate(e.target.value)
+            onChange(e.target.value)
+          }}
+          min={new Date().toISOString().split('T')[0]}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24] focus:border-[#ed1b24]"
+        />
+      </div>
+      {displayValue && (
+        <p className="text-xs text-gray-500 mt-1">Selected: {displayValue}</p>
+      )}
+    </div>
+  )
+}
 
 interface Lead {
   id: string
@@ -96,7 +439,11 @@ export default function LeadDetailPage() {
   const [showCallModal, setShowCallModal] = useState(false)
   const [callOutcome, setCallOutcome] = useState<keyof typeof CALL_OUTCOME | ''>('')
   const [callNotes, setCallNotes] = useState('')
-  const [callDuration, setCallDuration] = useState('')
+  const [callStartTime, setCallStartTime] = useState('')
+  const [callEndTime, setCallEndTime] = useState('')
+  const [callInterestLevel, setCallInterestLevel] = useState<keyof typeof INTEREST_LEVEL | ''>('')
+  const [callFollowUpDate, setCallFollowUpDate] = useState('')
+  const [callFollowUpTime, setCallFollowUpTime] = useState('')
   const [submittingCall, setSubmittingCall] = useState(false)
   
   // Qualification
@@ -223,8 +570,33 @@ export default function LeadDetailPage() {
       return
     }
 
+    // Validate based on outcome
+    if (callOutcome === 'connected') {
+      if (!callStartTime || !callEndTime) {
+        alert('Please select both start and end time for the call')
+        return
+      }
+    } else if (callOutcome === 'not_reachable' || callOutcome === 'call_later') {
+      if (!callFollowUpDate || !callFollowUpTime) {
+        alert('Please select follow-up date and time')
+        return
+      }
+    }
+
     setSubmittingCall(true)
     try {
+      // Calculate call duration for connected calls
+      let callDuration: number | null = null
+      if (callOutcome === 'connected' && callStartTime && callEndTime) {
+        const start = new Date(`2000-01-01T${callStartTime}`)
+        const end = new Date(`2000-01-01T${callEndTime}`)
+        if (end < start) {
+          end.setDate(end.getDate() + 1)
+        }
+        const diffMs = end.getTime() - start.getTime()
+        callDuration = Math.floor(diffMs / 1000)
+      }
+
       // Create call record
       const callResponse = await fetch('/api/calls', {
         method: 'POST',
@@ -233,7 +605,7 @@ export default function LeadDetailPage() {
           lead_id: leadId,
           outcome: callOutcome,
           notes: callNotes || null,
-          call_duration: callDuration ? parseInt(callDuration) : null,
+          call_duration: callDuration,
         }),
       })
 
@@ -242,84 +614,113 @@ export default function LeadDetailPage() {
         throw new Error(errorData.error || 'Failed to record call')
       }
 
-      // Auto-transition based on call outcome
-      let nextStatus: string | null = null
-      let transitionNotes = ''
-      let shouldCreateFollowUp = false
-      let followUpScheduledAt: string | null = null
+      // Handle outcome-specific actions
+      if (callOutcome === 'wrong_number') {
+        // Update status to lost
+        const statusResponse = await fetch(`/api/leads/${leadId}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: LEAD_STATUS.LOST,
+            notes: 'Wrong number - Lead discarded',
+          }),
+        })
 
-      switch (callOutcome) {
-        case 'connected':
-          // If new lead, move to qualified (user will then set interest level)
-          if (lead?.status === LEAD_STATUS.NEW) {
-            nextStatus = LEAD_STATUS.QUALIFIED
-            transitionNotes = 'Connected on first call - Ready to qualify'
-          }
-          break
-        case 'not_reachable':
-        case 'call_later':
-          // Schedule follow-up automatically (default to 24 hours later)
-          shouldCreateFollowUp = true
-          const followUpDate = new Date()
-          followUpDate.setHours(followUpDate.getHours() + 24)
-          followUpScheduledAt = followUpDate.toISOString()
-          transitionNotes = 'Follow-up scheduled due to call outcome'
-          break
-        case 'wrong_number':
-          // Discard lead - mark as lost
-          nextStatus = LEAD_STATUS.LOST
-          transitionNotes = 'Wrong number - Lead discarded'
-          break
+        if (!statusResponse.ok) {
+          console.error('Failed to update status after wrong number call')
+        }
+
+        // Refresh and close
+        await fetchLead()
+        setShowCallModal(false)
+        resetCallForm()
+        alert('Call recorded - Lead status updated to Lost (Wrong Number)')
+        return
       }
 
-      // Create follow-up if needed
-      if (shouldCreateFollowUp && followUpScheduledAt && userId && lead?.assigned_to) {
+      // Update interest level if connected
+      if (callOutcome === 'connected' && callInterestLevel && lead) {
         try {
-          await fetch('/api/followups', {
+          const updateResponse = await fetch(`/api/leads/${leadId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              interest_level: callInterestLevel,
+            }),
+          })
+          if (!updateResponse.ok) {
+            console.error('Failed to update interest level')
+          }
+        } catch (error) {
+          console.error('Error updating interest level:', error)
+        }
+      }
+
+      // Create follow-up for not_reachable or call_later
+      if ((callOutcome === 'not_reachable' || callOutcome === 'call_later') && callFollowUpDate && callFollowUpTime && lead?.assigned_to) {
+        // Combine date and time
+        const scheduledAt = new Date(`${callFollowUpDate}T${callFollowUpTime}`)
+        
+        try {
+          const followUpResponse = await fetch('/api/followups', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               lead_id: leadId,
               assigned_to: lead.assigned_to,
-              scheduled_at: followUpScheduledAt,
-              notes: `Auto-scheduled follow-up after call: ${CALL_OUTCOME_LABELS[callOutcome]}`,
+              scheduled_at: scheduledAt.toISOString(),
+              notes: `Follow-up scheduled after call: ${CALL_OUTCOME_LABELS[callOutcome]}. ${callNotes || ''}`,
             }),
           })
+
+          if (!followUpResponse.ok) {
+            const errorData = await followUpResponse.json()
+            throw new Error(errorData.error || 'Failed to create follow-up')
+          }
         } catch (followUpError) {
-          console.error('Failed to create automatic follow-up:', followUpError)
-          // Don't fail the call recording if follow-up creation fails
+          console.error('Failed to create follow-up:', followUpError)
+          alert('Call recorded but failed to create follow-up. Please create it manually.')
         }
       }
 
-      // Update status if needed
-      if (nextStatus && nextStatus !== lead?.status) {
-        const statusResponse = await fetch(`/api/leads/${leadId}/status`, {
+      // Auto-qualify if connected and new lead
+      if (callOutcome === 'connected' && lead?.status === LEAD_STATUS.NEW) {
+        try {
+          await fetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            status: nextStatus,
-            notes: transitionNotes,
+              status: LEAD_STATUS.QUALIFIED,
+              notes: 'Connected on first call - Auto-qualified',
           }),
         })
-
-        if (!statusResponse.ok) {
-          console.error('Failed to update status after call')
+        } catch (error) {
+          console.error('Failed to auto-qualify lead:', error)
         }
       }
 
       // Refresh lead data
       await fetchLead()
       setShowCallModal(false)
-      setCallOutcome('')
-      setCallNotes('')
-      setCallDuration('')
-      alert('Call recorded successfully' + (nextStatus ? ` - Status updated to ${LEAD_STATUS_LABELS[nextStatus as keyof typeof LEAD_STATUS_LABELS]}` : ''))
+      resetCallForm()
+      alert('Call recorded successfully')
     } catch (error) {
       console.error('Failed to record call:', error)
       alert(error instanceof Error ? error.message : 'Failed to record call')
     } finally {
       setSubmittingCall(false)
     }
+  }
+
+  // Reset call form
+  function resetCallForm() {
+    setCallOutcome('')
+    setCallNotes('')
+    setCallStartTime('')
+    setCallEndTime('')
+    setCallInterestLevel('')
+    setCallFollowUpDate('')
+    setCallFollowUpTime('')
   }
 
   // Handle qualification with interest level
@@ -577,7 +978,7 @@ export default function LeadDetailPage() {
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" />
         <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
           <div className="bg-white shadow-2xl rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto pointer-events-auto p-6">
-            <div className="text-lg text-gray-600">Loading...</div>
+          <div className="text-lg text-gray-600">Loading...</div>
           </div>
         </div>
       </Layout>
@@ -591,15 +992,15 @@ export default function LeadDetailPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
           <div className="bg-white shadow-2xl rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto pointer-events-auto p-6">
             <div className="text-center">
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-                {error || 'Lead not found'}
-              </div>
-              <button
-                onClick={() => router.push('/leads')}
-                className="text-indigo-600 hover:text-indigo-800"
-              >
-                ← Back to Leads
-              </button>
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+              {error || 'Lead not found'}
+            </div>
+            <button
+              onClick={() => router.push('/leads')}
+              className="text-indigo-600 hover:text-indigo-800"
+            >
+              ← Back to Leads
+            </button>
             </div>
           </div>
         </div>
@@ -965,20 +1366,86 @@ export default function LeadDetailPage() {
       {/* Call Status Modal */}
           {showCallModal && (
             <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-semibold mb-4">Record Call Status</h3>
                 <div className="space-y-4">
+                  {/* Step 1: Outcome Selection */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Call Outcome
+                      Select Call Outcome
+                    </label>
+                    <div className="space-y-2">
+                      {Object.entries(CALL_OUTCOME_LABELS).map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setCallOutcome(key as keyof typeof CALL_OUTCOME)}
+                          className={`w-full text-left px-4 py-3 border-2 rounded-lg transition-all ${
+                            callOutcome === key
+                              ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24] font-semibold'
+                              : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{label.split(' ')[0]}</span>
+                            <span>{label.substring(label.indexOf(' ') + 1)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Step 2: Conditional Expansion Based on Outcome */}
+                  {callOutcome && (
+                    <div className="border-t pt-4 space-y-4 animate-slideUp">
+                      {/* Connected: Show Time Picker, Notes, and Interest Level */}
+                      {callOutcome === 'connected' && (
+                        <>
+                          <div className="grid grid-cols-2 gap-4">
+                            <TimePicker
+                              value={callStartTime}
+                              onChange={setCallStartTime}
+                              label="Start Time"
+                            />
+                            <TimePicker
+                              value={callEndTime}
+                              onChange={setCallEndTime}
+                              label="End Time"
+                            />
+                          </div>
+                          {callStartTime && callEndTime && (() => {
+                            const start = new Date(`2000-01-01T${callStartTime}`)
+                            const end = new Date(`2000-01-01T${callEndTime}`)
+                            if (end < start) {
+                              end.setDate(end.getDate() + 1)
+                            }
+                            const diffMs = end.getTime() - start.getTime()
+                            const seconds = Math.floor(diffMs / 1000)
+                            const minutes = Math.floor(seconds / 60)
+                            const hours = Math.floor(minutes / 60)
+                            const displayMinutes = minutes % 60
+                            const displaySeconds = seconds % 60
+                            const durationText = hours > 0 
+                              ? `${hours}h ${displayMinutes}m ${displaySeconds}s`
+                              : `${displayMinutes}m ${displaySeconds}s`
+                            return (
+                              <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-md">
+                                <span className="font-medium">Duration: </span>
+                                {durationText} ({seconds} seconds)
+                              </div>
+                            )
+                          })()}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Lead Type (Interest Level)
                     </label>
                     <select
-                      value={callOutcome}
-                      onChange={(e) => setCallOutcome(e.target.value as keyof typeof CALL_OUTCOME)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    >
-                      <option value="">Select outcome...</option>
-                      {Object.entries(CALL_OUTCOME_LABELS).map(([key, label]) => (
+                              value={callInterestLevel}
+                              onChange={(e) => setCallInterestLevel(e.target.value as keyof typeof INTEREST_LEVEL)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24] focus:border-[#ed1b24]"
+                            >
+                              <option value="">Select lead type...</option>
+                              {Object.entries(INTEREST_LEVEL_LABELS).map(([key, label]) => (
                         <option key={key} value={key}>
                           {label}
                         </option>
@@ -987,14 +1454,64 @@ export default function LeadDetailPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Call Duration (seconds)
+                              Notes
                     </label>
+                            <textarea
+                              value={callNotes}
+                              onChange={(e) => setCallNotes(e.target.value)}
+                              rows={3}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24] focus:border-[#ed1b24]"
+                              placeholder="Call notes..."
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {/* Not Reachable / Call Later: Show Date and Time Picker */}
+                      {(callOutcome === 'not_reachable' || callOutcome === 'call_later') && (
+                        <>
+                          <div>
+                            <DatePicker
+                              value={callFollowUpDate}
+                              onChange={setCallFollowUpDate}
+                              label="Follow-up Date"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Follow-up Time
+                            </label>
+                            <div className="grid grid-cols-4 gap-2 mb-2">
+                              {[
+                                { label: '10 AM', hour24: 10 },
+                                { label: '12 PM', hour24: 12 },
+                                { label: '4 PM', hour24: 16 },
+                                { label: '6 PM', hour24: 18 },
+                              ].map((preset) => {
+                                const timeValue = `${preset.hour24.toString().padStart(2, '0')}:00`
+                                const isSelected = callFollowUpTime === timeValue
+                                return (
+                                  <button
+                                    key={preset.label}
+                                    type="button"
+                                    onClick={() => setCallFollowUpTime(timeValue)}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                      isSelected
+                                        ? 'bg-[#ed1b24] text-white border-2 border-[#ed1b24]'
+                                        : 'bg-white text-gray-700 border border-gray-300 hover:border-[#ed1b24] hover:text-[#ed1b24]'
+                                    }`}
+                                  >
+                                    {preset.label}
+                                  </button>
+                                )
+                              })}
+                            </div>
                     <input
-                      type="number"
-                      value={callDuration}
-                      onChange={(e) => setCallDuration(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                      placeholder="Optional"
+                              type="time"
+                              value={callFollowUpTime}
+                              onChange={(e) => setCallFollowUpTime(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24] focus:border-[#ed1b24]"
+                              required
                     />
                   </div>
                   <div>
@@ -1005,31 +1522,49 @@ export default function LeadDetailPage() {
                       value={callNotes}
                       onChange={(e) => setCallNotes(e.target.value)}
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                      placeholder="Call notes..."
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24] focus:border-[#ed1b24]"
+                              placeholder="Follow-up notes..."
                     />
                   </div>
-                  <div className="flex justify-end gap-3">
+                        </>
+                      )}
+
+                      {/* Wrong Number: Show confirmation message */}
+                      {callOutcome === 'wrong_number' && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                          <p className="text-sm text-red-800">
+                            <strong>Warning:</strong> Selecting "Wrong Number" will automatically update the lead status to <strong>Lost</strong> and discard this lead.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex justify-end gap-3 pt-4 border-t">
                     <button
                       onClick={() => {
                         setShowCallModal(false)
-                        setCallOutcome('')
-                        setCallNotes('')
-                        setCallDuration('')
+                            resetCallForm()
                       }}
-                      className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                          className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition-colors"
                       disabled={submittingCall}
                     >
                       Cancel
                     </button>
                     <button
                       onClick={handleCallStatusUpdate}
-                      disabled={submittingCall || !callOutcome}
-                      className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={
+                            submittingCall || 
+                            !callOutcome ||
+                            (callOutcome === 'connected' && (!callStartTime || !callEndTime)) ||
+                            ((callOutcome === 'not_reachable' || callOutcome === 'call_later') && (!callFollowUpDate || !callFollowUpTime))
+                          }
+                          className="px-4 py-2 text-white bg-[#ed1b24] rounded-md hover:bg-[#d11820] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       {submittingCall ? 'Recording...' : 'Record Call'}
                     </button>
                   </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
