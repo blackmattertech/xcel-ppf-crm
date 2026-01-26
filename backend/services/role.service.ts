@@ -114,27 +114,58 @@ export async function updateRole(
   id: string,
   name: string,
   description: string | null,
-  permissionIds: string[]
+  permissionIds: string[],
+  allowSystemRoleUpdate: boolean = false
 ) {
   const supabase = createServiceClient()
 
   // Check if role is system role
   const { data: existingRole } = await supabase
     .from('roles')
-    .select('is_system_role')
+    .select('is_system_role, name')
     .eq('id', id)
     .single()
 
-  if ((existingRole as any)?.is_system_role) {
-    throw new Error('Cannot modify system roles')
+  const isSystemRole = (existingRole as any)?.is_system_role
+
+  // For system roles, only allow permission updates (not name/description changes)
+  // unless explicitly allowed
+  if (isSystemRole && !allowSystemRoleUpdate) {
+    // Allow permission updates for system roles, but not name/description
+    // Just update permissions without changing role name/description
+    await supabase.from('role_permissions').delete().eq('role_id', id)
+
+    if (permissionIds.length > 0) {
+      const rolePermissions = permissionIds.map((permissionId) => ({
+        role_id: id,
+        permission_id: permissionId,
+      }))
+
+      const { error: permError } = await supabase
+        .from('role_permissions')
+        .insert(rolePermissions as any)
+
+      if (permError) {
+        throw new Error(`Failed to update permissions: ${permError.message}`)
+      }
+    }
+
+    // Return the role without updating name/description
+    return await getRoleById(id)
   }
 
+  // For non-system roles or when explicitly allowed, update everything
   // Update role
-  const updatePayload = {
-    name,
-    description,
+  const updatePayload: any = {
     updated_at: new Date().toISOString(),
   }
+
+  // Only update name and description if not a system role
+  if (!isSystemRole) {
+    updatePayload.name = name
+    updatePayload.description = description
+  }
+
   const { data: role, error: roleError } = await (supabase
     .from('roles') as any)
     .update(updatePayload)

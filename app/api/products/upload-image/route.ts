@@ -12,13 +12,16 @@ export async function POST(request: NextRequest) {
 
     const { user } = authResult
     const userRole = user.role?.name
+    const userPermissions = user.role?.permissions?.map(p => p.name) || []
 
-    // Only Admin and Marketing can upload product images
-    if (
-      userRole !== SYSTEM_ROLES.ADMIN &&
-      userRole !== SYSTEM_ROLES.SUPER_ADMIN &&
-      userRole !== SYSTEM_ROLES.MARKETING
-    ) {
+    // Check if user has permission to upload product images (requires create or manage)
+    const hasCreatePermission = userPermissions.includes('products.create')
+    const hasManagePermission = userPermissions.includes('products.manage')
+    const isAllowedRole = userRole === SYSTEM_ROLES.ADMIN || 
+                         userRole === SYSTEM_ROLES.SUPER_ADMIN || 
+                         userRole === SYSTEM_ROLES.MARKETING
+
+    if (!isAllowedRole && !hasCreatePermission && !hasManagePermission) {
       return NextResponse.json(
         { error: 'Forbidden: You do not have permission to upload product images' },
         { status: 403 }

@@ -11,6 +11,28 @@
 
 This will create all necessary tables, roles, and permissions.
 
+### Syncing Permissions from Sidebar
+
+When you add new features to the sidebar, you can automatically sync permissions:
+
+**Option 1: Using the UI (Recommended)**
+1. Go to **Roles & Permissions** page
+2. Click the **🔄 Sync Permissions** button
+3. This will create any missing permissions based on sidebar configuration
+
+**Option 2: Using the Script**
+```bash
+npx tsx scripts/sync-permissions-from-sidebar.ts
+```
+
+**Option 3: Using the API**
+```bash
+curl -X POST http://localhost:3000/api/permissions/sync \
+  -H "Cookie: your-auth-cookie"
+```
+
+The sync will automatically create permissions (create, read, update, delete, manage) for any resource defined in `shared/constants/sidebar.ts` that has `requiresPermissions: true`.
+
 ## Step 2: Create Initial Admin Users
 
 After migrations are complete, create your first admin users:

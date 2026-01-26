@@ -23,14 +23,17 @@ export async function GET(request: NextRequest) {
 
     const { user } = authResult
     const userRole = user.role?.name
+    const userPermissions = user.role?.permissions?.map(p => p.name) || []
 
     // Check if user has permission to view products
-    // Admin, Marketing can view products
-    if (
-      userRole !== SYSTEM_ROLES.ADMIN &&
-      userRole !== SYSTEM_ROLES.SUPER_ADMIN &&
-      userRole !== SYSTEM_ROLES.MARKETING
-    ) {
+    // Super admin has all permissions
+    const hasReadPermission = userPermissions.includes('products.read')
+    const hasManagePermission = userPermissions.includes('products.manage')
+    const isAllowedRole = userRole === SYSTEM_ROLES.ADMIN || 
+                         userRole === SYSTEM_ROLES.SUPER_ADMIN || 
+                         userRole === SYSTEM_ROLES.MARKETING
+
+    if (!isAllowedRole && !hasReadPermission && !hasManagePermission) {
       return NextResponse.json(
         { error: 'Forbidden: You do not have permission to view products' },
         { status: 403 }
@@ -66,13 +69,16 @@ export async function POST(request: NextRequest) {
 
     const { user } = authResult
     const userRole = user.role?.name
+    const userPermissions = user.role?.permissions?.map(p => p.name) || []
 
-    // Only Admin and Marketing can create products
-    if (
-      userRole !== SYSTEM_ROLES.ADMIN &&
-      userRole !== SYSTEM_ROLES.SUPER_ADMIN &&
-      userRole !== SYSTEM_ROLES.MARKETING
-    ) {
+    // Check if user has permission to create products
+    const hasCreatePermission = userPermissions.includes('products.create')
+    const hasManagePermission = userPermissions.includes('products.manage')
+    const isAllowedRole = userRole === SYSTEM_ROLES.ADMIN || 
+                         userRole === SYSTEM_ROLES.SUPER_ADMIN || 
+                         userRole === SYSTEM_ROLES.MARKETING
+
+    if (!isAllowedRole && !hasCreatePermission && !hasManagePermission) {
       return NextResponse.json(
         { error: 'Forbidden: You do not have permission to create products' },
         { status: 403 }

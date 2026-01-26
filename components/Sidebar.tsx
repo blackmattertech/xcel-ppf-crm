@@ -5,69 +5,17 @@ import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
-interface MenuItem {
-  name: string
-  href: string
-  icon: string
-  roles?: string[] // If specified, only show for these roles
-}
+import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
 
-const menuItems: MenuItem[] = [
-  {
-    name: 'Dashboard',
-    href: '/dashboard',
-    icon: '📊',
-  },
-  {
-    name: 'Leads',
-    href: '/leads',
-    icon: '👥',
-  },
-  {
-    name: 'Follow-ups',
-    href: '/followups',
-    icon: '📅',
-  },
-  {
-    name: 'Customers',
-    href: '/customers',
-    icon: '🏢',
-  },
-  {
-    name: 'Orders',
-    href: '/orders',
-    icon: '📦',
-  },
-  {
-    name: 'Quotations',
-    href: '/quotations',
-    icon: '📄',
-  },
-  {
-    name: 'Products',
-    href: '/products',
-    icon: '🛍️',
-    roles: ['super_admin', 'admin', 'marketing'],
-  },
-  {
-    name: 'Roles & Permissions',
-    href: '/admin/roles',
-    icon: '🔐',
-    roles: ['super_admin', 'admin'],
-  },
-  {
-    name: 'User Management',
-    href: '/admin/users',
-    icon: '👤',
-    roles: ['super_admin', 'admin'],
-  },
-]
+// Use the centralized sidebar configuration
+const menuItems: SidebarMenuItem[] = SIDEBAR_MENU_ITEMS
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userName, setUserName] = useState<string>('')
+  const [userPermissions, setUserPermissions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [followUpCount, setFollowUpCount] = useState(0)
 
@@ -105,29 +53,38 @@ export default function Sidebar() {
       return
     }
 
-    // Fetch user data
+    // Fetch user data with role and permissions
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('name, role_id')
+      .select(`
+        name,
+        role_id,
+        roles!users_role_id_fkey (
+          name,
+          role_permissions (
+            permissions (
+              name
+            )
+          )
+        )
+      `)
       .eq('id', user.id)
       .single()
 
     if (userData) {
       setUserName(userData.name)
       
-      // Fetch role name using role_id
-      if (userData.role_id) {
-        const { data: roleData, error: roleError } = await supabase
-          .from('roles')
-          .select('name')
-          .eq('id', userData.role_id)
-          .single()
+      // Extract role and permissions
+      const roleData = (userData as any).roles
+      if (roleData) {
+        setUserRole(roleData.name)
         
-        if (roleData) {
-          setUserRole(roleData.name)
-        } else if (roleError) {
-          console.error('Error fetching role:', roleError)
-        }
+        // Extract permissions from role_permissions
+        const permissions = (roleData.role_permissions || [])
+          .map((rp: any) => rp.permissions?.name)
+          .filter(Boolean)
+        
+        setUserPermissions(permissions)
       }
     } else if (userError) {
       console.error('Error fetching user:', userError)
@@ -146,10 +103,29 @@ export default function Sidebar() {
     router.push('/login')
   }
 
-  // Filter menu items based on user role
+  // Filter menu items based on user role and permissions
   const filteredMenuItems = menuItems.filter((item) => {
-    if (!item.roles) return true
-    return userRole && item.roles.includes(userRole)
+    // If item doesn't require permissions, show it to all authenticated users
+    if (!item.requiresPermissions) {
+      return true
+    }
+
+    // Check if user's role is explicitly allowed
+    if (item.roles && userRole && item.roles.includes(userRole)) {
+      return true
+    }
+
+    // Check if user has permission for this resource
+    // User needs either {resource}.read or {resource}.manage permission
+    const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
+    const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
+    
+    if (hasReadPermission || hasManagePermission) {
+      return true
+    }
+
+    // If item has roles restriction and user doesn't have permission, hide it
+    return false
   })
 
   if (loading) {

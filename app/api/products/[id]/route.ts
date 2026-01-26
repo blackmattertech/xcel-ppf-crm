@@ -26,13 +26,16 @@ export async function GET(
 
     const { user } = authResult
     const userRole = user.role?.name
+    const userPermissions = user.role?.permissions?.map(p => p.name) || []
 
     // Check if user has permission to view products
-    if (
-      userRole !== SYSTEM_ROLES.ADMIN &&
-      userRole !== SYSTEM_ROLES.SUPER_ADMIN &&
-      userRole !== SYSTEM_ROLES.MARKETING
-    ) {
+    const hasReadPermission = userPermissions.includes('products.read')
+    const hasManagePermission = userPermissions.includes('products.manage')
+    const isAllowedRole = userRole === SYSTEM_ROLES.ADMIN || 
+                         userRole === SYSTEM_ROLES.SUPER_ADMIN || 
+                         userRole === SYSTEM_ROLES.MARKETING
+
+    if (!isAllowedRole && !hasReadPermission && !hasManagePermission) {
       return NextResponse.json(
         { error: 'Forbidden: You do not have permission to view products' },
         { status: 403 }
@@ -71,13 +74,16 @@ export async function PUT(
 
     const { user } = authResult
     const userRole = user.role?.name
+    const userPermissions = user.role?.permissions?.map(p => p.name) || []
 
-    // Only Admin and Marketing can update products
-    if (
-      userRole !== SYSTEM_ROLES.ADMIN &&
-      userRole !== SYSTEM_ROLES.SUPER_ADMIN &&
-      userRole !== SYSTEM_ROLES.MARKETING
-    ) {
+    // Check if user has permission to update products
+    const hasUpdatePermission = userPermissions.includes('products.update')
+    const hasManagePermission = userPermissions.includes('products.manage')
+    const isAllowedRole = userRole === SYSTEM_ROLES.ADMIN || 
+                         userRole === SYSTEM_ROLES.SUPER_ADMIN || 
+                         userRole === SYSTEM_ROLES.MARKETING
+
+    if (!isAllowedRole && !hasUpdatePermission && !hasManagePermission) {
       return NextResponse.json(
         { error: 'Forbidden: You do not have permission to update products' },
         { status: 403 }

@@ -74,24 +74,46 @@ export default function ProductsPage() {
       return
     }
 
+    // Fetch user with role and permissions
     const { data: userData } = await supabase
       .from('users')
-      .select('role_id')
+      .select(`
+        role_id,
+        roles!users_role_id_fkey (
+          name,
+          role_permissions (
+            permissions (
+              name
+            )
+          )
+        )
+      `)
       .eq('id', user.id)
       .single()
 
-    if (userData?.role_id) {
-      const { data: roleData } = await supabase
-        .from('roles')
-        .select('name')
-        .eq('id', userData.role_id)
-        .single()
-
-      const roleName = roleData?.name
-      setUserRole(roleName)
-      
-      // Only Admin and Marketing can access products page
-      if (roleName !== 'super_admin' && roleName !== 'admin' && roleName !== 'marketing') {
+    if (userData) {
+      const roleData = (userData as any).roles
+      if (roleData) {
+        const roleName = roleData.name
+        setUserRole(roleName)
+        
+        // Extract permissions
+        const permissions = (roleData.role_permissions || [])
+          .map((rp: any) => rp.permissions?.name)
+          .filter(Boolean)
+        
+        // Check if user has permission to view products
+        // User needs products.read or products.manage permission
+        const hasReadPermission = permissions.includes('products.read')
+        const hasManagePermission = permissions.includes('products.manage')
+        
+        // Also allow super_admin, admin, and marketing roles (for backward compatibility)
+        const isAllowedRole = roleName === 'super_admin' || roleName === 'admin' || roleName === 'marketing'
+        
+        if (!isAllowedRole && !hasReadPermission && !hasManagePermission) {
+          router.push('/dashboard')
+        }
+      } else {
         router.push('/dashboard')
       }
     } else {

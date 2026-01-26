@@ -51,6 +51,13 @@ export const PERMISSIONS = {
   PRODUCTS_UPDATE: 'products.update',
   PRODUCTS_DELETE: 'products.delete',
   PRODUCTS_MANAGE: 'products.manage',
+  
+  // Follow-ups
+  FOLLOWUPS_CREATE: 'followups.create',
+  FOLLOWUPS_READ: 'followups.read',
+  FOLLOWUPS_UPDATE: 'followups.update',
+  FOLLOWUPS_DELETE: 'followups.delete',
+  FOLLOWUPS_MANAGE: 'followups.manage',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]
