@@ -382,6 +382,7 @@ function GridView({
 // Kanban Board Component
 function KanbanBoard({ 
   leads, 
+  allLeads,
   groupBy, 
   onLeadMove,
   getVehicleName,
@@ -389,6 +390,7 @@ function KanbanBoard({
   router
 }: {
   leads: Lead[]
+  allLeads: Lead[]
   groupBy: string
   onLeadMove: (leadId: string, newStatus: string) => Promise<void>
   getVehicleName: (lead: Lead) => string
@@ -398,10 +400,54 @@ function KanbanBoard({
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
 
+  // Get all possible group values based on groupBy
+  function getAllPossibleGroups(): string[] {
+    if (groupBy === 'status') {
+      // All possible status values (using formatStageName for consistency)
+      const allStatuses = [
+        'new', 'qualified', 'unqualified', 'quotation_shared', 'quotation_viewed',
+        'quotation_accepted', 'quotation_expired', 'interested', 'negotiation',
+        'lost', 'converted', 'deal_won', 'payment_pending', 'advance_received', 'fully_paid'
+      ]
+      // Use formatStageName to get display names, then remove duplicates
+      const formattedStatuses = allStatuses.map(status => formatStageName(status))
+      return Array.from(new Set(formattedStatuses)) // Remove duplicates
+    } else if (groupBy === 'interest_level') {
+      return ['Hot', 'Warm', 'Cold', 'Unassigned']
+    } else if (groupBy === 'assigned_to') {
+      // Get all unique assigned users from allLeads
+      const assignedUsers = new Set<string>()
+      allLeads.forEach(lead => {
+        if (lead.assigned_user?.name) {
+          assignedUsers.add(lead.assigned_user.name)
+        }
+      })
+      return ['Unassigned', ...Array.from(assignedUsers).sort()]
+    } else if (groupBy === 'source') {
+      // Get all unique platforms from allLeads
+      const platforms = new Set<string>()
+      allLeads.forEach(lead => {
+        const platform = lead.meta_data?.platform || lead.meta_data?.Platform
+        if (platform) {
+          platforms.add(String(platform).toUpperCase())
+        }
+      })
+      return ['Unassigned', ...Array.from(platforms).sort()]
+    }
+    return []
+  }
+
   // Group leads by the selected field
   function groupLeads() {
     const groups: Record<string, Lead[]> = {}
+    const allPossibleGroups = getAllPossibleGroups()
     
+    // Initialize all possible groups with empty arrays
+    allPossibleGroups.forEach(groupKey => {
+      groups[groupKey] = []
+    })
+    
+    // Add leads to their respective groups
     leads.forEach(lead => {
       let groupKey = ''
       
@@ -420,10 +466,15 @@ function KanbanBoard({
         groupKey = value ? String(value) : 'Unassigned'
       }
       
+      // Only add to group if it exists in allPossibleGroups, otherwise add to Unassigned
       if (!groups[groupKey]) {
-        groups[groupKey] = []
+        if (!groups['Unassigned']) {
+          groups['Unassigned'] = []
+        }
+        groups['Unassigned'].push(lead)
+      } else {
+        groups[groupKey].push(lead)
       }
-      groups[groupKey].push(lead)
     })
     
     return groups
@@ -492,19 +543,55 @@ function KanbanBoard({
   function handleDragOver(e: React.DragEvent, groupKey: string) {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    if (groupBy === 'status') {
-      setDraggedOverColumn(groupKey)
-    }
+    setDraggedOverColumn(groupKey)
   }
 
   function handleDrop(e: React.DragEvent, groupKey: string) {
     e.preventDefault()
-    if (draggedLead && groupBy === 'status') {
+    if (!draggedLead) return
+
+    if (groupBy === 'status') {
       const newStatus = getStatusForGroup(groupKey)
       if (newStatus && newStatus !== draggedLead.status) {
         onLeadMove(draggedLead.id, newStatus)
       }
+    } else if (groupBy === 'interest_level') {
+      // Map group key to interest_level value
+      const interestLevelMap: Record<string, string> = {
+        'Hot': 'hot',
+        'Warm': 'warm',
+        'Cold': 'cold',
+        'Unassigned': '',
+      }
+      const newInterestLevel = interestLevelMap[groupKey]
+      if (newInterestLevel !== undefined && newInterestLevel !== draggedLead.interest_level) {
+        // Update lead's interest_level
+        fetch(`/api/leads/${draggedLead.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            interest_level: newInterestLevel || null,
+          }),
+        }).then(() => {
+          window.location.reload() // Refresh to show updated grouping
+        })
+      }
+    } else if (groupBy === 'assigned_to') {
+      // Find user ID by name
+      const targetUser = allLeads.find(lead => lead.assigned_user?.name === groupKey)?.assigned_user
+      if (targetUser && targetUser.id !== draggedLead.assigned_user?.id) {
+        fetch(`/api/leads/${draggedLead.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assigned_to: groupKey === 'Unassigned' ? null : targetUser.id,
+          }),
+        }).then(() => {
+          window.location.reload() // Refresh to show updated grouping
+        })
+      }
     }
+    
     setDraggedLead(null)
     setDraggedOverColumn(null)
   }
@@ -538,7 +625,11 @@ function KanbanBoard({
   }
 
   const groupedLeads = groupLeads()
-  const groupKeys = Object.keys(groupedLeads).sort()
+  // Get all possible groups and ensure they're all shown
+  const allPossibleGroups = getAllPossibleGroups()
+  const groupKeys = allPossibleGroups.length > 0 
+    ? allPossibleGroups
+    : Object.keys(groupedLeads).sort()
 
   return (
     <div className="overflow-x-auto pb-4">
@@ -559,12 +650,19 @@ function KanbanBoard({
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-semibold text-gray-900">{groupKey}</h3>
                 <span className="text-sm text-gray-500 bg-white px-2 py-1 rounded-full">
-                  {groupLeadsList.length}
+                  {groupLeadsList?.length || 0}
                 </span>
               </div>
               
-              <div className="space-y-3">
-                {groupLeadsList.map((lead) => {
+              <div className="space-y-3 min-h-[100px]">
+                {!groupLeadsList || groupLeadsList.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400 text-sm">
+                    No leads in this group
+                    <br />
+                    <span className="text-xs">Drag a card here to add</span>
+                  </div>
+                ) : (
+                  groupLeadsList.map((lead) => {
                   const vehicleName = getVehicleName(lead)
                   const isHot = lead.interest_level === 'hot'
                   const budget = getBudget(lead)
@@ -572,7 +670,7 @@ function KanbanBoard({
                   return (
                     <div
                       key={lead.id}
-                      draggable={groupBy === 'status'}
+                      draggable={true}
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
                       onClick={() => router.push(`/leads/${lead.id}`)}
@@ -650,7 +748,7 @@ function KanbanBoard({
                       </div>
                     </div>
                   )
-                })}
+                }))}
               </div>
             </div>
           )
@@ -776,24 +874,16 @@ export default function LeadsPage() {
 
   // Update allLeads when data is fetched
   useEffect(() => {
-    if (allLeadsData.length > 0) {
-      setAllLeads(allLeadsData as Lead[])
-    }
-  }, [allLeadsData])
+    checkAuth()
+    fetchLeads()
+  }, [])
 
-  // Redirect if not authenticated
+  // Save container styles to localStorage whenever they change
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/login')
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('leads-container-styles', JSON.stringify(containerStyles))
     }
-  }, [authLoading, isAuthenticated, router])
-
-  // Fetch tele-callers if admin
-  useEffect(() => {
-    if (isAdmin) {
-      fetchTeleCallers()
-    }
-  }, [isAdmin])
+  }, [containerStyles])
   
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -2153,6 +2243,7 @@ export default function LeadsPage() {
           {viewMode === 'kanban' && (
             <KanbanBoard 
               leads={leads}
+              allLeads={allLeads}
               groupBy={groupBy}
               onLeadMove={handleLeadMove}
               getVehicleName={getVehicleName}
