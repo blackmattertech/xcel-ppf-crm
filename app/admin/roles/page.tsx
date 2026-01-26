@@ -21,6 +21,10 @@ interface Role {
   permissions: Permission[]
 }
 
+interface UserRoleRow {
+  role_id: string | null
+}
+
 export default function RolesPage() {
   const router = useRouter()
   const [roles, setRoles] = useState<Role[]>([])
@@ -51,11 +55,13 @@ export default function RolesPage() {
     }
 
     // Check if user has permission
-    const { data: userData } = await supabase
+    const { data } = await supabase
       .from('users')
       .select('role_id')
       .eq('id', user.id)
       .single()
+
+    const userData = data as UserRoleRow | null
 
     if (userData?.role_id) {
       // Fetch role name using role_id

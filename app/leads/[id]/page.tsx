@@ -33,7 +33,14 @@ import {
   Flame,
   Zap,
   Snowflake,
-  FileText
+  FileText,
+  FilePlus,
+  Plus,
+  Trash2,
+  ShoppingCart,
+  Eye,
+  Share2,
+  CheckCircle
 } from 'lucide-react'
 
 // Interactive Time Picker Component
@@ -493,11 +500,40 @@ export default function LeadDetailPage() {
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [showStatusUpdateModal, setShowStatusUpdateModal] = useState(false)
+  const [showQuotationModal, setShowQuotationModal] = useState(false)
+  const [products, setProducts] = useState<any[]>([])
+  const [quotationItems, setQuotationItems] = useState<Array<{
+    productId: string
+    name: string
+    description: string
+    quantity: number
+    unitPrice: number
+    total: number
+  }>>([{ productId: '', name: '', description: '', quantity: 1, unitPrice: 0, total: 0 }])
+  const [gstRate, setGstRate] = useState(18)
+  const [discount, setDiscount] = useState(0)
+  const [validityDays, setValidityDays] = useState(30)
+  const [submittingQuotation, setSubmittingQuotation] = useState(false)
+  const [createdQuotationId, setCreatedQuotationId] = useState<string | null>(null)
+  const [showQuotationSuccessModal, setShowQuotationSuccessModal] = useState(false)
 
   useEffect(() => {
     checkAuth()
     fetchLead()
+    fetchProducts()
   }, [leadId])
+
+  async function fetchProducts() {
+    try {
+      const response = await fetch('/api/products')
+      if (response.ok) {
+        const data = await response.json()
+        setProducts(data || [])
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error)
+    }
+  }
 
   async function checkAuth() {
     const supabase = createClient()
@@ -1695,6 +1731,15 @@ export default function LeadDetailPage() {
             <Phone size={18} />
             Make Call
           </button>
+          {lead?.status === LEAD_STATUS.QUALIFIED && (
+          <button
+              onClick={() => setShowQuotationModal(true)}
+              className="flex-1 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
+          >
+              <FilePlus size={18} />
+              Create Quotation
+          </button>
+          )}
           <button
             onClick={() => router.push(`/leads/${leadId}/history`)}
             className="flex-1 bg-white text-gray-700 px-6 py-3.5 rounded-xl border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium transition-colors"
@@ -1707,7 +1752,7 @@ export default function LeadDetailPage() {
 
       {/* Modals */}
       {/* Call Outcome Modal */}
-      {showCallModal && (
+          {showCallModal && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif' }}>
             {/* Red Header */}
@@ -2271,9 +2316,9 @@ export default function LeadDetailPage() {
                     </div>
                   )}
             </div>
-          </div>
-        </div>
-      )}
+              </div>
+            </div>
+          )}
 
           {/* Qualification Modal */}
           {showQualifyModal && (
@@ -2540,6 +2585,490 @@ export default function LeadDetailPage() {
               >
                 {updatingStatus ? 'Updating...' : 'Update Status'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Quotation Modal */}
+      {showQuotationModal && lead && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            {/* Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 rounded-t-xl flex items-center justify-between z-10">
+              <div className="flex items-center gap-3">
+                <FilePlus size={24} />
+                <div>
+                  <h3 className="text-lg font-semibold">Create Quotation</h3>
+                  <p className="text-sm text-white/90">{lead.name} • {lead.phone}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowQuotationModal(false)
+                  setQuotationItems([{ productId: '', name: '', description: '', quantity: 1, unitPrice: 0, total: 0 }])
+                  setGstRate(18)
+                  setDiscount(0)
+                  setValidityDays(30)
+                }}
+                className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Company Profile Section */}
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Building2 size={16} />
+                  Company Profile
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-600">Company Name:</span>
+                    <span className="ml-2 font-medium text-gray-900">Xcel PPF</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Email:</span>
+                    <span className="ml-2 font-medium text-gray-900">info@xcelppf.com</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Phone:</span>
+                    <span className="ml-2 font-medium text-gray-900">+91 1234567890</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Address:</span>
+                    <span className="ml-2 font-medium text-gray-900">Your Company Address</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-600">GSTIN:</span>
+                    <span className="ml-2 font-medium text-gray-900">29ABCDE1234F1Z5</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer Details Section */}
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <User size={16} />
+                  Customer Details
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-600">Name:</span>
+                    <span className="ml-2 font-medium text-gray-900">{lead.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Phone:</span>
+                    <span className="ml-2 font-medium text-gray-900">{lead.phone}</span>
+                  </div>
+                  {lead.email && (
+                    <div>
+                      <span className="text-gray-600">Email:</span>
+                      <span className="ml-2 font-medium text-gray-900">{lead.email}</span>
+                    </div>
+                  )}
+                  {lead.meta_data?.company && (
+                    <div>
+                      <span className="text-gray-600">Company:</span>
+                      <span className="ml-2 font-medium text-gray-900">{lead.meta_data.company}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quotation Items Section */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                    <ShoppingCart size={18} />
+                    Quotation Items
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuotationItems([...quotationItems, { productId: '', name: '', description: '', quantity: 1, unitPrice: 0, total: 0 }])
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                  >
+                    <Plus size={16} />
+                    Add Item
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {quotationItems.map((item, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-white">
+                      <div className="flex items-start justify-between mb-3">
+                        <span className="text-sm font-medium text-gray-700">Item {index + 1}</span>
+                        {quotationItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newItems = quotationItems.filter((_, i) => i !== index)
+                              setQuotationItems(newItems)
+                            }}
+                            className="text-red-600 hover:text-red-700 p-1"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Product Selection */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Product <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={item.productId}
+                            onChange={(e) => {
+                              const selectedProduct = products.find(p => p.id === e.target.value)
+                              const newItems = [...quotationItems]
+                              newItems[index] = {
+                                ...newItems[index],
+                                productId: e.target.value,
+                                name: selectedProduct?.title || '',
+                                description: selectedProduct?.description || '',
+                                unitPrice: selectedProduct?.price || 0,
+                                total: (selectedProduct?.price || 0) * newItems[index].quantity
+                              }
+                              setQuotationItems(newItems)
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            required
+                          >
+                            <option value="">Select a product...</option>
+                            {products.filter(p => p.is_active).map((product) => (
+                              <option key={product.id} value={product.id}>
+                                {product.title} - ₹{product.price}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Description */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Description
+                          </label>
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={(e) => {
+                              const newItems = [...quotationItems]
+                              newItems[index].description = e.target.value
+                              setQuotationItems(newItems)
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            placeholder="Product description..."
+                          />
+                        </div>
+
+                        {/* Quantity */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Quantity <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const qty = parseInt(e.target.value) || 1
+                              const newItems = [...quotationItems]
+                              newItems[index] = {
+                                ...newItems[index],
+                                quantity: qty,
+                                total: newItems[index].unitPrice * qty
+                              }
+                              setQuotationItems(newItems)
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            required
+                          />
+                        </div>
+
+                        {/* Unit Price */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Unit Price (₹) <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={(e) => {
+                              const price = parseFloat(e.target.value) || 0
+                              const newItems = [...quotationItems]
+                              newItems[index] = {
+                                ...newItems[index],
+                                unitPrice: price,
+                                total: price * newItems[index].quantity
+                              }
+                              setQuotationItems(newItems)
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            required
+                          />
+                        </div>
+
+                        {/* Total */}
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Total (₹)
+                          </label>
+                          <input
+                            type="number"
+                            value={item.total.toFixed(2)}
+                            readOnly
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 font-semibold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quotation Settings */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    GST Rate (%)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={gstRate}
+                    onChange={(e) => setGstRate(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Discount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={discount}
+                    onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Validity (Days)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={validityDays}
+                    onChange={(e) => setValidityDays(parseInt(e.target.value) || 30)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">Summary</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Subtotal:</span>
+                    <span className="font-medium text-gray-900">
+                      ₹{quotationItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Discount:</span>
+                    <span className="font-medium text-gray-900">- ₹{discount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">GST ({gstRate}%):</span>
+                    <span className="font-medium text-gray-900">
+                      ₹{((quotationItems.reduce((sum, item) => sum + item.total, 0) - discount) * gstRate / 100).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-gray-300">
+                    <span className="font-semibold text-gray-900">Total:</span>
+                    <span className="font-bold text-lg text-green-600">
+                      ₹{(
+                        quotationItems.reduce((sum, item) => sum + item.total, 0) - 
+                        discount + 
+                        ((quotationItems.reduce((sum, item) => sum + item.total, 0) - discount) * gstRate / 100)
+                      ).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQuotationModal(false)
+                    setQuotationItems([{ productId: '', name: '', description: '', quantity: 1, unitPrice: 0, total: 0 }])
+                    setGstRate(18)
+                    setDiscount(0)
+                    setValidityDays(30)
+                  }}
+                  className="px-6 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                  disabled={submittingQuotation}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    // Validate items
+                    const validItems = quotationItems.filter(item => item.productId && item.name && item.quantity > 0 && item.unitPrice > 0)
+                    if (validItems.length === 0) {
+                      alert('Please add at least one valid item to the quotation')
+                      return
+                    }
+
+                    setSubmittingQuotation(true)
+                    try {
+                      const response = await fetch('/api/quotations', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          lead_id: leadId,
+                          items: validItems.map(item => ({
+                            name: item.name,
+                            description: item.description || undefined,
+                            quantity: item.quantity,
+                            unit_price: item.unitPrice,
+                            total: item.total
+                          })),
+                          validity_days: validityDays,
+                          discount: discount,
+                          gst_rate: gstRate
+                        })
+                      })
+
+                      if (response.ok) {
+                        const data = await response.json()
+                        setCreatedQuotationId(data.quotation?.id || null)
+                        setShowQuotationModal(false)
+                        setShowQuotationSuccessModal(true)
+                        setQuotationItems([{ productId: '', name: '', description: '', quantity: 1, unitPrice: 0, total: 0 }])
+                        setGstRate(18)
+                        setDiscount(0)
+                        setValidityDays(30)
+                        fetchLead() // Refresh lead data
+                      } else {
+                        const error = await response.json()
+                        alert(error.error || 'Failed to create quotation')
+                      }
+                    } catch (error) {
+                      console.error('Error creating quotation:', error)
+                      alert('Failed to create quotation')
+                    } finally {
+                      setSubmittingQuotation(false)
+                    }
+                  }}
+                  disabled={submittingQuotation || quotationItems.filter(item => item.productId && item.name).length === 0}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {submittingQuotation ? 'Creating...' : 'Create Quotation'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quotation Success Modal */}
+      {showQuotationSuccessModal && createdQuotationId && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif' }}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 rounded-t-xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CheckCircle size={24} className="text-white" />
+                <div>
+                  <h3 className="text-lg font-semibold">Quotation Created!</h3>
+                  <p className="text-sm text-white/90">Your quotation has been created successfully</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowQuotationSuccessModal(false)
+                  setCreatedQuotationId(null)
+                }}
+                className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="mb-6">
+                <p className="text-gray-700 text-sm mb-4">
+                  What would you like to do next?
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    router.push(`/quotations/${createdQuotationId}`)
+                  }}
+                  className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <Eye size={18} />
+                  View Quotation
+                </button>
+                <button
+                  onClick={async () => {
+                    const shareUrl = `${window.location.origin}/quotations/${createdQuotationId}`
+                    try {
+                      if (navigator.share) {
+                        await navigator.share({
+                          title: 'Quotation',
+                          text: `Check out this quotation for ${lead?.name}`,
+                          url: shareUrl
+                        })
+                      } else {
+                        // Fallback: Copy to clipboard
+                        await navigator.clipboard.writeText(shareUrl)
+                        alert('Quotation link copied to clipboard!')
+                      }
+                    } catch (error) {
+                      // If user cancels share or clipboard fails, try copy
+                      try {
+                        await navigator.clipboard.writeText(shareUrl)
+                        alert('Quotation link copied to clipboard!')
+                      } catch (copyError) {
+                        console.error('Failed to copy link:', copyError)
+                        alert('Failed to share quotation link')
+                      }
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  <Share2 size={18} />
+                  Share Quotation
+                </button>
+                <button
+                  onClick={() => {
+                    setShowQuotationSuccessModal(false)
+                    setCreatedQuotationId(null)
+                  }}
+                  className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
