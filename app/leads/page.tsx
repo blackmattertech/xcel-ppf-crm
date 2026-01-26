@@ -14,7 +14,7 @@ import NewLeadForm from '@/components/NewLeadForm'
 function SourceIcon({ platform, source }: { platform?: string | null; source: string }) {
   const [imgError, setImgError] = useState(false)
   
-  const getIconPath = () => {
+  const getIconPath = (): string | null => {
     if (platform) {
       const platformLower = String(platform).toLowerCase().trim()
       if (platformLower === 'ig' || platformLower === 'instagram') {
@@ -28,25 +28,30 @@ function SourceIcon({ platform, source }: { platform?: string | null; source: st
     if (sourceLower.includes('facebook') || sourceLower === 'meta') {
       return '/source-icons/fb.png'
     } else if (sourceLower.includes('whatsapp')) {
-      return '/source-icons/whatsapp.png'
+      return '/source-icons/wa.png'
     } else if (sourceLower.includes('instagram')) {
       return '/source-icons/ig.png'
     }
     
-    return '/source-icons/default.png'
+    // Return null instead of default.png to avoid 404 errors
+    return null
   }
 
-  if (imgError) {
+  const iconPath = getIconPath()
+
+  // If no icon path found or image error, show emoji fallback
+  if (!iconPath || imgError) {
     return <span className="text-2xl">📱</span>
   }
 
   return (
     <Image
-      src={getIconPath()}
+      src={iconPath}
       alt={platform || source}
       width={24}
       height={24}
       className="w-6 h-6 object-contain"
+      style={{ width: 'auto', height: 'auto' }}
       onError={() => setImgError(true)}
     />
   )
@@ -755,7 +760,7 @@ export default function LeadsPage() {
             iconColor: '#ffffff',
             textColor: '#ffffff',
             opacity: 1,
-            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            backgroundColor: '#ffffff', // Base color, opacity handled separately
           }
         }
       }
@@ -764,8 +769,8 @@ export default function LeadsPage() {
       containerColor: '#000000',
       iconColor: '#ffffff',
       textColor: '#ffffff',
-      opacity: 1,
-      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      opacity: 0.2,
+      backgroundColor: '#ffffff', // Base color, opacity handled separately
     }
   })
 
@@ -1531,6 +1536,7 @@ export default function LeadsPage() {
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
+                    opacity: containerStyles.opacity,
                   }}
                 >
                   <span>
@@ -1673,6 +1679,7 @@ export default function LeadsPage() {
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
+                    opacity: containerStyles.opacity,
                     borderColor: containerStyles.textColor + '30',
                   }}
                 >
@@ -2617,10 +2624,10 @@ export default function LeadsPage() {
                     value={containerStyles.backgroundColor}
                     onChange={(e) => setContainerStyles(prev => ({ ...prev, backgroundColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
-                    placeholder="rgba(255, 255, 255, 0.2)"
+                    placeholder="#ffffff33"
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Use rgba format for transparency (e.g., rgba(255, 255, 255, 0.2))</p>
+                <p className="text-xs text-gray-500 mt-1">Use hex format with alpha for transparency (e.g., #ffffff33 for 20% white)</p>
               </div>
 
               {/* Opacity */}
@@ -2662,6 +2669,7 @@ export default function LeadsPage() {
                       style={{
                         color: containerStyles.textColor,
                         backgroundColor: containerStyles.backgroundColor,
+                        opacity: containerStyles.opacity,
                         borderColor: containerStyles.textColor + '30',
                       }}
                     >
@@ -2684,7 +2692,7 @@ export default function LeadsPage() {
                     iconColor: '#ffffff',
                     textColor: '#ffffff',
                     opacity: 1,
-                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                    backgroundColor: '#ffffff', // Base color, opacity handled separately
                   })
                 }}
                 className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 text-sm"
