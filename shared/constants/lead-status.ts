@@ -1,5 +1,6 @@
 export const LEAD_STATUS = {
   NEW: 'new',
+  CONTACTED: 'contacted',        // NEW: After first call attempt
   QUALIFIED: 'qualified',
   UNQUALIFIED: 'unqualified',
   QUOTATION_SHARED: 'quotation_shared',
@@ -8,7 +9,8 @@ export const LEAD_STATUS = {
   QUOTATION_EXPIRED: 'quotation_expired',
   INTERESTED: 'interested',
   NEGOTIATION: 'negotiation',
-  LOST: 'lost',
+  LOST: 'lost',                  // Used for discarded leads
+  DISCARDED: 'discarded',        // NEW: Explicit discarded status
   CONVERTED: 'converted',
   DEAL_WON: 'deal_won',
   PAYMENT_PENDING: 'payment_pending',
@@ -20,6 +22,7 @@ export type LeadStatus = typeof LEAD_STATUS[keyof typeof LEAD_STATUS]
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   [LEAD_STATUS.NEW]: 'New Lead',
+  [LEAD_STATUS.CONTACTED]: 'Contacted',        // NEW
   [LEAD_STATUS.QUALIFIED]: 'Qualified',
   [LEAD_STATUS.UNQUALIFIED]: 'Unqualified',
   [LEAD_STATUS.QUOTATION_SHARED]: 'Quotation Shared',
@@ -29,6 +32,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   [LEAD_STATUS.INTERESTED]: 'Interested',
   [LEAD_STATUS.NEGOTIATION]: 'Negotiation',
   [LEAD_STATUS.LOST]: 'Lost',
+  [LEAD_STATUS.DISCARDED]: 'Discarded',        // NEW
   [LEAD_STATUS.CONVERTED]: 'Converted',
   [LEAD_STATUS.DEAL_WON]: 'Deal Won',
   [LEAD_STATUS.PAYMENT_PENDING]: 'Payment Pending',
@@ -38,6 +42,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
 
 export const LEAD_STATUS_ICONS: Record<LeadStatus, string> = {
   [LEAD_STATUS.NEW]: '🆕',
+  [LEAD_STATUS.CONTACTED]: '📞',              // NEW
   [LEAD_STATUS.QUALIFIED]: '✅',
   [LEAD_STATUS.UNQUALIFIED]: '❌',
   [LEAD_STATUS.QUOTATION_SHARED]: '📄',
@@ -47,6 +52,7 @@ export const LEAD_STATUS_ICONS: Record<LeadStatus, string> = {
   [LEAD_STATUS.INTERESTED]: '🟢',
   [LEAD_STATUS.NEGOTIATION]: '🟡',
   [LEAD_STATUS.LOST]: '🔴',
+  [LEAD_STATUS.DISCARDED]: '🗑️',            // NEW
   [LEAD_STATUS.CONVERTED]: '💼',
   [LEAD_STATUS.DEAL_WON]: '✔️',
   [LEAD_STATUS.PAYMENT_PENDING]: '💰',
@@ -84,11 +90,12 @@ export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
   [CALL_OUTCOME.CALL_LATER]: '🕒 Call Later',
 }
 
-// Updated flow based on the lifecycle
+// Updated flow based on the Lead Journey lifecycle
 export const LEAD_STATUS_FLOW: Record<LeadStatus, LeadStatus[]> = {
-  [LEAD_STATUS.NEW]: [LEAD_STATUS.QUALIFIED, LEAD_STATUS.UNQUALIFIED],
-  [LEAD_STATUS.QUALIFIED]: [LEAD_STATUS.QUOTATION_SHARED],
-  [LEAD_STATUS.UNQUALIFIED]: [LEAD_STATUS.NEW], // Can be requalified
+  [LEAD_STATUS.NEW]: [LEAD_STATUS.CONTACTED, LEAD_STATUS.QUALIFIED, LEAD_STATUS.UNQUALIFIED], // Can go to contacted on first call
+  [LEAD_STATUS.CONTACTED]: [LEAD_STATUS.QUALIFIED, LEAD_STATUS.LOST, LEAD_STATUS.DISCARDED], // NEW: After first call attempt
+  [LEAD_STATUS.QUALIFIED]: [LEAD_STATUS.QUOTATION_SHARED, LEAD_STATUS.INTERESTED],
+  [LEAD_STATUS.UNQUALIFIED]: [LEAD_STATUS.NEW, LEAD_STATUS.CONTACTED], // Can be requalified
   [LEAD_STATUS.QUOTATION_SHARED]: [LEAD_STATUS.QUOTATION_VIEWED, LEAD_STATUS.QUOTATION_ACCEPTED, LEAD_STATUS.QUOTATION_EXPIRED],
   [LEAD_STATUS.QUOTATION_VIEWED]: [LEAD_STATUS.QUOTATION_ACCEPTED, LEAD_STATUS.QUOTATION_EXPIRED, LEAD_STATUS.INTERESTED],
   [LEAD_STATUS.QUOTATION_ACCEPTED]: [LEAD_STATUS.INTERESTED, LEAD_STATUS.NEGOTIATION],
@@ -96,6 +103,7 @@ export const LEAD_STATUS_FLOW: Record<LeadStatus, LeadStatus[]> = {
   [LEAD_STATUS.INTERESTED]: [LEAD_STATUS.NEGOTIATION, LEAD_STATUS.DEAL_WON, LEAD_STATUS.LOST],
   [LEAD_STATUS.NEGOTIATION]: [LEAD_STATUS.DEAL_WON, LEAD_STATUS.LOST, LEAD_STATUS.INTERESTED],
   [LEAD_STATUS.LOST]: [], // Terminal state
+  [LEAD_STATUS.DISCARDED]: [], // NEW: Terminal state
   [LEAD_STATUS.CONVERTED]: [LEAD_STATUS.DEAL_WON], // Legacy support
   [LEAD_STATUS.DEAL_WON]: [LEAD_STATUS.PAYMENT_PENDING],
   [LEAD_STATUS.PAYMENT_PENDING]: [LEAD_STATUS.ADVANCE_RECEIVED, LEAD_STATUS.FULLY_PAID],

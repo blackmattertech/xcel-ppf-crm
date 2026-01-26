@@ -8,6 +8,7 @@ import Layout from '@/components/Layout'
 import { Bell, Search, MoreVertical, Plus, Download, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake } from 'lucide-react'
 import Image from 'next/image'
 import NewLeadForm from '@/components/NewLeadForm'
+import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
 
 // Source Icon Component with fallback
 function SourceIcon({ platform, source }: { platform?: string | null; source: string }) {
@@ -40,16 +41,16 @@ function SourceIcon({ platform, source }: { platform?: string | null; source: st
 
   // If no icon path found or image error, show emoji fallback
   if (!iconPath || imgError) {
-    return <span className="text-2xl">📱</span>
+    return <span className="text-3xl">📱</span>
   }
 
   return (
     <Image
       src={iconPath}
       alt={platform || source}
-      width={24}
-      height={24}
-      className="w-6 h-6 object-contain"
+      width={32}
+      height={32}
+      className="w-8 h-8 object-contain"
       style={{ width: 'auto', height: 'auto' }}
       onError={() => setImgError(true)}
     />
@@ -357,7 +358,7 @@ function GridView({
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <div className="w-5 h-5 flex items-center justify-center">
+                  <div className="w-8 h-8 flex items-center justify-center">
                     <SourceIcon 
                       platform={lead.meta_data?.platform || lead.meta_data?.Platform} 
                       source={lead.source} 
@@ -385,6 +386,7 @@ function KanbanBoard({
   groupBy, 
   onLeadMove,
   getVehicleName,
+  getProductInterest,
   getTimeAgo,
   router
 }: {
@@ -393,6 +395,7 @@ function KanbanBoard({
   groupBy: string
   onLeadMove: (leadId: string, newStatus: string) => Promise<void>
   getVehicleName: (lead: Lead) => string
+  getProductInterest: (lead: Lead) => string
   getTimeAgo: (date: string | null) => string
   router: ReturnType<typeof useRouter>
 }) {
@@ -404,9 +407,9 @@ function KanbanBoard({
     if (groupBy === 'status') {
       // All possible status values (using formatStageName for consistency)
       const allStatuses = [
-        'new', 'qualified', 'unqualified', 'quotation_shared', 'quotation_viewed',
+        'new', 'contacted', 'qualified', 'unqualified', 'quotation_shared', 'quotation_viewed',
         'quotation_accepted', 'quotation_expired', 'interested', 'negotiation',
-        'lost', 'converted', 'deal_won', 'payment_pending', 'advance_received', 'fully_paid'
+        'lost', 'discarded', 'converted', 'deal_won', 'payment_pending', 'advance_received', 'fully_paid'
       ]
       // Use formatStageName to get display names, then remove duplicates
       const formattedStatuses = allStatuses.map(status => formatStageName(status))
@@ -482,23 +485,30 @@ function KanbanBoard({
   function getColumnValue(lead: Lead, column: string): any {
     switch (column) {
       case 'name': return lead.name
+      case 'interest': return getProductInterest(lead)
       case 'phone': return lead.phone
       case 'email': return lead.email
       case 'source': return lead.source
       case 'platform': return lead.meta_data?.platform || lead.meta_data?.Platform || null
       case 'status': return lead.status
       case 'interest_level': return lead.interest_level
-      case 'requirement': return lead.requirement || getVehicleName(lead)
+      case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
       default: return null
     }
   }
 
   function formatStageName(status: string): string {
+    // Use LEAD_STATUS_LABELS if available, otherwise format manually
+    if (LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]) {
+      return LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]
+    }
     const statusLower = status.toLowerCase()
     if (statusLower.includes('negotiation')) return 'Negotiation'
     if (statusLower.includes('review') || statusLower.includes('qualified')) return 'In review'
     if (statusLower === 'new') return 'New'
+    if (statusLower === 'contacted') return 'Contacted'
+    if (statusLower === 'discarded') return 'Discarded'
     if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) return 'Approved'
     if (statusLower === 'lost') return 'Lost'
     if (statusLower === 'closed') return 'Closed'
@@ -810,6 +820,7 @@ export default function LeadsPage() {
 
   const defaultColumns: ColumnConfig[] = [
     { key: 'name', label: 'Name/Vehicle', visible: true, width: 200 },
+    { key: 'interest', label: 'Interest', visible: true, width: 180 },
     { key: 'status', label: 'Lead stage', visible: true, width: 150 },
     { key: 'interest_level', label: 'Lead Type', visible: true, width: 120 },
     { key: 'source', label: 'Source', visible: true, width: 150 },
@@ -907,26 +918,47 @@ export default function LeadsPage() {
     }
   }, [columns])
 
-  // Calculate stats from leads
+  // LEAD JOURNEY: Calculate stats from leads with new buckets
   useEffect(() => {
     if (allLeads.length > 0) {
       // Untouched: leads with status 'new' and no first_contact_at
       const untouched = allLeads.filter(lead => 
-        lead.status === 'new' && !lead.first_contact_at
+        lead.status === LEAD_STATUS.NEW && !lead.first_contact_at
       ).length
       
-      // Hot Leads: leads with interest_level 'hot'
+      // Contacted: leads with status 'contacted' (after first call attempt)
+      const contacted = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.CONTACTED
+      ).length
+      
+      // Qualified: leads with status 'qualified'
+      const qualified = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.QUALIFIED
+      ).length
+      
+      // Negotiation: leads with status 'negotiation'
+      const negotiation = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.NEGOTIATION
+      ).length
+      
+      // Won: leads with status 'deal_won' or 'converted'
+      const won = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.DEAL_WON || lead.status === LEAD_STATUS.CONVERTED
+      ).length
+      
+      // Discarded: leads with status 'lost' or 'discarded'
+      const discarded = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.LOST || lead.status === LEAD_STATUS.DISCARDED
+      ).length
+      
+      // Hot Leads: leads with interest_level 'hot' (for backward compatibility)
       const hotLeads = allLeads.filter(lead => 
         lead.interest_level === 'hot'
       ).length
       
-      // Conversions: leads with converted or deal_won status
-      const converted = allLeads.filter(lead => 
-        lead.status === 'converted' || lead.status === 'deal_won'
-      ).length
-      
+      // Conversion Rate: Won / Total Leads
       const conversionRate = allLeads.length > 0 
-        ? Math.round((converted / allLeads.length) * 100) 
+        ? Math.round((won / allLeads.length) * 100) 
         : 0
       
       setStats({
@@ -934,6 +966,9 @@ export default function LeadsPage() {
         hotLeads,
         conversions: conversionRate
       })
+      
+      // Store detailed stats for potential future use
+      // Note: stats interface may need to be extended to include all buckets
     }
   }, [allLeads])
 
@@ -949,7 +984,8 @@ export default function LeadsPage() {
         lead.phone.includes(query) ||
         lead.email?.toLowerCase().includes(query) ||
         lead.requirement?.toLowerCase().includes(query) ||
-        getVehicleName(lead).toLowerCase().includes(query)
+        getVehicleName(lead).toLowerCase().includes(query) ||
+        getProductInterest(lead).toLowerCase().includes(query)
       )
     }
     
@@ -1039,12 +1075,13 @@ export default function LeadsPage() {
   function getColumnValue(lead: Lead, column: string): any {
     switch (column) {
       case 'name': return lead.name
+      case 'interest': return getProductInterest(lead)
       case 'phone': return lead.phone
       case 'email': return lead.email
       case 'source': return lead.source
       case 'status': return lead.status
       case 'interest_level': return lead.interest_level
-      case 'requirement': return lead.requirement || getVehicleName(lead)
+      case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
       case 'created_at': return lead.created_at
       case 'updated_at': return lead.updated_at
@@ -1217,19 +1254,37 @@ export default function LeadsPage() {
     }
   }
 
-  // Get vehicle name from lead
+  // Get car model from lead meta_data
   function getVehicleName(lead: Lead): string {
+    if (lead.meta_data) {
+      const carModel = lead.meta_data['car_model'] ||
+                     lead.meta_data['Car Model'] ||
+                     lead.meta_data['vehicle_model'] ||
+                     lead.meta_data['Vehicle Model'] ||
+                     lead.meta_data['vehicle'] ||
+                     lead.meta_data['Vehicle'] ||
+                     null
+      if (carModel) {
+        return String(carModel).replace(/_/g, ' ')
+      }
+    }
+    return ''
+  }
+
+  // Get product/service interest from lead
+  function getProductInterest(lead: Lead): string {
     if (lead.requirement) {
-      return lead.requirement
+      return lead.requirement.replace(/_/g, ' ')
     }
     if (lead.meta_data) {
-      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] || 
-                     lead.meta_data['what_services_are_you_looking_for'] ||
-                     lead.meta_data['vehicle'] ||
-                     lead.meta_data['car_model'] ||
-                     null
-      if (vehicle) {
-        return String(vehicle).replace(/_/g, ' ')
+      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] || 
+                             lead.meta_data['what_services_are_you_looking_for'] ||
+                             lead.meta_data['What services are you looking for?'] ||
+                             lead.meta_data['product_interest'] ||
+                             lead.meta_data['service'] ||
+                             null
+      if (productInterest) {
+        return String(productInterest).replace(/_/g, ' ')
       }
     }
     return ''
@@ -1243,8 +1298,12 @@ export default function LeadsPage() {
       return 'bg-red-100 text-red-800'
     } else if (statusLower.includes('review') || statusLower.includes('qualified')) {
       return 'bg-orange-100 text-orange-800'
+    } else if (statusLower === 'contacted') {
+      return 'bg-purple-100 text-purple-800'
     } else if (statusLower.includes('new')) {
       return 'bg-blue-100 text-blue-800'
+    } else if (statusLower === 'discarded' || statusLower === 'lost') {
+      return 'bg-gray-100 text-gray-800'
     } else if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) {
       return 'bg-green-100 text-green-800'
     }
@@ -1253,10 +1312,16 @@ export default function LeadsPage() {
 
   // Format stage name
   function formatStageName(status: string): string {
+    // Use LEAD_STATUS_LABELS if available, otherwise format manually
+    if (LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]) {
+      return LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]
+    }
     const statusLower = status.toLowerCase()
     if (statusLower.includes('negotiation')) return 'Negotiation'
     if (statusLower.includes('review')) return 'In review'
     if (statusLower.includes('new')) return 'New'
+    if (statusLower === 'contacted') return 'Contacted'
+    if (statusLower === 'discarded') return 'Discarded'
     if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) return 'Approved'
     if (statusLower.includes('qualified')) return 'Qualified'
     return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
@@ -1741,6 +1806,7 @@ export default function LeadsPage() {
                               >
                                 {[
                                   { key: 'name', label: 'Name' },
+                                  { key: 'interest', label: 'Interest' },
                                   { key: 'phone', label: 'Phone' },
                                   { key: 'email', label: 'Email' },
                                   { key: 'source', label: 'Source' },
@@ -1828,6 +1894,7 @@ export default function LeadsPage() {
                           { key: 'updated_at', label: 'Updated At' },
                           { key: 'first_contact_at', label: 'First Contact At' },
                           { key: 'name', label: 'Name' },
+                          { key: 'interest', label: 'Interest' },
                           { key: 'phone', label: 'Phone' },
                           { key: 'email', label: 'Email' },
                           { key: 'source', label: 'Source' },
@@ -2095,6 +2162,7 @@ export default function LeadsPage() {
               ) : (
                 leads.map((lead) => {
                   const vehicleName = getVehicleName(lead)
+                  const productInterest = getProductInterest(lead)
                   const isHot = lead.interest_level === 'hot'
                   
                   function renderCell(column: ColumnConfig) {
@@ -2108,6 +2176,12 @@ export default function LeadsPage() {
                                 {vehicleName}
                               </span>
                             )}
+                          </div>
+                        )
+                      case 'interest':
+                        return (
+                          <div className="text-base text-gray-900">
+                            {productInterest || '-'}
                           </div>
                         )
                       case 'status':
@@ -2289,6 +2363,7 @@ export default function LeadsPage() {
               groupBy={groupBy}
               onLeadMove={handleLeadMove}
               getVehicleName={getVehicleName}
+              getProductInterest={getProductInterest}
               getTimeAgo={getTimeAgo}
               router={router}
             />

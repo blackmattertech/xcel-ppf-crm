@@ -9,7 +9,8 @@ const updateLeadSchema = z.object({
   phone: z.string().min(1).optional(),
   email: z.string().email().nullable().optional(),
   status: z.enum([
-    'new', 
+    'new',
+    'contacted',        // NEW: After first call attempt
     'qualified', 
     'unqualified', 
     'quotation_shared',
@@ -18,7 +19,8 @@ const updateLeadSchema = z.object({
     'quotation_expired',
     'interested', 
     'negotiation', 
-    'lost', 
+    'lost',
+    'discarded',        // NEW: Explicit discarded status
     'converted',
     'deal_won',
     'payment_pending',

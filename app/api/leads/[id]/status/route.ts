@@ -7,6 +7,7 @@ import { LEAD_STATUS } from '@/shared/constants/lead-status'
 const updateStatusSchema = z.object({
   status: z.enum([
     LEAD_STATUS.NEW,
+    LEAD_STATUS.CONTACTED,        // NEW: After first call attempt
     LEAD_STATUS.QUALIFIED,
     LEAD_STATUS.UNQUALIFIED,
     LEAD_STATUS.QUOTATION_SHARED,
@@ -16,6 +17,7 @@ const updateStatusSchema = z.object({
     LEAD_STATUS.INTERESTED,
     LEAD_STATUS.NEGOTIATION,
     LEAD_STATUS.LOST,
+    LEAD_STATUS.DISCARDED,        // NEW: Explicit discarded status
     LEAD_STATUS.CONVERTED,
     LEAD_STATUS.DEAL_WON,
     LEAD_STATUS.PAYMENT_PENDING,

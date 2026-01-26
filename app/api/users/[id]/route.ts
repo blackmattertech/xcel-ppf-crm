@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requirePermission } from '@/backend/middleware/auth'
+import { requireAuth, requirePermission } from '@/backend/middleware/auth'
 import { getUserById, updateUser, deleteUser } from '@/backend/services/user.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
@@ -13,6 +13,7 @@ const updateUserSchema = z.object({
   address: z.string().nullable().optional(),
   dob: z.string().nullable().optional(),
   doj: z.string().nullable().optional(),
+  languagesKnown: z.array(z.string()).nullable().optional(),
 })
 
 export async function GET(
@@ -21,10 +22,22 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const authResult = await requirePermission(request, PERMISSIONS.USERS_READ)
+    // Allow users to read their own profile OR require USERS_READ permission for others
+    const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
       return authResult.error
+    }
+
+    const { user: currentUser } = authResult
+    const isOwnProfile = currentUser.id === id
+
+    // If reading someone else's profile, require USERS_READ permission
+    if (!isOwnProfile) {
+      const permissionResult = await requirePermission(request, PERMISSIONS.USERS_READ)
+      if ('error' in permissionResult) {
+        return permissionResult.error
+      }
     }
 
     const user = await getUserById(id)
@@ -43,14 +56,35 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const authResult = await requirePermission(request, PERMISSIONS.USERS_UPDATE)
+    // Allow users to update their own profile OR require USERS_UPDATE permission for others
+    const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
+    const { user: currentUser } = authResult
+    const isOwnProfile = currentUser.id === id
+    const isAdmin = currentUser.role.name === 'super_admin' || currentUser.role.name === 'admin'
+
+    // If editing someone else's profile, require USERS_UPDATE permission
+    if (!isOwnProfile) {
+      const permissionResult = await requirePermission(request, PERMISSIONS.USERS_UPDATE)
+      if ('error' in permissionResult) {
+        return permissionResult.error
+      }
+    }
+
     const body = await request.json()
-    const { name, phone, roleId, branchId, profileImageUrl, address, dob, doj } = updateUserSchema.parse(body)
+    let { name, phone, roleId, branchId, profileImageUrl, address, dob, doj, languagesKnown } = updateUserSchema.parse(body)
+
+    // If user is editing their own profile, prevent role change unless they're admin
+    if (isOwnProfile && !isAdmin) {
+      // Get current user's role and keep it
+      const { getUserById } = await import('@/backend/services/user.service')
+      const currentUserData = await getUserById(id)
+      roleId = (currentUserData as any).role?.id || roleId
+    }
 
     const user = await updateUser(
       id, 
@@ -61,7 +95,8 @@ export async function PUT(
       profileImageUrl || null,
       address || null,
       dob || null,
-      doj || null
+      doj || null,
+      languagesKnown || null
     )
 
     return NextResponse.json({ user })

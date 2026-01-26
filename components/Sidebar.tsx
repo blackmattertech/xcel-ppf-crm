@@ -1,23 +1,46 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
-
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
-
-// Use the centralized sidebar configuration
-const menuItems: SidebarMenuItem[] = SIDEBAR_MENU_ITEMS
+import { ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string>('')
+  const [userEmail, setUserEmail] = useState<string>('')
+  const [userProfileImage, setUserProfileImage] = useState<string | null>(null)
   const [userPermissions, setUserPermissions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [followUpCount, setFollowUpCount] = useState(0)
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+
+  // Load collapsed state from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebar-collapsed')
+      if (saved === 'true') {
+        setIsCollapsed(true)
+      }
+    }
+  }, [])
+
+  // Save collapsed state to localStorage and notify Layout
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sidebar-collapsed', String(isCollapsed))
+      // Dispatch custom event to notify Layout
+      window.dispatchEvent(new CustomEvent('sidebar-toggle', { detail: { isCollapsed } }))
+    }
+  }, [isCollapsed])
 
   useEffect(() => {
     checkAuth()
@@ -26,7 +49,6 @@ export default function Sidebar() {
   useEffect(() => {
     if (userRole === 'tele_caller') {
       fetchFollowUpCount()
-      // Refresh count every 5 minutes
       const interval = setInterval(fetchFollowUpCount, 5 * 60 * 1000)
       return () => clearInterval(interval)
     }
@@ -53,11 +75,14 @@ export default function Sidebar() {
       return
     }
 
-    // Fetch user data with role and permissions
+    setUserId(user.id) // Store user ID for profile editing
+
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select(`
         name,
+        email,
+        profile_image_url,
         role_id,
         roles!users_role_id_fkey (
           name,
@@ -72,14 +97,24 @@ export default function Sidebar() {
       .single()
 
     if (userData) {
-      setUserName(userData.name)
+      setUserName(userData.name || '')
+      setUserEmail(userData.email || '')
+      // Ensure profile_image_url is set correctly (could be null, empty string, or a URL)
+      const profileImage = userData.profile_image_url && userData.profile_image_url.trim() !== '' 
+        ? userData.profile_image_url 
+        : null
+      setUserProfileImage(profileImage)
       
-      // Extract role and permissions
+      console.log('User data loaded:', {
+        name: userData.name,
+        email: userData.email,
+        profile_image_url: profileImage,
+      })
+      
       const roleData = (userData as any).roles
       if (roleData) {
         setUserRole(roleData.name)
         
-        // Extract permissions from role_permissions
         const permissions = (roleData.role_permissions || [])
           .map((rp: any) => rp.permissions?.name)
           .filter(Boolean)
@@ -88,14 +123,24 @@ export default function Sidebar() {
       }
     } else if (userError) {
       console.error('Error fetching user:', userError)
-      // User exists in Auth but not in users table
-      if (userError.code === 'PGRST116') {
-        console.warn('User not found in database. Please run: npx tsx scripts/add-user-to-db.ts <your-email> "<your-name>" <role>')
-      }
     }
     
     setLoading(false)
   }
+
+  // Close profile menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false)
+      }
+    }
+
+    if (showProfileMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showProfileMenu])
 
   async function handleLogout() {
     const supabase = createClient()
@@ -104,19 +149,15 @@ export default function Sidebar() {
   }
 
   // Filter menu items based on user role and permissions
-  const filteredMenuItems = menuItems.filter((item) => {
-    // If item doesn't require permissions, show it to all authenticated users
+  const filteredMenuItems = SIDEBAR_MENU_ITEMS.filter((item) => {
     if (!item.requiresPermissions) {
       return true
     }
 
-    // Check if user's role is explicitly allowed
     if (item.roles && userRole && item.roles.includes(userRole)) {
       return true
     }
 
-    // Check if user has permission for this resource
-    // User needs either {resource}.read or {resource}.manage permission
     const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
     const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
     
@@ -124,27 +165,50 @@ export default function Sidebar() {
       return true
     }
 
-    // If item has roles restriction and user doesn't have permission, hide it
     return false
   })
 
   if (loading) {
     return (
-      <div className="fixed left-0 top-0 w-64 h-screen bg-gray-900 flex items-center justify-center z-50">
+      <div className={`fixed left-0 top-0 h-screen bg-black flex items-center justify-center z-50 transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-60'}`}>
         <div className="text-white">Loading...</div>
       </div>
     )
   }
 
+  const sidebarWidth = isCollapsed ? 'w-16' : 'w-60'
+
   return (
-    <div className="fixed left-0 top-0 w-64 h-screen bg-gray-900 flex flex-col z-50 overflow-y-auto">
-      {/* Logo/Brand */}
-      <div className="p-6 border-b border-gray-800 flex-shrink-0">
-        <h1 className="text-xl font-bold text-white">Xcel CRM</h1>
+    <div className={`fixed left-0 top-0 h-screen bg-black flex flex-col z-50 overflow-y-auto transition-all duration-300 ${sidebarWidth} border-r border-gray-800`}>
+      {/* Logo/Brand Section */}
+      <div className={`p-6 border-b border-gray-800 flex-shrink-0 flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'}`}>
+        {isCollapsed ? (
+          <div className="w-12 h-12 flex items-center justify-center">
+            <Image
+              src="/assets/sidebar/public/assets/logo.png"
+              alt="Xcel Logo"
+              width={48}
+              height={48}
+              className="object-contain"
+              style={{ width: 'auto', height: 'auto', maxWidth: '48px', maxHeight: '48px' }}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center justify-start">
+            <Image
+              src="/assets/sidebar/public/assets/logo.png"
+              alt="Xcel Logo"
+              width={48}
+              height={48}
+              className="object-contain"
+              style={{ width: 'auto', height: 'auto', maxWidth: '48px', maxHeight: '48px' }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      {/* Navigation Items */}
+      <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
         {filteredMenuItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
           const showBadge = item.href === '/leads' && userRole === 'tele_caller' && followUpCount > 0
@@ -153,51 +217,206 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
+              className={`relative flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-start px-4'} py-3 rounded-lg transition-all group ${
                 isActive
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-[#242d35] text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
+              title={isCollapsed ? item.name : undefined}
             >
-              <div className="flex items-center space-x-3">
+              {/* Active indicator bar */}
+              {isActive && (
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#de0510] rounded-l" />
+              )}
+              
+              {/* Icon */}
+              <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                {item.iconPath ? (
+                  item.iconPath.endsWith('.svg') ? (
+                    <img
+                      src={item.iconPath}
+                      alt={item.name}
+                      className="opacity-90 w-6 h-6 object-contain"
+                      style={{ maxWidth: '24px', maxHeight: '24px' }}
+                    />
+                  ) : (
+                    <Image
+                      src={item.iconPath}
+                      alt={item.name}
+                      width={24}
+                      height={24}
+                      className="opacity-90 object-contain"
+                      style={{ width: 'auto', height: 'auto', maxWidth: '24px', maxHeight: '24px' }}
+                    />
+                  )
+                ) : (
                 <span className="text-xl">{item.icon}</span>
-                <span className="font-medium">{item.name}</span>
+                )}
               </div>
+              
+              {/* Label */}
+              {!isCollapsed && (
+                <>
+                  <span className="ml-3 font-medium text-base flex-1">{item.name}</span>
               {showBadge && (
                 <span className={`px-2 py-1 text-xs font-bold rounded-full ${
                   isActive 
-                    ? 'bg-red-500 text-white' 
-                    : 'bg-red-600 text-white'
+                        ? 'bg-[#de0510] text-white' 
+                        : 'bg-[#de0510] text-white'
                 }`}>
                   {followUpCount}
                 </span>
+                  )}
+                </>
               )}
             </Link>
           )
         })}
       </nav>
 
-      {/* User Info & Logout */}
-      <div className="p-4 border-t border-gray-800 flex-shrink-0">
-        <div className="flex items-center space-x-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold">
-            {userName ? userName.charAt(0).toUpperCase() : 'U'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{userName}</p>
-            <p className="text-xs text-gray-400 capitalize">
-              {userRole?.replace('_', ' ') || 'User'}
-            </p>
-          </div>
+      {/* Bottom Section - Logout, Settings & Help */}
+      <div className="border-t border-gray-800 flex-shrink-0">
+        <div className="p-2 space-y-1">
+          {/* Logout Button - Above Settings */}
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-start px-4'} py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors`}
+            title={isCollapsed ? 'Logout' : undefined}
+          >
+            <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+              <LogOut size={20} className="opacity-90" />
+            </div>
+            {!isCollapsed && <span className="ml-3 font-medium text-base">Logout</span>}
+          </button>
+          
+          {/* Divider line */}
+          <div className="border-t border-gray-800 my-1" />
+          
+          <Link
+            href="/settings"
+            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-start px-4'} py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors`}
+            title={isCollapsed ? 'Settings' : undefined}
+          >
+            <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+              <img
+                src="/assets/sidebar/settings.svg"
+                alt="Settings"
+                className="opacity-90 w-6 h-6 object-contain"
+                style={{ maxWidth: '24px', maxHeight: '24px' }}
+              />
+            </div>
+            {!isCollapsed && <span className="ml-3 font-medium text-base">Settings</span>}
+          </Link>
+          <Link
+            href="/help"
+            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-start px-4'} py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors`}
+            title={isCollapsed ? 'Help center' : undefined}
+          >
+            <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+              <img
+                src="/assets/sidebar/help.svg"
+                alt="Help"
+                className="opacity-90 w-6 h-6 object-contain"
+                style={{ maxWidth: '24px', maxHeight: '24px' }}
+              />
+            </div>
+            {!isCollapsed && <span className="ml-3 font-medium text-base">Help center</span>}
+          </Link>
         </div>
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition-colors"
-        >
-          <span>🚪</span>
-          <span>Logout</span>
-        </button>
       </div>
+
+      {/* User Profile Section */}
+      <div className="border-t border-gray-800 flex-shrink-0 p-6">
+        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'}`}>
+          {/* Avatar - Clickable */}
+          <div className="flex-shrink-0 relative" ref={profileMenuRef}>
+            <button
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              className="relative focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:ring-offset-2 focus:ring-offset-black rounded-full transition-transform hover:scale-105"
+              aria-label="Profile menu"
+            >
+              {userProfileImage ? (
+                <div className="relative">
+                  <Image
+                    src={userProfileImage}
+                    alt={userName}
+                    width={48}
+                    height={48}
+                    className="rounded-full object-cover border-2 border-gray-700 cursor-pointer"
+                    onError={(e) => {
+                      // Hide image on error and show fallback
+                      const target = e.target as HTMLImageElement
+                      target.style.display = 'none'
+                      const parent = target.parentElement
+                      if (parent) {
+                        const fallback = document.createElement('div')
+                        fallback.className = 'w-12 h-12 rounded-full bg-[#de0510] flex items-center justify-center text-white font-semibold text-base border-2 border-gray-700 cursor-pointer'
+                        fallback.textContent = userName ? userName.charAt(0).toUpperCase() : 'U'
+                        parent.appendChild(fallback)
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-[#de0510] flex items-center justify-center text-white font-semibold text-base border-2 border-gray-700 cursor-pointer">
+                  {userName ? userName.charAt(0).toUpperCase() : 'U'}
+                </div>
+              )}
+              {/* Online indicator */}
+              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-black" />
+            </button>
+            
+            {/* Profile Dropdown Menu */}
+            {showProfileMenu && (
+              <div className={`absolute ${isCollapsed ? 'left-full ml-2 bottom-0' : 'bottom-full left-0 mb-2'} w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden`}>
+                <div className="py-1">
+                  <Link
+                    href={userId ? `/admin/users/${userId}` : '/settings'}
+                    onClick={() => setShowProfileMenu(false)}
+                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
+                    <User size={16} className="mr-3 text-gray-500" />
+                    <span>Edit Profile</span>
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setShowProfileMenu(false)
+                      handleLogout()
+                    }}
+                    className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors text-left"
+                  >
+                    <LogOut size={16} className="mr-3 text-gray-500" />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* User Info */}
+          {!isCollapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate">{userName || 'User'}</p>
+              <p className="text-xs text-gray-400 truncate capitalize">
+                {userRole ? userRole.replace('_', ' ') : 'User'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Collapse Toggle Button */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="absolute bottom-20 right-2 p-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors z-10"
+        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {isCollapsed ? (
+          <ChevronRight size={16} />
+        ) : (
+          <ChevronLeft size={16} />
+        )}
+      </button>
     </div>
   )
 }
