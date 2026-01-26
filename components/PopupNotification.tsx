@@ -1,112 +1,55 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-
-interface FollowUp {
-  id: string
-  scheduled_at: string
-  notes: string | null
-  lead: {
-    id: string
-    name: string
-    phone: string
-  } | null
-}
-
-interface FollowUpNotifications {
-  overdue: FollowUp[]
-  upcoming: FollowUp[]
-  totalPending: number
-}
+import { useAuth } from '@/contexts/AuthContext'
+import { useFollowUpNotifications } from '@/hooks/useFollowUpNotifications'
 
 export default function PopupNotification() {
-  const [notifications, setNotifications] = useState<FollowUpNotifications | null>(null)
-  const [userRole, setUserRole] = useState<string | null>(null)
+  const { user } = useAuth()
   const [showPopup, setShowPopup] = useState(false)
   const [lastNotificationTime, setLastNotificationTime] = useState<number>(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  async function checkUserRole() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) return
+  const userRole = user?.role || null
+  const isTeleCaller = userRole === 'tele_caller'
+  
+  // Use shared hook - React Query will handle caching and deduplication
+  const { data: notifications } = useFollowUpNotifications(isTeleCaller)
 
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role_id, roles!users_role_id_fkey(name)')
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      const roleName = Array.isArray(userData.roles) 
-        ? userData.roles[0]?.name 
-        : (userData.roles as any)?.name
-      setUserRole(roleName)
-    }
-  }
-
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const response = await fetch('/api/followups/notifications')
-      if (response.ok) {
-        const data = await response.json()
+  // Show popup when overdue follow-ups are detected
+  useEffect(() => {
+    if (notifications && notifications.overdue.length > 0) {
+      const hasOverdue = notifications.overdue.length > 0
+      const currentTime = Date.now()
+      
+      // Show popup if there are overdue follow-ups and we haven't shown one in the last 10 minutes
+      if (hasOverdue && (currentTime - lastNotificationTime > 10 * 60 * 1000)) {
+        setShowPopup(true)
+        setLastNotificationTime(currentTime)
         
-        // Only show popup if there are new overdue follow-ups
-        const hasOverdue = (data.overdue?.length || 0) > 0
-        const currentTime = Date.now()
-        
-        // Show popup if there are overdue follow-ups and we haven't shown one in the last 10 minutes
-        if (hasOverdue && (currentTime - lastNotificationTime > 10 * 60 * 1000)) {
-          setShowPopup(true)
-          setLastNotificationTime(currentTime)
-          
-          // Request browser notification permission
-          if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission()
-          }
-          
-          // Show browser notification if permission granted
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Overdue Follow-ups', {
-              body: `You have ${data.overdue.length} overdue follow-up${data.overdue.length > 1 ? 's' : ''} that need attention.`,
-              icon: '/favicon.ico',
-              tag: 'followup-notification',
-            })
-          }
+        // Request browser notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission()
         }
         
-        setNotifications(data)
+        // Show browser notification if permission granted
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Overdue Follow-ups', {
+            body: `You have ${notifications.overdue.length} overdue follow-up${notifications.overdue.length > 1 ? 's' : ''} that need attention.`,
+            icon: '/favicon.ico',
+            tag: 'followup-notification',
+          })
+        }
       }
-    } catch (error) {
-      console.error('Failed to fetch follow-up notifications:', error)
     }
-  }, [lastNotificationTime])
-
-  useEffect(() => {
-    checkUserRole()
-  }, [])
-
-  useEffect(() => {
-    if (userRole === 'tele_caller') {
-      fetchNotifications()
-      // Check for new notifications every 2 minutes
-      const interval = setInterval(() => {
-        fetchNotifications()
-      }, 2 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [userRole, fetchNotifications])
+  }, [notifications, lastNotificationTime])
 
   // Play notification sound when popup shows
   useEffect(() => {
     if (showPopup && notifications && notifications.overdue.length > 0) {
       try {
         // Create audio element with your custom notification sound
-        // Place your audio file in the public folder (e.g., public/notification.wav)
-        // Supported formats: .mp3, .wav, .ogg
         audioRef.current = new Audio('/notification.wav')
         audioRef.current.loop = true // Loop continuously
         audioRef.current.volume = 0.7 // Set volume (0.0 to 1.0)
@@ -133,7 +76,7 @@ export default function PopupNotification() {
   }, [showPopup, notifications])
 
   // Only show for tele-callers with overdue follow-ups
-  if (userRole !== 'tele_caller' || !showPopup || !notifications || notifications.overdue.length === 0) {
+  if (!isTeleCaller || !showPopup || !notifications || notifications.overdue.length === 0) {
     return null
   }
 

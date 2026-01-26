@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-
+import { useAuth } from '@/contexts/AuthContext'
+import { useFollowUpNotifications } from '@/hooks/useFollowUpNotifications'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
 
 // Use the centralized sidebar configuration
@@ -13,89 +13,23 @@ const menuItems: SidebarMenuItem[] = SIDEBAR_MENU_ITEMS
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [userName, setUserName] = useState<string>('')
-  const [userPermissions, setUserPermissions] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [followUpCount, setFollowUpCount] = useState(0)
+  const { user, isLoading, isAuthenticated } = useAuth()
+  
+  // Only fetch follow-up notifications if user is a tele_caller
+  const { data: followUpData } = useFollowUpNotifications(
+    user?.role === 'tele_caller'
+  )
 
-  useEffect(() => {
-    checkAuth()
-  }, [])
-
-  useEffect(() => {
-    if (userRole === 'tele_caller') {
-      fetchFollowUpCount()
-      // Refresh count every 5 minutes
-      const interval = setInterval(fetchFollowUpCount, 5 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [userRole])
-
-  async function fetchFollowUpCount() {
-    try {
-      const response = await fetch('/api/followups/notifications')
-      if (response.ok) {
-        const data = await response.json()
-        setFollowUpCount(data.totalPending || 0)
-      }
-    } catch (error) {
-      console.error('Failed to fetch follow-up count:', error)
-    }
+  // Redirect to login if not authenticated
+  if (!isLoading && !isAuthenticated) {
+    router.push('/login')
+    return null
   }
 
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      router.push('/login')
-      return
-    }
-
-    // Fetch user data with role and permissions
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select(`
-        name,
-        role_id,
-        roles!users_role_id_fkey (
-          name,
-          role_permissions (
-            permissions (
-              name
-            )
-          )
-        )
-      `)
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      setUserName(userData.name)
-      
-      // Extract role and permissions
-      const roleData = (userData as any).roles
-      if (roleData) {
-        setUserRole(roleData.name)
-        
-        // Extract permissions from role_permissions
-        const permissions = (roleData.role_permissions || [])
-          .map((rp: any) => rp.permissions?.name)
-          .filter(Boolean)
-        
-        setUserPermissions(permissions)
-      }
-    } else if (userError) {
-      console.error('Error fetching user:', userError)
-      // User exists in Auth but not in users table
-      if (userError.code === 'PGRST116') {
-        console.warn('User not found in database. Please run: npx tsx scripts/add-user-to-db.ts <your-email> "<your-name>" <role>')
-      }
-    }
-    
-    setLoading(false)
-  }
+  const userRole = user?.role || null
+  const userName = user?.name || ''
+  const userPermissions = user?.permissions || []
+  const followUpCount = followUpData?.totalPending || 0
 
   async function handleLogout() {
     const supabase = createClient()
@@ -128,7 +62,7 @@ export default function Sidebar() {
     return false
   })
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="fixed left-0 top-0 w-64 h-screen bg-gray-900 flex items-center justify-center z-50">
         <div className="text-white">Loading...</div>

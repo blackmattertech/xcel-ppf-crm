@@ -1,108 +1,42 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAnalytics } from '@/hooks/useAnalytics'
+import { useFollowUpNotifications } from '@/hooks/useFollowUpNotifications'
 import Layout from '@/components/Layout'
-
-interface Analytics {
-  leadsBySource: Record<string, number>
-  leadsByStatus: Record<string, number>
-  conversionRate: number
-  repPerformance: Array<{
-    user_id: string
-    user_name: string
-    total_leads: number
-    converted_leads: number
-    conversion_rate: number
-  }>
-  followUpCompliance: number
-  slaBreaches: number
-}
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [analytics, setAnalytics] = useState<Analytics | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [followUpAlerts, setFollowUpAlerts] = useState<{
-    overdue: number
-    upcoming: number
-    adminNotifications?: number
-  } | null>(null)
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth()
+  const { data: analytics, isLoading: analyticsLoading } = useAnalytics()
+  
+  const userRole = user?.role || null
+  const isTeleCaller = userRole === 'tele_caller'
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin'
+  
+  // Only fetch follow-up notifications if needed
+  const { data: followUpData } = useFollowUpNotifications(isTeleCaller || isAdmin)
 
+  // Redirect if not authenticated
   useEffect(() => {
-    checkAuth()
-    fetchAnalytics()
-  }, [])
-
-  useEffect(() => {
-    if (userRole === 'tele_caller') {
-      fetchFollowUpAlerts()
-      // Refresh alerts every 5 minutes
-      const interval = setInterval(fetchFollowUpAlerts, 5 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [userRole])
-
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
+    if (!authLoading && !isAuthenticated) {
       router.push('/login')
-      return
     }
+  }, [authLoading, isAuthenticated, router])
 
-    // Get user role
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role:roles(name)')
-      .eq('id', user.id)
-      .single()
-
-    const roleName = (userData as any)?.role?.name
-    setUserRole(roleName)
+  // Don't show anything if not authenticated
+  if (!authLoading && !isAuthenticated) {
+    return null
   }
 
-  async function fetchAnalytics() {
-    try {
-      const response = await fetch('/api/analytics')
-      if (response.ok) {
-        const data = await response.json()
-        setAnalytics(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch analytics:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function fetchFollowUpAlerts() {
-    try {
-      const response = await fetch('/api/followups/notifications')
-      if (response.ok) {
-        const data = await response.json()
-        setFollowUpAlerts({
-          overdue: data.overdue?.length || 0,
-          upcoming: data.upcoming?.length || 0,
-          adminNotifications: data.adminNotifications?.length || 0,
-        })
-      }
-    } catch (error) {
-      console.error('Failed to fetch follow-up alerts:', error)
-    }
-  }
-
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    )
-  }
+  const followUpAlerts = followUpData ? {
+    overdue: followUpData.overdue?.length || 0,
+    upcoming: followUpData.upcoming?.length || 0,
+    adminNotifications: followUpData.adminNotifications?.length || 0,
+  } : null
 
   return (
     <Layout>
@@ -111,7 +45,7 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
 
           {/* Follow-up Alerts for Tele-callers */}
-          {userRole === 'tele_caller' && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
+          {isTeleCaller && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
             <div className="mb-6">
               {followUpAlerts.overdue > 0 && (
                 <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
@@ -155,7 +89,7 @@ export default function DashboardPage() {
           )}
 
           {/* Admin Follow-up Alerts */}
-          {(userRole === 'admin' || userRole === 'super_admin') && followUpAlerts && followUpAlerts.adminNotifications && followUpAlerts.adminNotifications > 0 && (
+          {isAdmin && followUpAlerts && followUpAlerts.adminNotifications && followUpAlerts.adminNotifications > 0 && (
             <div className="mb-6">
               <div className="bg-orange-50 border-l-4 border-orange-400 p-4">
                 <div className="flex">
@@ -185,6 +119,17 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Summary Cards - Show skeleton while loading */}
+          {analyticsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                  <div className="h-8 bg-gray-200 rounded w-16"></div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
@@ -214,7 +159,26 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
+          )}
 
+          {/* Charts - Show skeleton while loading */}
+          {analyticsLoading ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {[1, 2].map((i) => (
+                <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                  <div className="h-6 bg-gray-200 rounded w-32 mb-4"></div>
+                  <div className="space-y-2">
+                    {[1, 2, 3, 4].map((j) => (
+                      <div key={j} className="flex justify-between">
+                        <div className="h-4 bg-gray-200 rounded w-24"></div>
+                        <div className="h-4 bg-gray-200 rounded w-8"></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Leads by Source</h2>
@@ -240,6 +204,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+          )}
 
           {analytics && analytics.repPerformance.length > 0 && (
             <div className="bg-white rounded-lg shadow p-6 mt-6">

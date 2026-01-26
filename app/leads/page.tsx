@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/AuthContext'
+import { useLeads } from '@/hooks/useLeads'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
 import { Bell, Search, MoreVertical, Plus, Download, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake } from 'lucide-react'
@@ -656,12 +657,15 @@ function KanbanBoard({
 
 export default function LeadsPage() {
   const router = useRouter()
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth()
+  const { data: allLeadsData = [], isLoading: leadsLoading } = useLeads()
   const [leads, setLeads] = useState<Lead[]>([])
   const [allLeads, setAllLeads] = useState<Lead[]>([])
-  const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState<string | null>(null)
   const [teleCallers, setTeleCallers] = useState<TeleCaller[]>([])
   const [stats, setStats] = useState<LeadStats>({ untouched: 0, hotLeads: 0, conversions: 0 })
+  
+  const userRole = user?.role || null
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin'
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'grid'>('table')
   const [groupBy, setGroupBy] = useState<string>('status')
@@ -765,10 +769,26 @@ export default function LeadsPage() {
     }
   })
 
+  // Update allLeads when data is fetched
   useEffect(() => {
-    checkAuth()
-    fetchLeads()
-  }, [])
+    if (allLeadsData.length > 0) {
+      setAllLeads(allLeadsData as Lead[])
+    }
+  }, [allLeadsData])
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [authLoading, isAuthenticated, router])
+
+  // Fetch tele-callers if admin
+  useEffect(() => {
+    if (isAdmin) {
+      fetchTeleCallers()
+    }
+  }, [isAdmin])
   
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1053,34 +1073,6 @@ export default function LeadsPage() {
     ]
   }
 
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      router.push('/login')
-      return
-    }
-
-    // Get user role
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role_id, roles!users_role_id_fkey(name)')
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      const typedUserData = userData as { role_id: string; roles: { name: string } | null }
-      const roleName = typedUserData.roles?.name || null
-      setUserRole(roleName)
-
-      // If admin or super_admin, fetch tele_callers for reassignment
-      if (roleName === 'admin' || roleName === 'super_admin') {
-        fetchTeleCallers()
-      }
-    }
-  }
-
   async function fetchTeleCallers() {
     try {
       const response = await fetch('/api/users/tele-callers')
@@ -1090,20 +1082,6 @@ export default function LeadsPage() {
       }
     } catch (error) {
       console.error('Failed to fetch tele-callers:', error)
-    }
-  }
-
-  async function fetchLeads() {
-    try {
-      const response = await fetch('/api/leads')
-      if (response.ok) {
-        const data = await response.json()
-        setAllLeads(data.leads || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch leads:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -1348,7 +1326,7 @@ export default function LeadsPage() {
     setColumns(defaultColumns)
   }
 
-  const isAdmin = userRole === 'admin' || userRole === 'super_admin'
+  const loading = authLoading || leadsLoading
   const totalPages = Math.ceil(
     (searchQuery.trim() 
       ? allLeads.filter(lead => 
@@ -1359,14 +1337,9 @@ export default function LeadsPage() {
       : allLeads.length) / itemsPerPage
   )
 
-  if (loading) {
-    return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-lg">Loading...</div>
-        </div>
-      </Layout>
-    )
+  // Don't show anything if not authenticated
+  if (!authLoading && !isAuthenticated) {
+    return null
   }
 
   return (

@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/contexts/AuthContext'
+import { useProducts } from '@/hooks/useProducts'
+import { useLeads } from '@/hooks/useLeads'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
 
@@ -27,11 +30,12 @@ interface ProductWithStats extends Product {
 
 export default function ProductsPage() {
   const router = useRouter()
-  const [products, setProducts] = useState<ProductWithStats[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth()
+  const { data: products = [], isLoading: productsLoading, refetch: refetchProducts } = useProducts()
+  const { data: allLeads = [] } = useLeads()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProduct, setEditingProduct] = useState<ProductWithStats | null>(null)
-  const [totalLeads, setTotalLeads] = useState(0)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -45,94 +49,31 @@ export default function ProductsPage() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [userRole, setUserRole] = useState<string | null>(null)
 
+  const userRole = user?.role || null
+  const userPermissions = user?.permissions || []
+
+  // Redirect if not authenticated
   useEffect(() => {
-    checkAuth()
-    fetchProducts()
-    fetchTotalLeads()
-  }, [])
-
-  async function fetchTotalLeads() {
-    try {
-      const response = await fetch('/api/leads')
-      if (response.ok) {
-        const data = await response.json()
-        setTotalLeads(data.leads?.length || 0)
-      }
-    } catch (error) {
-      console.error('Failed to fetch total leads:', error)
-    }
-  }
-
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
+    if (!authLoading && !isAuthenticated) {
       router.push('/login')
       return
     }
 
-    // Fetch user with role and permissions
-    const { data: userData } = await supabase
-      .from('users')
-      .select(`
-        role_id,
-        roles!users_role_id_fkey (
-          name,
-          role_permissions (
-            permissions (
-              name
-            )
-          )
-        )
-      `)
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      const roleData = (userData as any).roles
-      if (roleData) {
-        const roleName = roleData.name
-        setUserRole(roleName)
-        
-        // Extract permissions
-        const permissions = (roleData.role_permissions || [])
-          .map((rp: any) => rp.permissions?.name)
-          .filter(Boolean)
-        
-        // Check if user has permission to view products
-        // User needs products.read or products.manage permission
-        const hasReadPermission = permissions.includes('products.read')
-        const hasManagePermission = permissions.includes('products.manage')
-        
-        // Also allow super_admin, admin, and marketing roles (for backward compatibility)
-        const isAllowedRole = roleName === 'super_admin' || roleName === 'admin' || roleName === 'marketing'
-        
-        if (!isAllowedRole && !hasReadPermission && !hasManagePermission) {
-          router.push('/dashboard')
-        }
-      } else {
+    // Check permissions
+    if (!authLoading && user) {
+      const hasReadPermission = userPermissions.includes('products.read')
+      const hasManagePermission = userPermissions.includes('products.manage')
+      const isAllowedRole = userRole === 'super_admin' || userRole === 'admin' || userRole === 'marketing'
+      
+      if (!isAllowedRole && !hasReadPermission && !hasManagePermission) {
         router.push('/dashboard')
       }
-    } else {
-      router.push('/dashboard')
     }
-  }
+  }, [authLoading, isAuthenticated, user, userRole, userPermissions, router])
 
-  async function fetchProducts() {
-    try {
-      const response = await fetch('/api/products?with_stats=true')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(data || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch products:', error)
-    } finally {
-      setLoading(false)
-    }
+  if (!authLoading && !isAuthenticated) {
+    return null
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -245,8 +186,9 @@ export default function ProductsPage() {
       setImageUrl(null)
       setShowCreateModal(false)
       
-      // Refresh products list
-      await fetchProducts()
+      // Invalidate and refetch products
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      await refetchProducts()
     } catch (error) {
       console.error('Error creating product:', error)
       alert(error instanceof Error ? error.message : 'Failed to create product')
@@ -307,8 +249,9 @@ export default function ProductsPage() {
       setImageUrl(null)
       setEditingProduct(null)
       
-      // Refresh products list
-      await fetchProducts()
+      // Invalidate and refetch products
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      await refetchProducts()
     } catch (error) {
       console.error('Error updating product:', error)
       alert(error instanceof Error ? error.message : 'Failed to update product')
@@ -332,8 +275,9 @@ export default function ProductsPage() {
         throw new Error(error.error || 'Failed to delete product')
       }
 
-      // Refresh products list
-      await fetchProducts()
+      // Invalidate and refetch products
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      await refetchProducts()
     } catch (error) {
       console.error('Error deleting product:', error)
       alert(error instanceof Error ? error.message : 'Failed to delete product')
@@ -372,18 +316,10 @@ export default function ProductsPage() {
     setImageUrl(null)
   }
 
-  const canCreate = userRole === 'super_admin' || userRole === 'admin' || userRole === 'marketing'
-  const canDelete = userRole === 'super_admin' || userRole === 'admin'
+  const canCreate = userRole === 'super_admin' || userRole === 'admin' || userRole === 'marketing' || userPermissions.includes('products.create') || userPermissions.includes('products.manage')
+  const canDelete = userRole === 'super_admin' || userRole === 'admin' || userPermissions.includes('products.delete') || userPermissions.includes('products.manage')
 
-  if (loading) {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center h-screen">
-          <div className="text-gray-600">Loading...</div>
-        </div>
-      </Layout>
-    )
-  }
+  const loading = productsLoading || authLoading
 
   return (
     <Layout>
@@ -400,12 +336,22 @@ export default function ProductsPage() {
           )}
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats Cards - Show skeleton while loading */}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[1, 2].map((i) => (
+              <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                <div className="h-8 bg-gray-200 rounded w-16"></div>
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
             <p className="text-2xl font-bold text-gray-900 mt-2">
-              {totalLeads}
+              {allLeads.length}
             </p>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
@@ -415,7 +361,27 @@ export default function ProductsPage() {
             </p>
           </div>
         </div>
+        )}
 
+        {/* Products Grid - Show skeleton while loading */}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="bg-white rounded-lg shadow-md overflow-hidden animate-pulse">
+                <div className="w-full h-48 bg-gray-200"></div>
+                <div className="p-4">
+                  <div className="h-5 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2 mb-3"></div>
+                  <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : products.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No products found. {canCreate && 'Click "Add New Product" to create one.'}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {products.map((product) => (
             <div
@@ -502,11 +468,6 @@ export default function ProductsPage() {
             </div>
           ))}
         </div>
-
-        {products.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            No products found. {canCreate && 'Click "Add New Product" to create one.'}
-          </div>
         )}
       </div>
 
