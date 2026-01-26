@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
+import Image from 'next/image'
 import { 
   LEAD_STATUS, 
   LEAD_STATUS_LABELS, 
@@ -32,6 +33,7 @@ interface Lead {
     id: string
     name: string
     email: string
+    profile_image_url?: string | null
   } | null
   created_at: string
   meta_data?: Record<string, any> | null
@@ -117,6 +119,7 @@ export default function LeadDetailPage() {
   const [followUpNotes, setFollowUpNotes] = useState('')
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [showStatusUpdateModal, setShowStatusUpdateModal] = useState(false)
 
   useEffect(() => {
     checkAuth()
@@ -571,8 +574,11 @@ export default function LeadDetailPage() {
   if (loading) {
     return (
       <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-lg">Loading...</div>
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" />
+        <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+          <div className="bg-white shadow-2xl rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto pointer-events-auto p-6">
+            <div className="text-lg text-gray-600">Loading...</div>
+          </div>
         </div>
       </Layout>
     )
@@ -581,17 +587,20 @@ export default function LeadDetailPage() {
   if (error || !lead) {
     return (
       <Layout>
-        <div className="p-8">
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-              {error || 'Lead not found'}
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => router.push('/leads')} />
+        <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+          <div className="bg-white shadow-2xl rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto pointer-events-auto p-6">
+            <div className="text-center">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+                {error || 'Lead not found'}
+              </div>
+              <button
+                onClick={() => router.push('/leads')}
+                className="text-indigo-600 hover:text-indigo-800"
+              >
+                ← Back to Leads
+              </button>
             </div>
-            <Link
-              href="/leads"
-              className="text-indigo-600 hover:text-indigo-800"
-            >
-              ← Back to Leads
-            </Link>
           </div>
         </div>
       </Layout>
@@ -601,463 +610,361 @@ export default function LeadDetailPage() {
   const availableStatuses = getAvailableStatuses()
   const canUpdateStatus = userRole === 'tele_caller' || userRole === 'admin' || userRole === 'super_admin'
 
+  // Get vehicle name from requirement or meta_data
+  function getVehicleName() {
+    if (lead?.requirement) return lead.requirement
+    if (lead?.meta_data) {
+      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] || 
+                     lead.meta_data['what_services_are_you_looking_for'] ||
+                     lead.meta_data['vehicle'] ||
+                     lead.meta_data['car_model'] ||
+                     null
+      if (vehicle) {
+        return String(vehicle).replace(/_/g, ' ')
+      }
+    }
+    return null
+  }
+
+  // Get estimated value from meta_data
+  function getEstimatedValue() {
+    if (lead?.meta_data?.payment_amount) {
+      return `$${Number(lead.meta_data.payment_amount).toLocaleString()}`
+    }
+    if (lead?.meta_data?.budget_range) {
+      return String(lead.meta_data.budget_range)
+    }
+    return null
+  }
+
+  // Get last contacted time
+  function getLastContactedTime() {
+    if (lead?.calls && lead.calls.length > 0) {
+      const lastCall = lead.calls.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )[0]
+      const date = new Date(lastCall.created_at)
+      const now = new Date()
+      const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+      if (diffDays === 0) return 'Today'
+      if (diffDays === 1) return '1 day ago'
+      return `${diffDays} days ago`
+    }
+    return null
+  }
+
+  // Get next follow-up
+  function getNextFollowUp() {
+    if (lead?.follow_ups && lead.follow_ups.length > 0) {
+      const upcoming = lead.follow_ups
+        .filter(fu => fu.status === 'pending' && new Date(fu.scheduled_at) >= new Date())
+        .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
+      if (upcoming.length > 0) {
+        return new Date(upcoming[0].scheduled_at).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })
+      }
+    }
+    return null
+  }
+
+  // Get interests from meta_data
+  function getInterests() {
+    if (lead?.meta_data) {
+      const interests = []
+      if (lead.meta_data.interests) {
+        if (Array.isArray(lead.meta_data.interests)) {
+          interests.push(...lead.meta_data.interests)
+        } else {
+          interests.push(lead.meta_data.interests)
+        }
+      }
+      // Check for common interest fields
+      const interestFields = ['interest', 'preferences', 'looking_for', 'requirements']
+      interestFields.forEach(field => {
+        if (lead.meta_data[field]) {
+          interests.push(lead.meta_data[field])
+        }
+      })
+      return interests.filter(Boolean)
+    }
+    return []
+  }
+
+  // Get status badge color
+  function getStatusBadgeColor(status: string) {
+    const statusLower = status.toLowerCase()
+    if (statusLower.includes('review') || statusLower.includes('qualified')) {
+      return 'bg-yellow-100 text-yellow-800'
+    }
+    if (statusLower.includes('negotiation')) {
+      return 'bg-orange-100 text-orange-800'
+    }
+    if (statusLower.includes('new')) {
+      return 'bg-blue-100 text-blue-800'
+    }
+    if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) {
+      return 'bg-green-100 text-green-800'
+    }
+    return 'bg-gray-100 text-gray-800'
+  }
+
+  // Format status name
+  function formatStatusName(status: string): string {
+    const statusLower = status.toLowerCase()
+    if (statusLower.includes('review')) return 'In review'
+    if (statusLower.includes('negotiation')) return 'Negotiation'
+    if (statusLower === 'new') return 'New'
+    if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) return 'Approved'
+    return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+  }
+
   return (
     <Layout>
-      <div className="p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6">
-            <Link
-              href="/leads"
-              className="text-indigo-600 hover:text-indigo-800 mb-4 inline-block"
-            >
-              ← Back to Leads
-            </Link>
-            <h1 className="text-3xl font-bold text-gray-900 mt-2">Lead Details</h1>
-          </div>
-
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Lead Information</h2>
-            </div>
-            <div className="px-6 py-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Lead ID</label>
-                  <p className="mt-1 text-sm text-gray-900">{lead.lead_id}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Status</label>
-                  <p className="mt-1">
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 capitalize">
-                      {lead.status.replace('_', ' ')}
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
+        onClick={() => router.push('/leads')}
+      />
+      
+      {/* Centered Modal */}
+      <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+        <div className="bg-white shadow-2xl rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto pointer-events-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 z-10">
+          <div className="px-6 py-4 flex items-start justify-between">
+            <div className="flex items-start gap-4 flex-1">
+              {/* Profile Picture */}
+              <div className="w-16 h-16 rounded-full bg-[#ed1b24] flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+                {lead?.name?.charAt(0).toUpperCase() || 'L'}
+              </div>
+              
+              {/* Name and Vehicle */}
+              <div className="flex-1 min-w-0">
+                <h1 className="text-2xl font-bold text-gray-900 mb-1">{lead?.name || 'Loading...'}</h1>
+                {getVehicleName() && (
+                  <p className="text-lg text-gray-600 mb-3">{getVehicleName()}</p>
+                )}
+                
+                {/* Status Tags */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {lead?.status && (
+                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${getStatusBadgeColor(lead.status)}`}>
+                      {formatStatusName(lead.status)}
                     </span>
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <p className="mt-1 text-sm text-gray-900">{lead.name}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Phone</label>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {lead.phone?.replace(/^(p|tel|phone|mobile):/i, '').trim() || lead.phone}
-                  </p>
-                </div>
-                {lead.email && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <p className="mt-1 text-sm text-gray-900">{lead.email}</p>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Source</label>
-                  <p className="mt-1 text-sm text-gray-900 capitalize">{lead.source}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Assigned To</label>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {lead.assigned_user?.name || 'Unassigned'}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Created At</label>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {new Date(lead.created_at).toLocaleString()}
-                  </p>
-                </div>
-                {lead.requirement && (
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">Requirement</label>
-                    <p className="mt-1 text-sm text-gray-900">{lead.requirement}</p>
-                  </div>
-                )}
-                {lead.interest_level && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Interest Level</label>
-                    <p className="mt-1 text-sm text-gray-900 capitalize">{lead.interest_level}</p>
-                  </div>
-                )}
-                {lead.budget_range && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Budget Range</label>
-                    <p className="mt-1 text-sm text-gray-900">{lead.budget_range}</p>
-                  </div>
-                )}
-                {lead.timeline && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Timeline</label>
-                    <p className="mt-1 text-sm text-gray-900">{lead.timeline}</p>
-                  </div>
-                )}
-                {/* Campaign Information */}
-                {(lead.campaign_name || lead.ad_name || lead.adset_name || lead.form_name) && (
-                  <>
-                    {lead.campaign_name && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Campaign</label>
-                        <p className="mt-1 text-sm text-gray-900">{lead.campaign_name}</p>
-                      </div>
-                    )}
-                    {lead.ad_name && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Ad</label>
-                        <p className="mt-1 text-sm text-gray-900">{lead.ad_name}</p>
-                      </div>
-                    )}
-                    {lead.adset_name && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Ad Set</label>
-                        <p className="mt-1 text-sm text-gray-900">{lead.adset_name}</p>
-                      </div>
-                    )}
-                    {lead.form_name && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Form</label>
-                        <p className="mt-1 text-sm text-gray-900">{lead.form_name}</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Meta Data Section */}
-          {lead.meta_data && Object.keys(lead.meta_data).length > 0 && (
-            <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">📊 Meta Data / Additional Information</h2>
-              </div>
-              <div className="px-6 py-4">
-                <div className="space-y-3">
-                  {Object.entries(lead.meta_data).map(([key, value]) => {
-                    // Skip null, undefined, or empty values
-                    if (value === null || value === undefined || value === '') {
-                      return null
-                    }
-
-                    // Handle nested objects and arrays
-                    let displayValue: string
-                    if (typeof value === 'object') {
-                      if (Array.isArray(value)) {
-                        displayValue = JSON.stringify(value, null, 2)
-                      } else {
-                        displayValue = JSON.stringify(value, null, 2)
-                      }
-                    } else {
-                      displayValue = String(value)
-                    }
-
-                    // Format key name (convert snake_case to Title Case)
-                    const formattedKey = key
-                      .replace(/_/g, ' ')
-                      .replace(/\b\w/g, (l) => l.toUpperCase())
-
-                    return (
-                      <div key={key} className="border-b border-gray-200 pb-3 last:border-0">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          {formattedKey}
-                        </label>
-                        {typeof value === 'object' ? (
-                          <pre className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto">
-                            {displayValue}
-                          </pre>
-                        ) : (
-                          <p className="mt-1 text-sm text-gray-900 break-words">{displayValue}</p>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* First Contact / Call Status Section */}
-          {canUpdateStatus && (lead.status === LEAD_STATUS.NEW || lead.status === LEAD_STATUS.QUALIFIED) && (
-            <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">📞 Sales Rep Calls Lead</h2>
-                <p className="text-sm text-gray-500 mt-1">First Contact Attempt - Update Call Status</p>
-              </div>
-              <div className="px-6 py-4">
-                <button
-                  onClick={() => setShowCallModal(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-                >
-                  Record Call
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Qualification Section */}
-          {canUpdateStatus && lead.status === LEAD_STATUS.QUALIFIED && !lead.interest_level && (
-            <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">✅ Qualify Lead</h2>
-                <p className="text-sm text-gray-500 mt-1">Set interest level to proceed</p>
-              </div>
-              <div className="px-6 py-4">
-                <button
-                  onClick={() => setShowQualifyModal(true)}
-                  className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-                >
-                  Qualify Lead
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Payment Status Section */}
-          {canUpdateStatus && (lead.status === LEAD_STATUS.DEAL_WON || lead.status === LEAD_STATUS.PAYMENT_PENDING || lead.status === LEAD_STATUS.ADVANCE_RECEIVED) && (
-            <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">💰 Payment Status</h2>
-              </div>
-              <div className="px-6 py-4">
-                <button
-                  onClick={() => setShowPaymentModal(true)}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
-                >
-                  Update Payment Status
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Status Update Section */}
-          {canUpdateStatus && (
-            <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">Update Status</h2>
-              </div>
-              <div className="px-6 py-4 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    New Status
-                  </label>
-                  <select
-                    value={newStatus}
-                    onChange={(e) => setNewStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value={lead.status}>
-                      {LEAD_STATUS_ICONS[lead.status as keyof typeof LEAD_STATUS_ICONS]} {LEAD_STATUS_LABELS[lead.status as keyof typeof LEAD_STATUS_LABELS]} (Current)
-                    </option>
-                    {availableStatuses.map((status) => (
-                      <option key={status} value={status}>
-                        {LEAD_STATUS_ICONS[status as keyof typeof LEAD_STATUS_ICONS]} {LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]}
-                      </option>
-                    ))}
-                  </select>
-                  {availableStatuses.length === 0 && (
-                    <p className="mt-1 text-sm text-gray-500">
-                      No status transitions available from current status
-                    </p>
+                  )}
+                  {lead?.interest_level === 'hot' && (
+                    <span className="px-3 py-1 text-sm font-semibold rounded-full bg-red-100 text-red-800">
+                      Hot
+                    </span>
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Notes (Optional)
-                  </label>
-                  <textarea
-                    value={statusNotes}
-                    onChange={(e) => setStatusNotes(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="Add notes about this status change..."
-                  />
-                </div>
-                <button
-                  onClick={handleStatusUpdate}
-                  disabled={updatingStatus || newStatus === lead.status || availableStatuses.length === 0}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {updatingStatus ? 'Updating...' : 'Update Status'}
-                </button>
               </div>
             </div>
-          )}
+            
+            {/* Close Button */}
+            <button
+              onClick={() => router.push('/leads')}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
 
-          {/* Status History */}
-          {lead.status_history && lead.status_history.length > 0 && (
-            <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">Status History</h2>
-              </div>
-              <div className="px-6 py-4">
-                <div className="space-y-3">
-                  {lead.status_history.map((history) => (
-                    <div key={history.id} className="border-l-2 border-indigo-500 pl-4 py-2">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {history.old_status 
-                              ? `${LEAD_STATUS_LABELS[history.old_status as keyof typeof LEAD_STATUS_LABELS]} → ${LEAD_STATUS_LABELS[history.new_status as keyof typeof LEAD_STATUS_LABELS]}`
-                              : `Status set to ${LEAD_STATUS_LABELS[history.new_status as keyof typeof LEAD_STATUS_LABELS]}`
-                            }
-                          </p>
-                          {history.notes && (
-                            <p className="text-sm text-gray-600 mt-1">{history.notes}</p>
-                          )}
-                          {history.changed_by_user && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Changed by: {history.changed_by_user.name}
-                            </p>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          {new Date(history.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+        {/* Content */}
+        <div className="px-6 py-6 space-y-6">
+          {/* Contact Information */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Contact Information</h2>
+            <div className="space-y-2">
+              {lead?.phone && (
+                <div className="flex items-center gap-2 text-gray-700">
+                  <span className="font-medium">Phone:</span>
+                  <span>{lead.phone.replace(/^(p|tel|phone|mobile):/i, '').trim()}</span>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Calls History */}
-          {lead.calls && lead.calls.length > 0 && (
-            <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">Call History</h2>
-              </div>
-              <div className="px-6 py-4">
-                <div className="space-y-3">
-                  {lead.calls.map((call) => (
-                    <div key={call.id} className="border-b border-gray-200 pb-3 last:border-0">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 capitalize">
-                            {call.outcome.replace('_', ' ')}
-                          </p>
-                          {call.disposition && (
-                            <p className="text-sm text-gray-600 mt-1">{call.disposition}</p>
-                          )}
-                          {call.notes && (
-                            <p className="text-sm text-gray-600 mt-1">{call.notes}</p>
-                          )}
-                          {call.called_by_user && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Called by: {call.called_by_user.name}
-                            </p>
-                          )}
-                          {call.call_duration && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Duration: {call.call_duration} seconds
-                            </p>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          {new Date(call.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Follow-ups Section */}
-          <div className="bg-white rounded-lg shadow overflow-hidden mt-6">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">📅 Follow-ups</h2>
-                <p className="text-sm text-gray-500 mt-1">Schedule and manage follow-up calls</p>
-              </div>
-              {canUpdateStatus && (
-                <button
-                  onClick={() => setShowFollowUpModal(true)}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm"
-                >
-                  Schedule Follow-up
-                </button>
               )}
-            </div>
-            <div className="px-6 py-4">
-              {lead.follow_ups && lead.follow_ups.length > 0 ? (
-                <div className="space-y-3">
-                  {lead.follow_ups
-                    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
-                    .map((followUp) => {
-                      const isOverdue = followUp.status === 'pending' && new Date(followUp.scheduled_at) < new Date()
-                      const isUpcoming = followUp.status === 'pending' && new Date(followUp.scheduled_at) >= new Date()
-                      
-                      return (
-                        <div 
-                          key={followUp.id} 
-                          className={`border-l-4 ${
-                            followUp.status === 'done' 
-                              ? 'border-green-500 bg-green-50' 
-                              : isOverdue 
-                              ? 'border-red-500 bg-red-50' 
-                              : isUpcoming 
-                              ? 'border-blue-500 bg-blue-50' 
-                              : 'border-gray-300 bg-gray-50'
-                          } p-4 rounded`}
-                        >
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                  followUp.status === 'done' 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : isOverdue 
-                                    ? 'bg-red-100 text-red-800' 
-                                    : 'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {followUp.status === 'done' 
-                                    ? '✅ Completed' 
-                                    : isOverdue 
-                                    ? '⚠️ Overdue' 
-                                    : '📅 Upcoming'}
-                                </span>
-                                <span className="text-xs text-gray-500 capitalize">
-                                  {followUp.status.replace('_', ' ')}
-                                </span>
-                              </div>
-                              <p className="text-sm font-medium text-gray-900">
-                                Scheduled: {new Date(followUp.scheduled_at).toLocaleString()}
-                              </p>
-                              {followUp.completed_at && (
-                                <p className="text-sm text-gray-600 mt-1">
-                                  Completed: {new Date(followUp.completed_at).toLocaleString()}
-                                </p>
-                              )}
-                              {followUp.notes && (
-                                <p className="text-sm text-gray-600 mt-2">{followUp.notes}</p>
-                              )}
-                              {followUp.assigned_user && (
-                                <p className="text-xs text-gray-500 mt-2">
-                                  Assigned to: {followUp.assigned_user.name}
-                                </p>
-                              )}
-                            </div>
-                            {canUpdateStatus && followUp.status === 'pending' && (
-                              <button
-                                onClick={() => handleCompleteFollowUp(followUp.id)}
-                                className="ml-4 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-                              >
-                                Mark Done
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
+              {lead?.email && (
+                <div className="flex items-center gap-2 text-gray-700">
+                  <span className="font-medium">Email:</span>
+                  <span>{lead.email}</span>
                 </div>
-              ) : (
-                <p className="text-sm text-gray-500 text-center py-4">No follow-ups scheduled</p>
               )}
             </div>
           </div>
 
-          {/* Call Status Modal */}
+          {/* Assigned To */}
+          {lead?.assigned_user && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Assigned To</h2>
+              <div className="flex items-center gap-3">
+                {lead.assigned_user.profile_image_url ? (
+                  <Image
+                    src={lead.assigned_user.profile_image_url}
+                    alt={lead.assigned_user.name}
+                    width={40}
+                    height={40}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#ed1b24] flex items-center justify-center text-white font-medium">
+                    {lead.assigned_user.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <p className="font-medium text-gray-900">{lead.assigned_user.name}</p>
+                  <p className="text-sm text-gray-500">{lead.assigned_user.email}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {lead?.meta_data?.notes && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Notes</h2>
+              <p className="text-gray-700 bg-gray-50 p-3 rounded-md">{lead.meta_data.notes}</p>
+            </div>
+          )}
+
+          {/* Lead Details */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Lead Details</h2>
+            <div className="space-y-2 text-gray-700">
+              <div className="flex justify-between">
+                <span className="font-medium">Source:</span>
+                <span className="capitalize">{lead?.source || 'N/A'}</span>
+              </div>
+              {getEstimatedValue() && (
+                <div className="flex justify-between">
+                  <span className="font-medium">Estimated Value:</span>
+                  <span>{getEstimatedValue()}</span>
+                </div>
+              )}
+              {lead?.created_at && (
+                <div className="flex justify-between">
+                  <span className="font-medium">Created At:</span>
+                  <span>{new Date(lead.created_at).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}</span>
+                </div>
+              )}
+              {getLastContactedTime() && (
+                <div className="flex justify-between">
+                  <span className="font-medium">Last Contacted:</span>
+                  <span>{getLastContactedTime()}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Next Follow-up */}
+          {getNextFollowUp() && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Next Follow-up</h2>
+              <p className="text-gray-700">{getNextFollowUp()}</p>
+            </div>
+          )}
+
+          {/* Interests */}
+          {getInterests().length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Interests</h2>
+              <div className="flex flex-wrap gap-2">
+                {getInterests().map((interest, index) => (
+                  <span
+                    key={index}
+                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+                  >
+                    {String(interest).replace(/_/g, ' ')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Activity */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Recent Activity</h2>
+            <div className="space-y-3">
+              {/* Status History */}
+              {lead?.status_history && lead.status_history.length > 0 && (
+                <div className="space-y-2">
+                  {lead.status_history.slice(0, 3).map((history) => (
+                    <div key={history.id} className="text-sm text-gray-600 border-l-2 border-gray-300 pl-3 py-1">
+                      <p>
+                        Status changed to <span className="font-medium">{formatStatusName(history.new_status)}</span>
+                        {history.changed_by_user && (
+                          <span> by {history.changed_by_user.name}</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {new Date(history.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Call History */}
+              {lead?.calls && lead.calls.length > 0 && (
+                <div className="space-y-2">
+                  {lead.calls.slice(0, 3).map((call) => (
+                    <div key={call.id} className="text-sm text-gray-600 border-l-2 border-blue-300 pl-3 py-1">
+                      <p>
+                        Call: <span className="font-medium capitalize">{call.outcome.replace('_', ' ')}</span>
+                        {call.called_by_user && (
+                          <span> by {call.called_by_user.name}</span>
+                        )}
+                      </p>
+                      {call.notes && (
+                        <p className="text-xs text-gray-500 mt-1">{call.notes}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        {new Date(call.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Buttons */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
+          <button
+            onClick={() => setShowCallModal(true)}
+            className="flex-1 bg-[#ed1b24] text-white px-4 py-2 rounded-md hover:bg-[#d11820] font-medium transition-colors"
+          >
+            Contact Lead
+          </button>
+          <button
+            onClick={() => setShowFollowUpModal(true)}
+            className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium transition-colors"
+          >
+            Schedule Follow-up
+          </button>
+          <button
+            onClick={() => setShowStatusUpdateModal(true)}
+            className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium transition-colors"
+          >
+            Update Status
+          </button>
+        </div>
+        </div>
+      </div>
+
+      {/* Modals */}
+      {/* Call Status Modal */}
           {showCallModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-semibold mb-4">Record Call Status</h3>
                 <div className="space-y-4">
@@ -1130,7 +1037,7 @@ export default function LeadDetailPage() {
 
           {/* Qualification Modal */}
           {showQualifyModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-semibold mb-4">Qualify Lead</h3>
                 <div className="space-y-4">
@@ -1190,7 +1097,7 @@ export default function LeadDetailPage() {
 
           {/* Follow-up Schedule Modal */}
           {showFollowUpModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-semibold mb-4">Schedule Follow-up</h3>
                 <div className="space-y-4">
@@ -1259,7 +1166,7 @@ export default function LeadDetailPage() {
 
           {/* Payment Status Modal */}
           {showPaymentModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-semibold mb-4">Update Payment Status</h3>
                 <div className="space-y-4">
@@ -1329,8 +1236,74 @@ export default function LeadDetailPage() {
               </div>
             </div>
           )}
+
+      {/* Status Update Modal */}
+      {showStatusUpdateModal && canUpdateStatus && lead && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Update Status</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Status
+                </label>
+                <select
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value={lead.status}>
+                    {LEAD_STATUS_ICONS[lead.status as keyof typeof LEAD_STATUS_ICONS]} {LEAD_STATUS_LABELS[lead.status as keyof typeof LEAD_STATUS_ICONS]} (Current)
+                  </option>
+                  {availableStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {LEAD_STATUS_ICONS[status as keyof typeof LEAD_STATUS_ICONS]} {LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_ICONS]}
+                    </option>
+                  ))}
+                </select>
+                {availableStatuses.length === 0 && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    No status transitions available from current status
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  value={statusNotes}
+                  onChange={(e) => setStatusNotes(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Add notes about this status change..."
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowStatusUpdateModal(false)
+                  setStatusNotes('')
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await handleStatusUpdate()
+                  setShowStatusUpdateModal(false)
+                }}
+                disabled={updatingStatus || newStatus === lead.status || availableStatuses.length === 0}
+                className="px-4 py-2 text-white bg-[#ed1b24] rounded-md hover:bg-[#d11820] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {updatingStatus ? 'Updating...' : 'Update Status'}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </Layout>
   )
 }

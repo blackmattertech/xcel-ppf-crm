@@ -78,7 +78,16 @@ export async function POST(request: NextRequest) {
 
     if (emailError) {
       console.error('Error sending reset email:', emailError)
-      // Log the error for debugging but don't reveal to user for security
+      
+      // Handle rate limiting specifically
+      if (emailError.status === 429 || emailError.code === 'over_email_send_rate_limit') {
+        // Return a user-friendly message for rate limiting
+        return NextResponse.json({
+          message: 'Too many password reset requests. Please wait a few minutes before trying again.',
+        }, { status: 429 })
+      }
+      
+      // For other errors, log but don't reveal to user for security
       // Still return success message
       return NextResponse.json({
         message: 'If an account with that email exists, you will receive a password reset link.',

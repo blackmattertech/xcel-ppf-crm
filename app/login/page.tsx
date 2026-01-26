@@ -38,6 +38,9 @@ export default function LoginPage() {
         // Check if credentials are still valid (not expired)
         if (expiresAt > new Date()) {
           setEmail(credentials.email)
+          if (credentials.password) {
+            setPassword(credentials.password)
+          }
           setRememberMe(true)
           
           // Check if session is still valid
@@ -92,6 +95,7 @@ export default function LoginPage() {
         if (rememberMe) {
           const credentials = {
             email,
+            password,
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
           }
           localStorage.setItem('remembered_credentials', JSON.stringify(credentials))
@@ -112,14 +116,25 @@ export default function LoginPage() {
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
-      {/* Background Image */}
+      {/* Background Image - Mobile uses mobileloginimage.jpg, Desktop uses login-bg.png */}
       <div className="absolute inset-0 z-0">
+        {/* Mobile Image */}
+        <Image
+          src="/mobileloginimage.jpg"
+          alt="Background"
+          fill
+          className="object-cover md:hidden"
+          priority
+          sizes="(max-width: 768px) 100vw, 100vw"
+        />
+        {/* Desktop Image */}
         <Image
           src="/login-bg.png"
           alt="Background"
           fill
-          className="object-cover"
+          className="object-cover hidden md:block"
           priority
+          sizes="(min-width: 768px) 100vw, 100vw"
         />
       </div>
 
@@ -218,8 +233,10 @@ export default function LoginPage() {
                       className="relative w-10 md:w-[40px] h-5 md:h-[20px] rounded-[36.5px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] transition-all cursor-pointer flex-shrink-0"
                     >
                       <div
-                        className={`absolute top-[2px] w-4 md:w-[16px] h-4 md:h-[16px] bg-white rounded-full shadow-[1px_1px_2px_-1px_rgba(51,51,51,0.3)] transition-all duration-300 ${
-                          rememberMe ? 'left-[22px] md:left-[22px]' : 'left-[2px]'
+                        className={`absolute top-[2px] w-4 md:w-[16px] h-4 md:h-[16px] rounded-full shadow-[1px_1px_2px_-1px_rgba(51,51,51,0.3)] transition-all duration-300 ${
+                          rememberMe 
+                            ? 'left-[22px] md:left-[22px] bg-[#ed1b24]' 
+                            : 'left-[2px] bg-white'
                         }`}
                       />
                     </button>
