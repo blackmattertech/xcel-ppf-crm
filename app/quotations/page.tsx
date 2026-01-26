@@ -1,80 +1,31 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import Layout from '@/components/Layout'
 import Link from 'next/link'
-
-interface Quotation {
-  id: string
-  quote_number: string
-  version: number
-  total: number
-  status: string
-  lead: {
-    name: string
-    phone: string
-  }
-  created_at: string
-}
+import { useAuth } from '@/contexts/AuthContext'
+import { useQuotations } from '@/hooks/useQuotations'
+import { useLeads } from '@/hooks/useLeads'
+import Layout from '@/components/Layout'
 
 export default function QuotationsPage() {
   const router = useRouter()
-  const [quotations, setQuotations] = useState<Quotation[]>([])
-  const [loading, setLoading] = useState(true)
-  const [totalLeads, setTotalLeads] = useState(0)
+  const { isLoading: authLoading, isAuthenticated } = useAuth()
+  const { data: quotations = [], isLoading: quotationsLoading } = useQuotations()
+  const { data: allLeads = [] } = useLeads()
 
+  // Redirect if not authenticated
   useEffect(() => {
-    checkAuth()
-    fetchQuotations()
-    fetchTotalLeads()
-  }, [])
-
-  async function fetchTotalLeads() {
-    try {
-      const response = await fetch('/api/leads')
-      if (response.ok) {
-        const data = await response.json()
-        setTotalLeads(data.leads?.length || 0)
-      }
-    } catch (error) {
-      console.error('Failed to fetch total leads:', error)
-    }
-  }
-
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
+    if (!authLoading && !isAuthenticated) {
       router.push('/login')
     }
+  }, [authLoading, isAuthenticated, router])
+
+  if (!authLoading && !isAuthenticated) {
+    return null
   }
 
-  async function fetchQuotations() {
-    try {
-      const response = await fetch('/api/quotations')
-      if (response.ok) {
-        const data = await response.json()
-        setQuotations(data.quotations || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch quotations:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (loading) {
-    return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-lg">Loading...</div>
-        </div>
-      </Layout>
-    )
-  }
+  const loading = quotationsLoading
 
   return (
     <Layout>
@@ -82,12 +33,22 @@ export default function QuotationsPage() {
         <div className="max-w-7xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">Quotations</h1>
 
-          {/* Stats Cards */}
+          {/* Stats Cards - Show skeleton while loading */}
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {[1, 2].map((i) => (
+                <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                  <div className="h-8 bg-gray-200 rounded w-16"></div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
               <p className="text-2xl font-bold text-gray-900 mt-2">
-                {totalLeads}
+                {allLeads.length}
               </p>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
@@ -97,7 +58,21 @@ export default function QuotationsPage() {
               </p>
             </div>
           </div>
+          )}
 
+          {/* Table - Show skeleton while loading */}
+          {loading ? (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="animate-pulse p-6">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="h-12 bg-gray-200 rounded"></div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -112,7 +87,7 @@ export default function QuotationsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {quotations.map((quote) => (
+                {quotations.map((quote: any) => (
                   <tr key={quote.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {quote.quote_number}
@@ -151,6 +126,7 @@ export default function QuotationsPage() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </div>
     </Layout>
