@@ -114,23 +114,41 @@ export default function RolesPage() {
 
     setSyncingPermissions(true)
     try {
+      console.log('Starting permission sync...')
       const response = await fetch('/api/permissions/sync', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       })
 
-      const data = await response.json()
+      console.log('Sync response status:', response.status)
+      
+      let data
+      try {
+        data = await response.json()
+        console.log('Sync response data:', data)
+      } catch (jsonError) {
+        console.error('Failed to parse JSON response:', jsonError)
+        const text = await response.text()
+        console.error('Response text:', text)
+        alert('Failed to sync permissions: Invalid response from server')
+        return
+      }
 
       if (response.ok) {
-        alert(
-          `Permissions synced successfully!\n` +
-          `Created: ${data.summary.created}\n` +
-          `Existing: ${data.summary.existing}\n` +
-          `Errors: ${data.summary.errors}`
-        )
+        const message = `Permissions synced successfully!\n` +
+          `Created: ${data.summary?.created || 0}\n` +
+          `Existing: ${data.summary?.existing || 0}\n` +
+          `Errors: ${data.summary?.errors || 0}`
+        alert(message)
+        console.log('Sync successful:', message)
         // Refresh permissions list
         await fetchPermissions()
       } else {
-        alert(data.error || 'Failed to sync permissions')
+        const errorMessage = data?.error || `Failed to sync permissions (Status: ${response.status})`
+        console.error('Sync failed:', errorMessage, data)
+        alert(errorMessage)
       }
     } catch (error) {
       console.error('Failed to sync permissions:', error)
@@ -292,10 +310,15 @@ export default function RolesPage() {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={handleSyncPermissions}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleSyncPermissions()
+              }}
               disabled={syncingPermissions}
-              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Sync permissions from sidebar configuration"
+              type="button"
             >
               {syncingPermissions ? 'Syncing...' : '🔄 Sync Permissions'}
             </button>

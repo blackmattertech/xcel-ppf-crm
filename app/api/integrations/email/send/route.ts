@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
       return authResult.error
     }
 
-    const body = await request.json()
-    const { leadId, to, subject, body, html } = sendEmailSchema.parse(body)
+    const requestBody = await request.json()
+    const { leadId, to, subject, body, html } = sendEmailSchema.parse(requestBody)
 
     const result = await sendEmailToLead(
       leadId,
