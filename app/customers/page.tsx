@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCustomers } from '@/hooks/useCustomers'
@@ -302,6 +302,9 @@ export default function CustomersPage() {
     opacity: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   })
+  
+  // Ref to track last processed data to prevent infinite loops
+  const lastProcessedDataRef = useRef<string>('')
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -354,6 +357,18 @@ export default function CustomersPage() {
 
   // Filter, sort and paginate customers
   useEffect(() => {
+    // Create a stable identifier for the data (using IDs and length)
+    // Only use first few IDs to avoid performance issues with large arrays
+    const ids = allCustomers.slice(0, 10).map(c => c?.id || '').join(',')
+    const dataSignature = `${allCustomers.length}-${ids}-${searchQuery}-${currentPage}-${itemsPerPage}-${viewMode}`
+    
+    // Only process if data actually changed
+    if (lastProcessedDataRef.current === dataSignature) {
+      return
+    }
+    
+    lastProcessedDataRef.current = dataSignature
+    
     let filtered = [...allCustomers]
     
     // Apply search filter

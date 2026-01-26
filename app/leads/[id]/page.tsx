@@ -468,11 +468,57 @@ export default function LeadDetailPage() {
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [showStatusUpdateModal, setShowStatusUpdateModal] = useState(false)
+  const [leadScore, setLeadScore] = useState<number | null>(null)
+  const [slaViolation, setSlaViolation] = useState<any>(null)
+  const [winProbability, setWinProbability] = useState<number | null>(null)
 
   useEffect(() => {
     checkAuth()
     fetchLead()
+    fetchLeadScore()
+    fetchSLAViolation()
+    fetchWinProbability()
   }, [leadId])
+
+  async function fetchLeadScore() {
+    try {
+      const response = await fetch(`/api/leads/${leadId}/score`)
+      if (response.ok) {
+        const data = await response.json()
+        setLeadScore(data.score?.total || null)
+      }
+    } catch (error) {
+      console.error('Failed to fetch lead score:', error)
+    }
+  }
+
+  async function fetchSLAViolation() {
+    try {
+      const response = await fetch(`/api/sla/violations?leadId=${leadId}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.violations && data.violations.length > 0) {
+          setSlaViolation(data.violations[0])
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch SLA violation:', error)
+    }
+  }
+
+  async function fetchWinProbability() {
+    try {
+      const response = await fetch(`/api/leads/${leadId}/predictive`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.insights?.winProbability) {
+          setWinProbability(data.insights.winProbability.probability)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch win probability:', error)
+    }
+  }
 
   async function checkAuth() {
     const supabase = createClient()
@@ -547,8 +593,10 @@ export default function LeadDetailPage() {
         const data = await response.json()
         setLead(data.lead)
         setStatusNotes('')
-        // Invalidate leads query to refresh the leads list
+        // Invalidate leads query to refresh all pages (list, kanban, grid)
         queryClient.invalidateQueries({ queryKey: ['leads'] })
+        // Also refetch the current lead to ensure consistency
+        await fetchLead()
         alert('Status updated successfully')
       } else {
         const errorData = await response.json()
@@ -635,7 +683,7 @@ export default function LeadDetailPage() {
           console.error('Failed to update status after wrong number call')
         }
 
-        // Invalidate leads query to refresh the leads list
+        // Invalidate leads query to refresh all pages (list, kanban, grid)
         queryClient.invalidateQueries({ queryKey: ['leads'] })
         // Refresh and close
         await fetchLead()
@@ -655,7 +703,12 @@ export default function LeadDetailPage() {
               interest_level: callInterestLevel,
             }),
           })
-          if (!updateResponse.ok) {
+          if (updateResponse.ok) {
+            // Invalidate leads query to refresh all pages
+            queryClient.invalidateQueries({ queryKey: ['leads'] })
+            // Refresh current lead
+            await fetchLead()
+          } else {
             console.error('Failed to update interest level')
           }
         } catch (error) {
@@ -706,6 +759,8 @@ export default function LeadDetailPage() {
         }
       }
 
+      // Invalidate leads query to refresh all pages (list, kanban, grid)
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
       // Refresh lead data
       await fetchLead()
       setShowCallModal(false)
@@ -760,6 +815,9 @@ export default function LeadDetailPage() {
           }),
         })
 
+        // Invalidate leads query to refresh all pages (list, kanban, grid)
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
+        // Refresh current lead
         await fetchLead()
         setShowQualifyModal(false)
         setInterestLevel('')
@@ -877,9 +935,13 @@ export default function LeadDetailPage() {
               notes: `Payment status updated: ${paymentStatus}`,
             }),
           })
+          // Invalidate leads query to refresh all pages
+          queryClient.invalidateQueries({ queryKey: ['leads'] })
         }
 
         if (paymentStatus !== 'fully_paid' && paymentStatus !== 'advance_received' && paymentStatus !== 'pending') {
+          // Invalidate leads query to refresh all pages
+          queryClient.invalidateQueries({ queryKey: ['leads'] })
           await fetchLead()
           setShowPaymentModal(false)
           setPaymentStatus('')
@@ -887,6 +949,8 @@ export default function LeadDetailPage() {
           setAdvanceAmount('')
           alert('Payment status updated successfully')
         } else if (paymentStatus === 'fully_paid') {
+          // Invalidate before redirect
+          queryClient.invalidateQueries({ queryKey: ['leads'] })
           // Already handled above with redirect
         }
         // For advance_received and pending, follow-up modal is shown
@@ -1168,6 +1232,21 @@ export default function LeadDetailPage() {
                       Hot
                     </span>
                   )}
+                  {leadScore !== null && (
+                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
+                      leadScore >= 80 ? 'bg-green-100 text-green-800' :
+                      leadScore >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      Score: {leadScore.toFixed(0)}
+                    </span>
+                  )}
+                  {slaViolation && (
+                    <span className="px-3 py-1 text-sm font-semibold rounded-full bg-red-100 text-red-800 flex items-center gap-1">
+                      <span>⚠️</span>
+                      SLA Violation
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1239,6 +1318,110 @@ export default function LeadDetailPage() {
             </div>
           )}
 
+          {/* Full Metadata */}
+          {lead?.meta_data && Object.keys(lead.meta_data).length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Full Metadata</h2>
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(lead.meta_data)
+                    .filter(([key]) => {
+                      // Exclude already displayed fields
+                      return key !== 'notes' && 
+                             key !== 'platform' && 
+                             key !== 'Platform' &&
+                             key !== 'customer_id'
+                    })
+                    .map(([key, value]) => {
+                      const displayKey = key.replace(/_/g, ' ').replace(/\?/g, '').replace(/^\w/, c => c.toUpperCase())
+                      let displayValue: string
+                      
+                      if (value === null || value === undefined) {
+                        displayValue = '-'
+                      } else if (typeof value === 'object') {
+                        displayValue = JSON.stringify(value, null, 2)
+                      } else {
+                        displayValue = String(value)
+                      }
+                      
+                      return (
+                        <div key={key} className="border-b border-gray-200 pb-3 last:border-0">
+                          <div className="text-sm font-medium text-gray-700 mb-1">{displayKey}</div>
+                          <div className="text-sm text-gray-900 break-words whitespace-pre-wrap">
+                            {displayValue}
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+                {Object.keys(lead.meta_data).length === 0 && (
+                  <p className="text-sm text-gray-500">No metadata available</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Lead Score & SLA */}
+          {(leadScore !== null || slaViolation || winProbability !== null) && (
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Intelligence</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {leadScore !== null && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">Lead Score</div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-bold text-indigo-600">{leadScore.toFixed(1)}</span>
+                      <span className="text-sm text-gray-500">/100</span>
+                    </div>
+                    <Link
+                      href={`/leads/${leadId}/insights`}
+                      className="text-xs text-indigo-600 hover:underline mt-1 block"
+                    >
+                      View detailed breakdown →
+                    </Link>
+                  </div>
+                )}
+                {winProbability !== null && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">Win Probability</div>
+                    <div className="flex items-baseline gap-2">
+                      <span className={`text-2xl font-bold ${
+                        winProbability >= 70 ? 'text-green-600' :
+                        winProbability >= 50 ? 'text-yellow-600' :
+                        'text-red-600'
+                      }`}>
+                        {winProbability.toFixed(0)}%
+                      </span>
+                    </div>
+                    <Link
+                      href={`/leads/${leadId}/insights`}
+                      className="text-xs text-indigo-600 hover:underline mt-1 block"
+                    >
+                      View detailed insights →
+                    </Link>
+                  </div>
+                )}
+                {slaViolation && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">SLA Status</div>
+                    <div className="text-red-600 font-semibold">
+                      {slaViolation.violation_type.replace('_', ' ')} Violation
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {Math.round(slaViolation.violation_duration_minutes)} min overdue
+                    </div>
+                    <Link
+                      href="/sla"
+                      className="text-xs text-red-600 hover:underline mt-1 block"
+                    >
+                      View SLA details →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Lead Details */}
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-3">Lead Details</h2>
@@ -1299,7 +1482,15 @@ export default function LeadDetailPage() {
 
           {/* Recent Activity */}
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Recent Activity</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+              <Link
+                href={`/leads/${leadId}/activities`}
+                className="text-sm text-[#ed1b24] hover:underline"
+              >
+                View All →
+              </Link>
+            </div>
             <div className="space-y-3">
               {/* Status History */}
               {lead?.status_history && lead.status_history.length > 0 && (
@@ -1346,25 +1537,41 @@ export default function LeadDetailPage() {
         </div>
 
         {/* Footer Buttons */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
-          <button
-            onClick={() => setShowCallModal(true)}
-            className="flex-1 bg-[#ed1b24] text-white px-4 py-2 rounded-md hover:bg-[#d11820] font-medium transition-colors"
-          >
-            Contact Lead
-          </button>
-          <button
-            onClick={() => setShowFollowUpModal(true)}
-            className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium transition-colors"
-          >
-            Schedule Follow-up
-          </button>
-          <button
-            onClick={() => setShowStatusUpdateModal(true)}
-            className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium transition-colors"
-          >
-            Update Status
-          </button>
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4">
+          <div className="flex gap-3 mb-3">
+            <button
+              onClick={() => setShowCallModal(true)}
+              className="flex-1 bg-[#ed1b24] text-white px-4 py-2 rounded-md hover:bg-[#d11820] font-medium transition-colors"
+            >
+              Contact Lead
+            </button>
+            <button
+              onClick={() => setShowFollowUpModal(true)}
+              className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium transition-colors"
+            >
+              Schedule Follow-up
+            </button>
+            <button
+              onClick={() => setShowStatusUpdateModal(true)}
+              className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium transition-colors"
+            >
+              Update Status
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <Link
+              href={`/leads/${leadId}/activities`}
+              className="flex-1 px-4 py-2 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 font-medium transition-colors text-center"
+            >
+              View All Activities
+            </Link>
+            <Link
+              href={`/leads/${leadId}/insights`}
+              className="flex-1 px-4 py-2 bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100 font-medium transition-colors text-center"
+            >
+              View Insights
+            </Link>
+          </div>
         </div>
         </div>
       </div>

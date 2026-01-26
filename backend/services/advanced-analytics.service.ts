@@ -53,46 +53,73 @@ export async function getPipelineMetrics(
     'converted',
   ]
 
+  // Fetch all leads in period once
+  const { data: allLeads } = await supabase
+    .from('leads')
+    .select('id, status, created_at, updated_at')
+    .gte('created_at', start)
+    .lte('created_at', end)
+
+  if (!allLeads || allLeads.length === 0) {
+    return stages.map(stage => ({
+      stage,
+      leadCount: 0,
+      averageTimeInStage: 0,
+      conversionRate: 0,
+      dropOffRate: 0,
+    }))
+  }
+
+  // Fetch all status history in one query
+  const leadIds = allLeads.map(l => l.id)
+  const { data: allStatusHistory } = leadIds.length > 0 ? await supabase
+    .from('lead_status_history')
+    .select('lead_id, old_status, new_status, created_at')
+    .in('lead_id', leadIds)
+    .gte('created_at', start)
+    .lte('created_at', end) : { data: null }
+
+  // Organize status history by lead_id and stage
+  const statusHistoryMap = new Map<string, Map<string, any[]>>()
+  if (allStatusHistory) {
+    for (const history of allStatusHistory) {
+      if (!statusHistoryMap.has(history.lead_id)) {
+        statusHistoryMap.set(history.lead_id, new Map())
+      }
+      const leadHistory = statusHistoryMap.get(history.lead_id)!
+      if (!leadHistory.has(history.new_status)) {
+        leadHistory.set(history.new_status, [])
+      }
+      leadHistory.get(history.new_status)!.push(history)
+    }
+  }
+
   const metrics: PipelineMetrics[] = []
 
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i]
     const nextStage = stages[i + 1]
 
-    // Get leads in this stage
-    const { data: stageLeads } = await supabase
-      .from('leads')
-      .select('id, status, created_at, updated_at')
-      .eq('status', stage)
-      .gte('created_at', start)
-      .lte('created_at', end)
-
-    const leadCount = stageLeads?.length || 0
+    // Filter leads in this stage
+    const stageLeads = allLeads.filter(l => l.status === stage)
+    const leadCount = stageLeads.length
 
     // Calculate average time in stage
     let totalTimeInStage = 0
     let countWithTime = 0
 
-    if (stageLeads) {
-      for (const lead of stageLeads) {
-        // Get status history to find when entered this stage
-        const { data: statusHistory } = await supabase
-          .from('lead_status_history')
-          .select('created_at')
-          .eq('lead_id', lead.id)
-          .eq('new_status', stage)
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .single()
+    for (const lead of stageLeads) {
+      const leadHistory = statusHistoryMap.get(lead.id)
+      const stageEntries = leadHistory?.get(stage) || []
+      const enteredAt = stageEntries.length > 0 
+        ? stageEntries[0].created_at 
+        : lead.created_at
+      const leftAt = lead.updated_at || new Date().toISOString()
 
-        const enteredAt = statusHistory?.created_at || lead.created_at
-        const leftAt = lead.updated_at || new Date().toISOString()
-
-        const hours = (new Date(leftAt).getTime() - new Date(enteredAt).getTime()) / (1000 * 60 * 60)
-        if (hours >= 0) {
-          totalTimeInStage += hours
-          countWithTime++
-        }
+      const hours = (new Date(leftAt).getTime() - new Date(enteredAt).getTime()) / (1000 * 60 * 60)
+      if (hours >= 0) {
+        totalTimeInStage += hours
+        countWithTime++
       }
     }
 
@@ -100,30 +127,25 @@ export async function getPipelineMetrics(
 
     // Calculate conversion rate to next stage
     let conversionRate = 0
-    if (nextStage) {
-      const { data: nextStageLeads } = await supabase
-        .from('lead_status_history')
-        .select('lead_id')
-        .eq('old_status', stage)
-        .eq('new_status', nextStage)
-        .gte('created_at', start)
-        .lte('created_at', end)
-
-      const convertedCount = new Set(nextStageLeads?.map((h) => h.lead_id) || []).size
-      conversionRate = leadCount > 0 ? (convertedCount / leadCount) * 100 : 0
+    if (nextStage && allStatusHistory) {
+      const convertedLeads = new Set(
+        allStatusHistory
+          .filter(h => h.old_status === stage && h.new_status === nextStage)
+          .map(h => h.lead_id)
+      )
+      conversionRate = leadCount > 0 ? (convertedLeads.size / leadCount) * 100 : 0
     }
 
     // Calculate drop-off rate (leads that went to lost/discarded)
-    const { data: lostLeads } = await supabase
-      .from('lead_status_history')
-      .select('lead_id')
-      .eq('old_status', stage)
-      .in('new_status', ['lost', 'discarded'])
-      .gte('created_at', start)
-      .lte('created_at', end)
-
-    const lostCount = new Set(lostLeads?.map((h) => h.lead_id) || []).size
-    const dropOffRate = leadCount > 0 ? (lostCount / leadCount) * 100 : 0
+    let dropOffRate = 0
+    if (allStatusHistory) {
+      const lostLeads = new Set(
+        allStatusHistory
+          .filter(h => h.old_status === stage && ['lost', 'discarded'].includes(h.new_status))
+          .map(h => h.lead_id)
+      )
+      dropOffRate = leadCount > 0 ? (lostLeads.size / leadCount) * 100 : 0
+    }
 
     metrics.push({
       stage,
@@ -152,13 +174,23 @@ export async function getSourceROI(
   // Get all leads in period
   const { data: leads } = await supabase
     .from('leads')
-    .select('source, status, payment_amount, advance_amount')
+    .select('id, source, status, payment_amount, advance_amount')
     .gte('created_at', start)
     .lte('created_at', end)
 
-  if (!leads) {
+  if (!leads || leads.length === 0) {
     return []
   }
+
+  // Get all customers for these leads in one query
+  const leadIds = leads.map(l => l.id)
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('lead_id')
+    .in('lead_id', leadIds)
+    .not('lead_id', 'is', null)
+  
+  const convertedLeadIds = new Set(customers?.map(c => c.lead_id).filter(Boolean) || [])
 
   // Group by source
   const sourceMap = new Map<string, SourceROI>()
@@ -180,8 +212,8 @@ export async function getSourceROI(
     const sourceData = sourceMap.get(lead.source)!
     sourceData.totalLeads++
 
-    // Check if converted
-    if (['converted', 'deal_won', 'fully_paid'].includes(lead.status)) {
+    // Check if converted to customer (has customer record)
+    if (convertedLeadIds.has(lead.id)) {
       sourceData.convertedLeads++
 
       // Calculate revenue
@@ -230,8 +262,25 @@ export async function getCohortAnalysis(
     .select('id, created_at, status, converted_at, payment_amount, advance_amount')
     .order('created_at', { ascending: true })
 
-  if (!leads) {
+  if (!leads || leads.length === 0) {
     return []
+  }
+
+  // Get all customers for these leads in one query
+  const leadIds = leads.map(l => l.id)
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('lead_id, created_at')
+    .in('lead_id', leadIds)
+    .not('lead_id', 'is', null)
+  
+  const customerMap = new Map()
+  if (customers) {
+    customers.forEach((c: any) => {
+      if (c.lead_id) {
+        customerMap.set(c.lead_id, c)
+      }
+    })
   }
 
   // Group by cohort
@@ -262,18 +311,18 @@ export async function getCohortAnalysis(
     const cohort = cohortMap.get(cohortKey)!
     cohort.totalLeads++
 
-    // Check if converted
-    if (['converted', 'deal_won', 'fully_paid'].includes(lead.status)) {
+    // Check if converted to customer (has customer record)
+    const customer = customerMap.get(lead.id)
+    
+    if (customer) {
       cohort.convertedLeads++
 
       // Calculate time to convert
-      if (lead.converted_at) {
-        const created = new Date(lead.created_at)
-        const converted = new Date(lead.converted_at)
-        const days = (converted.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)
-        cohort.averageTimeToConvert =
-          (cohort.averageTimeToConvert * (cohort.convertedLeads - 1) + days) / cohort.convertedLeads
-      }
+      const created = new Date(lead.created_at)
+      const converted = new Date(customer.created_at || lead.converted_at || new Date())
+      const days = (converted.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)
+      cohort.averageTimeToConvert =
+        (cohort.averageTimeToConvert * (cohort.convertedLeads - 1) + days) / cohort.convertedLeads
 
       // Calculate revenue
       const revenue = parseFloat(lead.payment_amount as any) || parseFloat(lead.advance_amount as any) || 0
@@ -318,27 +367,35 @@ export async function getConversionFunnel(startDate?: string, endDate?: string) 
     'converted',
   ]
 
-  const funnel: Array<{ stage: string; count: number; percentage: number }> = []
-
-  // Get total new leads
-  const { count: totalNew } = await supabase
+  // Fetch all leads in period once (only need status)
+  const { data: allLeads } = await supabase
     .from('leads')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'new')
+    .select('status')
     .gte('created_at', start)
     .lte('created_at', end)
 
-  const total = totalNew || 0
+  if (!allLeads || allLeads.length === 0) {
+    return stages.map(stage => ({
+      stage,
+      count: 0,
+      percentage: 0,
+    }))
+  }
+
+  // Count leads by status
+  const statusCounts = new Map<string, number>()
+  for (const lead of allLeads) {
+    const count = statusCounts.get(lead.status) || 0
+    statusCounts.set(lead.status, count + 1)
+  }
+
+  // Get total new leads for percentage calculation
+  const total = statusCounts.get('new') || 0
+
+  const funnel: Array<{ stage: string; count: number; percentage: number }> = []
 
   for (const stage of stages) {
-    const { count } = await supabase
-      .from('leads')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', stage)
-      .gte('created_at', start)
-      .lte('created_at', end)
-
-    const countValue = count || 0
+    const countValue = statusCounts.get(stage) || 0
     const percentage = total > 0 ? (countValue / total) * 100 : 0
 
     funnel.push({
@@ -396,8 +453,25 @@ export async function getRepPerformance(
     .gte('created_at', start)
     .lte('created_at', end)
 
-  if (!leads) {
+  if (!leads || leads.length === 0) {
     return []
+  }
+
+  // Get all customers for these leads in one query
+  const leadIds = leads.map((l: any) => l.id)
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('lead_id, created_at')
+    .in('lead_id', leadIds)
+    .not('lead_id', 'is', null)
+  
+  const customerMap = new Map()
+  if (customers) {
+    customers.forEach((c: any) => {
+      if (c.lead_id) {
+        customerMap.set(c.lead_id, c)
+      }
+    })
   }
 
   // Group by user
@@ -437,14 +511,17 @@ export async function getRepPerformance(
     const userData = userMap.get(assignedTo)!
     userData.totalLeads++
 
-    // Check if converted
-    if (['converted', 'deal_won', 'fully_paid'].includes(lead.status)) {
+    // Check if converted to customer (has customer record)
+    const customer = customerMap.get(lead.id)
+    
+    if (customer) {
       userData.convertedLeads++
 
       // Calculate conversion time
-      if (lead.converted_at && lead.created_at) {
+      if (lead.created_at) {
+        const convertedDate = customer.created_at || lead.converted_at || new Date()
         const days =
-          (new Date(lead.converted_at).getTime() - new Date(lead.created_at).getTime()) /
+          (new Date(convertedDate).getTime() - new Date(lead.created_at).getTime()) /
           (1000 * 60 * 60 * 24)
         userData.conversionTimes.push(days)
       }

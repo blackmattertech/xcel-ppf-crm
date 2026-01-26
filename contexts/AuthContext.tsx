@@ -1,7 +1,7 @@
 'use client'
 
-import { createContext, useContext, ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { createContext, useContext, ReactNode, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 
 interface UserData {
@@ -92,17 +92,46 @@ async function fetchUserData() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { data: user, isLoading, refetch } = useQuery({
+  const queryClient = useQueryClient()
+  const { data: user, isLoading, refetch, error } = useQuery({
     queryKey: ['auth', 'user'],
     queryFn: fetchUserData,
-    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    staleTime: 30 * 1000, // Consider data fresh for 30 seconds
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
     retry: 1,
-    // Optimize for faster initial load
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchOnMount: false, // Don't refetch on every mount to prevent loops
+    refetchOnWindowFocus: false, // Don't refetch on window focus to prevent loops
+    refetchOnReconnect: true, // Only refetch on reconnect
   })
+
+  // Log errors for debugging
+  useEffect(() => {
+    if (error) {
+      console.error('Auth query error:', error)
+    }
+  }, [error])
+
+  // Listen to Supabase auth state changes
+  useEffect(() => {
+    const supabase = createClient()
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // Clear all React Query cache on logout to prevent showing previous user's data
+        queryClient.clear()
+        // Invalidate all queries
+        queryClient.invalidateQueries()
+      } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        // Only invalidate auth query to fetch fresh user data
+        // Don't clear all cache as it causes infinite refetch loops
+        queryClient.invalidateQueries({ queryKey: ['auth', 'user'] })
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [queryClient])
 
   const value: AuthContextType = {
     user: user || null,

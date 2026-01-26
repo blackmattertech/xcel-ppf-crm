@@ -11,7 +11,7 @@ import { PERMISSIONS } from '@/shared/constants/permissions'
 
 export async function GET(request: NextRequest) {
   try {
-    const authResult = await requirePermission(request, PERMISSIONS.LEADS_READ)
+    const authResult = await requirePermission(request, PERMISSIONS.ANALYTICS_READ)
     
     if ('error' in authResult) {
       return authResult.error
@@ -25,7 +25,20 @@ export async function GET(request: NextRequest) {
 
     let result: any
 
-    switch (metric) {
+    // Support both frontend tab IDs and backend metric names for backward compatibility
+    const metricMap: Record<string, string> = {
+      'pipeline': 'pipeline',
+      'source': 'source_roi',
+      'source_roi': 'source_roi',
+      'cohort': 'cohort',
+      'reps': 'rep_performance',
+      'rep_performance': 'rep_performance',
+      'funnel': 'funnel',
+    }
+    
+    const mappedMetric = metricMap[metric || ''] || metric
+
+    switch (mappedMetric) {
       case 'pipeline':
         result = await getPipelineMetrics(startDate, endDate)
         break
@@ -58,7 +71,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Invalid metric. Use: pipeline, source_roi, cohort, funnel, rep_performance, or all' },
+          { error: `Invalid metric: ${metric}. Use: pipeline, source/source_roi, cohort, funnel, reps/rep_performance, or all` },
           { status: 400 }
         )
     }

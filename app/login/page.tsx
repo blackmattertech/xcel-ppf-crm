@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import TypingAnimation from '@/components/TypingAnimation'
 
 export default function LoginPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -104,6 +106,13 @@ export default function LoginPage() {
           localStorage.removeItem('remembered_credentials')
         }
 
+        // Clear all React Query cache to ensure fresh data for new user
+        queryClient.clear()
+        // Invalidate auth query to fetch new user data
+        queryClient.invalidateQueries({ queryKey: ['auth', 'user'] })
+        // Invalidate all other queries
+        queryClient.invalidateQueries()
+        
         // Redirect to dashboard
         router.push('/dashboard')
         router.refresh()

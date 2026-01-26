@@ -14,7 +14,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const authResult = await requirePermission(request, PERMISSIONS.LEADS_UPDATE)
+    const authResult = await requirePermission(request, PERMISSIONS.NURTURE_CREATE)
     
     if ('error' in authResult) {
       return authResult.error

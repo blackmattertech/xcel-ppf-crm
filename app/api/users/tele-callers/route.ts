@@ -25,35 +25,57 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // Get tele_caller role
-    const { data: teleCallerRole, error: roleError } = await supabase
-      .from('roles')
-      .select('id')
-      .eq('name', SYSTEM_ROLES.TELE_CALLER)
-      .single()
-
-    if (roleError || !teleCallerRole) {
-      return NextResponse.json(
-        { error: 'Tele-caller role not found' },
-        { status: 404 }
-      )
-    }
-
-    // Get all users with tele_caller role
+    // Optimized: Get tele-callers in a single query with join
     const { data: teleCallers, error: usersError } = await supabase
       .from('users')
-      .select('id, name, email')
-      .eq('role_id', teleCallerRole.id)
+      .select(`
+        id,
+        name,
+        email,
+        roles!inner(id, name)
+      `)
+      .eq('roles.name', SYSTEM_ROLES.TELE_CALLER)
       .order('name', { ascending: true })
 
     if (usersError) {
-      return NextResponse.json(
-        { error: `Failed to fetch tele-callers: ${usersError.message}` },
-        { status: 500 }
-      )
+      // Fallback to two queries if join fails
+      const { data: teleCallerRole, error: roleError } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('name', SYSTEM_ROLES.TELE_CALLER)
+        .single()
+
+      if (roleError || !teleCallerRole) {
+        return NextResponse.json(
+          { error: 'Tele-caller role not found' },
+          { status: 404 }
+        )
+      }
+
+      const { data: fallbackTeleCallers, error: fallbackError } = await supabase
+        .from('users')
+        .select('id, name, email')
+        .eq('role_id', teleCallerRole.id)
+        .order('name', { ascending: true })
+
+      if (fallbackError) {
+        return NextResponse.json(
+          { error: `Failed to fetch tele-callers: ${fallbackError.message}` },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({ teleCallers: fallbackTeleCallers || [] })
     }
 
-    return NextResponse.json({ teleCallers: teleCallers || [] })
+    // Extract only the fields we need
+    const formattedTeleCallers = (teleCallers || []).map((user: any) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+    }))
+
+    return NextResponse.json({ teleCallers: formattedTeleCallers })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch tele-callers' },

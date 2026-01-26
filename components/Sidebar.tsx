@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFollowUpNotifications } from '@/hooks/useFollowUpNotifications'
@@ -13,6 +14,7 @@ const menuItems: SidebarMenuItem[] = SIDEBAR_MENU_ITEMS
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { user, isLoading, isAuthenticated } = useAuth()
   
   // Only fetch follow-up notifications if user is a tele_caller
@@ -33,8 +35,16 @@ export default function Sidebar() {
 
   async function handleLogout() {
     const supabase = createClient()
+    // Clear all React Query cache before logout
+    queryClient.clear()
+    // Sign out from Supabase
     await supabase.auth.signOut()
+    // Invalidate all queries
+    queryClient.invalidateQueries()
+    // Redirect to login
     router.push('/login')
+    // Force a hard refresh to ensure clean state
+    router.refresh()
   }
 
   // Filter menu items based on user role and permissions
@@ -62,7 +72,9 @@ export default function Sidebar() {
     return false
   })
 
-  if (isLoading) {
+  // Show loading state only briefly, then show sidebar even if still loading
+  // This prevents the sidebar from being stuck in loading state
+  if (isLoading && !user) {
     return (
       <div className="fixed left-0 top-0 w-64 h-screen bg-gray-900 flex items-center justify-center z-50">
         <div className="text-white">Loading...</div>

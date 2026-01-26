@@ -41,9 +41,34 @@ export async function GET(
       console.error('Failed to fetch orders:', ordersError)
     }
 
+    // Get lead metadata if customer has a lead_id
+    let leadMetadata = null
+    if (customer.lead_id) {
+      const { data: lead, error: leadError } = await supabase
+        .from('leads')
+        .select('meta_data, campaign_id, ad_id, adset_id, form_id, form_name, ad_name, campaign_name, source')
+        .eq('id', customer.lead_id)
+        .single()
+      
+      if (!leadError && lead) {
+        leadMetadata = {
+          meta_data: lead.meta_data,
+          campaign_id: lead.campaign_id,
+          ad_id: lead.ad_id,
+          adset_id: lead.adset_id,
+          form_id: lead.form_id,
+          form_name: lead.form_name,
+          ad_name: lead.ad_name,
+          campaign_name: lead.campaign_name,
+          source: lead.source,
+        }
+      }
+    }
+
     return NextResponse.json({
       customer,
       orders: orders || [],
+      leadMetadata,
     })
   } catch (error) {
     return NextResponse.json(

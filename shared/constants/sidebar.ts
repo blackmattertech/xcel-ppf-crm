@@ -80,6 +80,38 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     roles: ['super_admin', 'admin'],
     requiresPermissions: true,
   },
+  {
+    name: 'SLA Management',
+    href: '/sla',
+    icon: '⏱️',
+    resource: 'sla',
+    roles: ['super_admin', 'admin'],
+    requiresPermissions: true,
+  },
+  {
+    name: 'Analytics',
+    href: '/analytics',
+    icon: '📈',
+    resource: 'analytics',
+    roles: ['super_admin', 'admin', 'marketing'],
+    requiresPermissions: true,
+  },
+  {
+    name: 'Leader Board',
+    href: '/leaderboard',
+    icon: '🏆',
+    resource: 'leaderboard',
+    roles: ['super_admin', 'admin', 'marketing'],
+    requiresPermissions: true,
+  },
+  {
+    name: 'Nurture Campaigns',
+    href: '/nurture',
+    icon: '📧',
+    resource: 'nurture',
+    roles: ['super_admin', 'admin', 'marketing'],
+    requiresPermissions: true,
+  },
 ]
 
 /**

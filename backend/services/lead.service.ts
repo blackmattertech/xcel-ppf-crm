@@ -18,8 +18,17 @@ export async function getAllLeads(filters?: {
   offset?: number
   userId?: string // Current user ID for role-based filtering
   userRole?: string // Current user role for role-based filtering
+  includeConverted?: boolean // Include converted leads (for conversion rate calculation)
 }) {
   const supabase = createServiceClient()
+
+  // First, get all lead_ids that have been converted to customers
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('lead_id')
+    .not('lead_id', 'is', null)
+  
+  const convertedLeadIds = customers?.map((c: any) => c.lead_id).filter(Boolean) || []
 
   let query = supabase
     .from('leads')
@@ -34,8 +43,20 @@ export async function getAllLeads(filters?: {
     `)
     .order('created_at', { ascending: false })
 
-  // Exclude leads with FULLY_PAID status
-  query = query.neq('status', LEAD_STATUS.FULLY_PAID)
+  // Exclude leads that have been converted to customers
+  // Use a more efficient approach: filter in the query result instead of complex NOT IN
+  // We'll filter them out after fetching
+
+  // Exclude leads with FULLY_PAID status unless includeConverted is true
+  // Also exclude DISCARDED leads unless specifically filtered
+  if (!filters?.includeConverted) {
+    query = query.neq('status', LEAD_STATUS.FULLY_PAID)
+  }
+  
+  // Exclude discarded leads unless status filter explicitly requests them
+  if (!filters?.status || filters.status !== LEAD_STATUS.DISCARDED) {
+    query = query.neq('status', LEAD_STATUS.DISCARDED)
+  }
 
   // Role-based filtering: tele_callers can only see their assigned leads
   if (filters?.userRole === 'tele_caller' && filters?.userId) {
@@ -62,13 +83,67 @@ export async function getAllLeads(filters?: {
     query = query.range(filters.offset, filters.offset + (filters.limit || 50) - 1)
   }
 
-  const { data, error } = await query
+  const { data: leads, error } = await query
 
   if (error) {
     throw new Error(`Failed to fetch leads: ${error.message}`)
   }
 
-  return data || []
+  if (!leads || leads.length === 0) {
+    return []
+  }
+
+  // Filter out leads that have been converted to customers
+  // Converted leads should not appear in the leads list
+  const convertedLeadIdsSet = new Set(convertedLeadIds)
+  const activeLeads = leads.filter((lead: any) => !convertedLeadIdsSet.has(lead.id))
+
+  // For tele-callers calculating conversion rate, we need to fetch ALL their leads (including converted)
+  // separately to calculate accurate conversion rate, but we don't return converted leads in the main list
+  if (filters?.userRole === 'tele_caller' && filters?.includeConverted && filters?.userId) {
+    // Fetch ALL leads assigned to this tele-caller (including converted ones) for conversion rate calculation
+    const { data: allTeleCallerLeads } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('assigned_to', filters.userId)
+    
+    if (allTeleCallerLeads && allTeleCallerLeads.length > 0) {
+      const allLeadIds = allTeleCallerLeads.map((l: any) => l.id)
+      
+      // Fetch customers for ALL their leads (including converted)
+      const { data: customers } = await supabase
+        .from('customers')
+        .select('id, lead_id')
+        .in('lead_id', allLeadIds)
+      
+      // Create a map of lead_id to customer for quick lookup
+      const customerMap = new Map()
+      if (customers) {
+        customers.forEach((customer: any) => {
+          if (customer.lead_id) {
+            customerMap.set(customer.lead_id, customer)
+          }
+        })
+      }
+      
+      // Add customer information to non-converted leads (converted leads are already excluded from activeLeads)
+      // Also include total leads count and converted count for conversion rate calculation
+      const totalLeadsCount = allTeleCallerLeads.length
+      const convertedLeadsCount = customers?.length || 0
+      
+      const leadsWithCustomer = activeLeads.map((lead: any) => ({
+        ...lead,
+        customer: customerMap.get(lead.id) || null,
+        // Include conversion metadata for frontend calculation
+        _totalLeadsCount: totalLeadsCount,
+        _convertedLeadsCount: convertedLeadsCount,
+      }))
+      
+      return leadsWithCustomer
+    }
+  }
+
+  return activeLeads || []
 }
 
 export async function getLeadById(id: string, userId?: string, userRole?: string) {

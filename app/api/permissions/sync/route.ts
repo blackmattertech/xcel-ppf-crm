@@ -16,10 +16,12 @@ export async function POST(request: NextRequest) {
     }
 
     const { user } = authResult
-    const userRole = user.role?.name
+    // Handle both role structure formats: user.role.name or user.role (if it's already a string)
+    const userRole = typeof user.role === 'string' ? user.role : user.role?.name
 
     // Only admin and super_admin can sync permissions
     if (userRole !== SYSTEM_ROLES.ADMIN && userRole !== SYSTEM_ROLES.SUPER_ADMIN) {
+      console.error('Permission sync denied. User role:', userRole, 'Expected:', SYSTEM_ROLES.ADMIN, 'or', SYSTEM_ROLES.SUPER_ADMIN)
       return NextResponse.json(
         { error: 'Forbidden: Only administrators can sync permissions' },
         { status: 403 }

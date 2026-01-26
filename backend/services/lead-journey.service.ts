@@ -27,8 +27,11 @@ export async function updateLeadStatus(
   const oldStatus = currentLead.status as LeadStatus
 
   // Validate status transition
+  // Allow transition to DISCARDED from any status (for wrong numbers, etc.)
   const allowedStatuses = LEAD_STATUS_FLOW[oldStatus] || []
-  if (!allowedStatuses.includes(newStatus) && oldStatus !== newStatus) {
+  if (newStatus === LEAD_STATUS.DISCARDED || allowedStatuses.includes(newStatus) || oldStatus === newStatus) {
+    // Allow the transition
+  } else {
     throw new Error(
       `Invalid status transition from ${oldStatus} to ${newStatus}. Allowed: ${allowedStatuses.join(', ')}`
     )

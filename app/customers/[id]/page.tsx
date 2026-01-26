@@ -24,6 +24,18 @@ interface Order {
   created_at: string
 }
 
+interface LeadMetadata {
+  meta_data: Record<string, any> | null
+  campaign_id: string | null
+  ad_id: string | null
+  adset_id: string | null
+  form_id: string | null
+  form_name: string | null
+  ad_name: string | null
+  campaign_name: string | null
+  source: string | null
+}
+
 export default function CustomerDetailPage() {
   const router = useRouter()
   const params = useParams()
@@ -31,6 +43,7 @@ export default function CustomerDetailPage() {
   
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
+  const [leadMetadata, setLeadMetadata] = useState<LeadMetadata | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -54,6 +67,7 @@ export default function CustomerDetailPage() {
         const data = await response.json()
         setCustomer(data.customer)
         setOrders(data.orders || [])
+        setLeadMetadata(data.leadMetadata || null)
       } else {
         alert('Customer not found')
         router.push('/customers')
@@ -138,6 +152,90 @@ export default function CustomerDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Lead Metadata */}
+          {leadMetadata && leadMetadata.meta_data && Object.keys(leadMetadata.meta_data).length > 0 && (
+            <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Lead Metadata</h2>
+                <p className="text-sm text-gray-500 mt-1">Original lead information from when this customer was a lead</p>
+              </div>
+              <div className="px-6 py-4">
+                {/* Campaign Information */}
+                {(leadMetadata.campaign_name || leadMetadata.ad_name || leadMetadata.form_name) && (
+                  <div className="mb-6 pb-6 border-b border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Campaign Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {leadMetadata.source && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Source</label>
+                          <p className="mt-1 text-sm text-gray-900 capitalize">{leadMetadata.source}</p>
+                        </div>
+                      )}
+                      {leadMetadata.campaign_name && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Campaign</label>
+                          <p className="mt-1 text-sm text-gray-900">{leadMetadata.campaign_name}</p>
+                        </div>
+                      )}
+                      {leadMetadata.ad_name && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Ad Name</label>
+                          <p className="mt-1 text-sm text-gray-900">{leadMetadata.ad_name}</p>
+                        </div>
+                      )}
+                      {leadMetadata.form_name && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Form Name</label>
+                          <p className="mt-1 text-sm text-gray-900">{leadMetadata.form_name}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Full Metadata */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">All Metadata Fields</h3>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {Object.entries(leadMetadata.meta_data)
+                        .filter(([key]) => {
+                          // Exclude internal/system fields
+                          return key !== 'platform' && 
+                                 key !== 'Platform' &&
+                                 key !== 'customer_id'
+                        })
+                        .map(([key, value]) => {
+                          const displayKey = key.replace(/_/g, ' ').replace(/\?/g, '').replace(/^\w/, c => c.toUpperCase())
+                          let displayValue: string
+                          
+                          if (value === null || value === undefined) {
+                            displayValue = '-'
+                          } else if (typeof value === 'object') {
+                            displayValue = JSON.stringify(value, null, 2)
+                          } else {
+                            displayValue = String(value)
+                          }
+                          
+                          return (
+                            <div key={key} className="border-b border-gray-200 pb-3 last:border-0">
+                              <div className="text-xs font-medium text-gray-700 mb-1">{displayKey}</div>
+                              <div className="text-sm text-gray-900 break-words whitespace-pre-wrap">
+                                {displayValue}
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                    {Object.keys(leadMetadata.meta_data).length === 0 && (
+                      <p className="text-sm text-gray-500">No metadata available</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Orders */}
           <div className="bg-white rounded-lg shadow overflow-hidden">

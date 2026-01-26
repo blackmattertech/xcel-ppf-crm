@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
@@ -115,6 +115,8 @@ interface LeadStats {
   untouched: number
   hotLeads: number
   conversions: number
+  convertedCount?: number // Number of leads converted to customers
+  totalLeadsCount?: number // Total number of leads (including converted)
 }
 
 // Grid View Component
@@ -250,11 +252,25 @@ function GridView({
               </div>
               
               {/* Stage & Priority Badges */}
-              <div className="flex items-center gap-1.5 mt-2">
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                 <span className={`px-2 py-0.5 rounded-full text-[10px] ${getStageBadgeClass(lead.status)}`}>
                   {formatStageName(lead.status)}
                 </span>
                 {getPriorityBadge(lead)}
+                {(lead as any).lead_score !== null && (lead as any).lead_score !== undefined && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                    (lead as any).lead_score >= 80 ? 'bg-green-100 text-green-800' :
+                    (lead as any).lead_score >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    Score: {(lead as any).lead_score.toFixed(0)}
+                  </span>
+                )}
+                {(lead as any).has_active_sla_violation && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-100 text-red-800 font-semibold">
+                    ⚠️ SLA
+                  </span>
+                )}
               </div>
             </div>
 
@@ -339,7 +355,7 @@ function GridView({
                               if (parent && !parent.querySelector('.avatar-fallback')) {
                                 const fallback = document.createElement('div')
                                 fallback.className = 'avatar-fallback w-8 h-8 rounded-full bg-[#de0510] flex items-center justify-center text-white text-xs font-medium'
-                                fallback.textContent = lead.assigned_user.name.charAt(0).toUpperCase()
+                                fallback.textContent = lead.assigned_user?.name?.charAt(0).toUpperCase() || '?'
                                 parent.appendChild(fallback)
                               }
                             }}
@@ -739,8 +755,17 @@ function KanbanBoard({
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {getPriorityBadge(lead)}
+                          {(lead as any).lead_score !== null && (lead as any).lead_score !== undefined && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              (lead as any).lead_score >= 80 ? 'bg-green-100 text-green-800' :
+                              (lead as any).lead_score >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {(lead as any).lead_score.toFixed(0)}
+                            </span>
+                          )}
                           {isHot ? (
                             <TrendingUp size={14} className="text-[#ed1b24]" />
                           ) : (
@@ -767,8 +792,17 @@ export default function LeadsPage() {
   const { data: allLeadsData = [], isLoading: leadsLoading } = useLeads()
   const [leads, setLeads] = useState<Lead[]>([])
   const [allLeads, setAllLeads] = useState<Lead[]>([])
+  const [discardedLeads, setDiscardedLeads] = useState<Lead[]>([])
+  const [overallStats, setOverallStats] = useState<{ totalLeads: number; convertedLeads: number; conversionRate: number } | null>(null)
+  const hasFetchedOverallStats = useRef(false)
   const [teleCallers, setTeleCallers] = useState<TeleCaller[]>([])
-  const [stats, setStats] = useState<LeadStats>({ untouched: 0, hotLeads: 0, conversions: 0 })
+  const [stats, setStats] = useState<LeadStats>({ 
+    untouched: 0, 
+    hotLeads: 0, 
+    conversions: 0,
+    convertedCount: 0,
+    totalLeadsCount: 0
+  })
   
   const userRole = user?.role || null
   const isAdmin = userRole === 'admin' || userRole === 'super_admin'
@@ -821,24 +855,28 @@ export default function LeadsPage() {
     { key: 'interest_level', label: 'Lead Type', visible: true, width: 120 },
     { key: 'source', label: 'Source', visible: true, width: 150 },
     { key: 'assigned_to', label: 'Assigned To', visible: true, width: 180 },
-    { key: 'last_contacted', label: 'Last Contacted', visible: true, width: 150 },
     { key: 'phone', label: 'Mobile', visible: true, width: 150 },
-    { key: 'email', label: 'Email', visible: true, width: 200 },
+    { key: 'metadata', label: 'Metadata', visible: true, width: 250 },
   ]
 
-  const [columns, setColumns] = useState<ColumnConfig[]>(() => {
-    if (typeof window !== 'undefined') {
+  const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns)
+  const [columnsInitialized, setColumnsInitialized] = useState(false)
+
+  // Load columns from localStorage after mount to avoid hydration mismatch
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !columnsInitialized) {
       const saved = localStorage.getItem('leads-table-columns')
       if (saved) {
         try {
-          return JSON.parse(saved)
+          const parsed = JSON.parse(saved)
+          setColumns(parsed)
         } catch (e) {
-          return defaultColumns
+          // Keep default columns if parse fails
         }
       }
+      setColumnsInitialized(true)
     }
-    return defaultColumns
-  })
+  }, [columnsInitialized])
 
   const [customizeModalOpen, setCustomizeModalOpen] = useState(false)
   const [customizeMode, setCustomizeMode] = useState<'select' | 'adjust-width' | null>(null)
@@ -849,44 +887,117 @@ export default function LeadsPage() {
   // Container customization state
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false)
   const [containerCustomizeOpen, setContainerCustomizeOpen] = useState(false)
-  const [containerStyles, setContainerStyles] = useState(() => {
-    if (typeof window !== 'undefined') {
+  const defaultContainerStyles = {
+    containerColor: '#000000',
+    iconColor: '#ffffff',
+    textColor: '#ffffff',
+    opacity: 0.2,
+    backgroundColor: '#ffffff', // Base color, opacity handled separately
+  }
+  const [containerStyles, setContainerStyles] = useState(defaultContainerStyles)
+  const [containerStylesInitialized, setContainerStylesInitialized] = useState(false)
+
+  // Load container styles from localStorage after mount to avoid hydration mismatch
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !containerStylesInitialized) {
       const saved = localStorage.getItem('leads-container-styles')
       if (saved) {
         try {
-          return JSON.parse(saved)
+          const parsed = JSON.parse(saved)
+          setContainerStyles(parsed)
         } catch (e) {
-          return {
-            containerColor: '#000000',
-            iconColor: '#ffffff',
-            textColor: '#ffffff',
-            opacity: 1,
-            backgroundColor: '#ffffff', // Base color, opacity handled separately
-          }
+          // Keep default styles if parse fails
         }
       }
+      setContainerStylesInitialized(true)
     }
-    return {
-      containerColor: '#000000',
-      iconColor: '#ffffff',
-      textColor: '#ffffff',
-      opacity: 0.2,
-      backgroundColor: '#ffffff', // Base color, opacity handled separately
-    }
-  })
+  }, [containerStylesInitialized])
 
-  // Update allLeads when data is fetched
+  // Update allLeads when data is fetched from useLeads hook
+  // This ensures the leads list stays in sync when status/interest_level changes
+  // Use a ref to track the last processed data to prevent infinite loops
+  const lastProcessedDataRef = useRef<string>('')
+  
   useEffect(() => {
-    checkAuth()
-    fetchLeads()
-  }, [])
+    if (allLeadsData && Array.isArray(allLeadsData)) {
+      // Create a stable identifier for the data (using IDs and length)
+      // Only use first few IDs to avoid performance issues with large arrays
+      const ids = allLeadsData.slice(0, 10).map(l => l?.id || '').join(',')
+      const dataSignature = `${allLeadsData.length}-${ids}`
+      
+      // Only update if data actually changed
+      if (lastProcessedDataRef.current !== dataSignature) {
+        lastProcessedDataRef.current = dataSignature
+        setAllLeads([...allLeadsData] as Lead[]) // Create new array reference
+      }
+    } else if (!allLeadsData) {
+      // If data is null/undefined, clear the leads
+      const currentSignature = '0-'
+      if (lastProcessedDataRef.current !== currentSignature) {
+        setAllLeads([])
+        lastProcessedDataRef.current = currentSignature
+      }
+    }
+  }, [allLeadsData])
+
+  // Fetch overall conversion stats for admins (only once when component mounts or isAdmin changes)
+  useEffect(() => {
+    if (isAdmin && !hasFetchedOverallStats.current) {
+      hasFetchedOverallStats.current = true
+      // Fetch overall stats only once
+      fetch('/api/leads?limit=1')
+        .then(res => res.json())
+        .then(data => {
+          if (data.overallStats) {
+            setOverallStats(data.overallStats)
+          }
+        })
+        .catch(err => {
+          console.error('Failed to fetch overall stats:', err)
+          hasFetchedOverallStats.current = false // Reset on error to allow retry
+        })
+    } else if (!isAdmin) {
+      // Reset the ref when user is no longer admin
+      hasFetchedOverallStats.current = false
+      setOverallStats(null)
+    }
+  }, [isAdmin])
+
+  // Fetch discarded leads when discarded filter is active
+  useEffect(() => {
+    const hasDiscardedFilter = filterConditions.some(
+      c => c.column === 'status' && c.value === LEAD_STATUS.DISCARDED
+    )
+    
+    if (hasDiscardedFilter) {
+      // Fetch discarded leads from backend
+      fetch(`/api/leads?status=${LEAD_STATUS.DISCARDED}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.leads) {
+            setDiscardedLeads(data.leads as Lead[])
+          }
+        })
+        .catch(err => console.error('Failed to fetch discarded leads:', err))
+    } else {
+      // Clear discarded leads when filter is removed
+      setDiscardedLeads([])
+    }
+  }, [filterConditions])
+
+  // Save columns to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined' && columnsInitialized) {
+      localStorage.setItem('leads-table-columns', JSON.stringify(columns))
+    }
+  }, [columns, columnsInitialized])
 
   // Save container styles to localStorage whenever they change
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && containerStylesInitialized) {
       localStorage.setItem('leads-container-styles', JSON.stringify(containerStyles))
     }
-  }, [containerStyles])
+  }, [containerStyles, containerStylesInitialized])
   
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -917,37 +1028,107 @@ export default function LeadsPage() {
 
   // Calculate stats from leads
   useEffect(() => {
-    if (allLeads.length > 0) {
-      // Untouched: leads with status 'new' and no first_contact_at
-      const untouched = allLeads.filter(lead => 
-        lead.status === 'new' && !lead.first_contact_at
-      ).length
-      
-      // Hot Leads: leads with interest_level 'hot'
-      const hotLeads = allLeads.filter(lead => 
-        lead.interest_level === 'hot'
-      ).length
-      
-      // Conversions: leads with converted or deal_won status
-      const converted = allLeads.filter(lead => 
-        lead.status === 'converted' || lead.status === 'deal_won'
-      ).length
-      
-      const conversionRate = allLeads.length > 0 
-        ? Math.round((converted / allLeads.length) * 100) 
-        : 0
-      
-      setStats({
+    // Filter out converted leads for display stats (they shouldn't be counted in untouched/hot leads)
+    const activeLeads = allLeads.filter(lead => {
+      // Exclude leads that have been converted to customers
+      const hasCustomer = (lead as any).customer && (lead as any).customer.lead_id === lead.id
+      return !hasCustomer
+    })
+    
+    // Untouched: leads with status 'new' and no first_contact_at (only active leads)
+    const untouched = activeLeads.filter(lead => 
+      lead.status === 'new' && !lead.first_contact_at
+    ).length
+    
+    // Hot Leads: leads with interest_level 'hot' (only active leads)
+    const hotLeads = activeLeads.filter(lead => 
+      lead.interest_level === 'hot'
+    ).length
+    
+    // Conversions: Calculate based on user role
+    let converted = 0
+    let totalLeadsForConversion = activeLeads.length
+    
+    // For admins, use overall conversion stats across all tele-callers
+    if (isAdmin && overallStats) {
+      converted = overallStats.convertedLeads
+      totalLeadsForConversion = overallStats.totalLeads
+    }
+    // For tele-callers, use the conversion data from backend if available
+    else if (userRole === 'tele_caller' && allLeads.length > 0) {
+      // Check if first lead has conversion metadata
+      const firstLead = allLeads[0] as any
+      if (firstLead._totalLeadsCount !== undefined && firstLead._convertedLeadsCount !== undefined) {
+        converted = firstLead._convertedLeadsCount
+        totalLeadsForConversion = firstLead._totalLeadsCount
+      } else {
+        // Fallback: count converted leads from customer data
+        converted = allLeads.filter(lead => {
+          const hasCustomer = (lead as any).customer && (lead as any).customer.lead_id === lead.id
+          return hasCustomer
+        }).length
+        // For tele-callers, we need to fetch all their leads including converted ones
+        // Since converted leads are excluded from allLeads, we need to estimate
+        // This is a limitation - ideally we'd have the total count from backend
+        totalLeadsForConversion = allLeads.length + converted
+      }
+    } else {
+      // For other roles, conversion rate is 0 (they don't see converted leads)
+      converted = 0
+      totalLeadsForConversion = activeLeads.length
+    }
+    
+    // Calculate conversion rate (percentage)
+    // Conversion rate = (leads converted to customers / total assigned leads) * 100
+    const conversionRate = totalLeadsForConversion > 0 
+      ? Math.round((converted / totalLeadsForConversion) * 100) 
+      : 0
+    
+    // Only update stats if values actually changed to prevent infinite loops
+    setStats(prev => {
+      if (
+        prev.untouched === untouched &&
+        prev.hotLeads === hotLeads &&
+        prev.conversions === conversionRate &&
+        prev.convertedCount === converted &&
+        prev.totalLeadsCount === totalLeadsForConversion
+      ) {
+        return prev // No change, return previous state
+      }
+      return {
         untouched,
         hotLeads,
-        conversions: conversionRate
-      })
-    }
-  }, [allLeads])
+        conversions: conversionRate,
+        convertedCount: converted,
+        totalLeadsCount: totalLeadsForConversion
+      }
+    })
+  }, [allLeads, userRole, isAdmin, overallStats])
 
   // Filter, sort and paginate leads
   useEffect(() => {
-    let filtered = [...allLeads]
+    // First, filter out any leads that have been converted to customers
+    // (they should not appear in the leads list)
+    // Also filter out discarded leads unless specifically filtered
+    const hasDiscardedFilter = filterConditions.some(
+      c => c.column === 'status' && c.value === LEAD_STATUS.DISCARDED
+    )
+    
+    // If discarded filter is active, use discarded leads; otherwise use allLeads
+    const leadsToFilter = hasDiscardedFilter ? discardedLeads : allLeads
+    
+    let filtered = leadsToFilter.filter(lead => {
+      // Exclude leads that have a customer record (converted to customer)
+      const hasCustomer = (lead as any).customer && (lead as any).customer.lead_id === lead.id
+      if (hasCustomer) return false
+      
+      // For non-discarded filter, exclude discarded leads
+      if (!hasDiscardedFilter && lead.status === LEAD_STATUS.DISCARDED) {
+        return false
+      }
+      
+      return true
+    })
     
     // Apply search filter
     if (searchQuery.trim()) {
@@ -1041,7 +1222,7 @@ export default function LeadsPage() {
       // For Kanban and Grid views, show all filtered leads
       setLeads(filtered)
     }
-  }, [allLeads, searchQuery, filterConditions, sortColumn, sortDirection, currentPage, itemsPerPage, viewMode])
+  }, [allLeads, discardedLeads, searchQuery, filterConditions, sortColumn, sortDirection, currentPage, itemsPerPage, viewMode, LEAD_STATUS.DISCARDED])
   
   // Helper function to get column value
   function getColumnValue(lead: Lead, column: string): any {
@@ -1052,6 +1233,7 @@ export default function LeadsPage() {
       case 'source': return lead.source
       case 'status': return lead.status
       case 'interest_level': return lead.interest_level
+      case 'lead_score': return (lead as any).lead_score || null
       case 'requirement': return lead.requirement || getVehicleName(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
       case 'created_at': return lead.created_at
@@ -1063,6 +1245,12 @@ export default function LeadsPage() {
       case 'payment_status': return lead.meta_data?.payment_status || null
       case 'payment_amount': return lead.meta_data?.payment_amount || null
       case 'advance_amount': return lead.meta_data?.advance_amount || null
+      case 'metadata': 
+        // Return a searchable string of all metadata
+        if (!lead.meta_data) return null
+        return Object.entries(lead.meta_data)
+          .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
+          .join(' ')
       default: return null
     }
   }
@@ -1183,20 +1371,32 @@ export default function LeadsPage() {
     }
   }
 
-  // Get vehicle name from lead
+  // Get car model from lead (prioritize car_model over product/service)
   function getVehicleName(lead: Lead): string {
-    if (lead.requirement) {
-      return lead.requirement
-    }
     if (lead.meta_data) {
-      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] || 
-                     lead.meta_data['what_services_are_you_looking_for'] ||
-                     lead.meta_data['vehicle'] ||
-                     lead.meta_data['car_model'] ||
-                     null
-      if (vehicle) {
-        return String(vehicle).replace(/_/g, ' ')
+      // Prioritize car_model first
+      const carModel = lead.meta_data['car_model'] || 
+                      lead.meta_data['Car Model'] ||
+                      lead.meta_data['carModel'] ||
+                      lead.meta_data['vehicle'] ||
+                      lead.meta_data['Vehicle'] ||
+                      null
+      if (carModel) {
+        return String(carModel).replace(/_/g, ' ')
       }
+      // Fallback to requirement if no car model found
+      if (lead.requirement) {
+        return lead.requirement
+      }
+      // Last resort: check for product/service fields (but prioritize car model)
+      const product = lead.meta_data['what_services_are_you_looking_for?'] || 
+                     lead.meta_data['what_services_are_you_looking_for'] ||
+                     null
+      if (product) {
+        return String(product).replace(/_/g, ' ')
+      }
+    } else if (lead.requirement) {
+      return lead.requirement
     }
     return ''
   }
@@ -1334,7 +1534,9 @@ export default function LeadsPage() {
       })
 
       if (response.ok) {
-        queryClient.invalidateQueries({ queryKey: ['leads'] })
+        // Invalidate and refetch to ensure all views are updated
+        await queryClient.invalidateQueries({ queryKey: ['leads'] })
+        await queryClient.refetchQueries({ queryKey: ['leads'] })
       } else {
         const data = await response.json()
         alert(data.error || 'Failed to update lead status')
@@ -1579,7 +1781,14 @@ export default function LeadsPage() {
             <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-between">
               <div>
                 <p className="text-base text-gray-500 mb-1">Conversions</p>
-                <p className="text-4xl font-bold text-gray-900">{stats.conversions}%</p>
+                <p className="text-4xl font-bold text-gray-900">
+                  {typeof stats.conversions === 'number' ? `${stats.conversions}%` : '0%'}
+                </p>
+                {stats.totalLeadsCount !== undefined && stats.totalLeadsCount > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    {stats.convertedCount || 0} of {stats.totalLeadsCount} leads converted to customers
+                  </p>
+                )}
               </div>
               <div className="relative w-16 h-16">
                 <svg className="w-16 h-16 transform -rotate-90">
@@ -1598,7 +1807,7 @@ export default function LeadsPage() {
                     fill="none"
                     stroke="#10b981"
                     strokeWidth="6"
-                    strokeDasharray={`${(stats.conversions / 100) * 175.9} 175.9`}
+                    strokeDasharray={`${(Math.max(0, Math.min(100, stats.conversions || 0)) / 100) * 175.9} 175.9`}
                     strokeLinecap="round"
                   />
                 </svg>
@@ -2103,6 +2312,22 @@ export default function LeadsPage() {
                             {formatStageName(lead.status)}
                           </span>
                         )
+                      case 'lead_score':
+                        const score = (lead as any).lead_score
+                        if (score === null || score === undefined) {
+                          return <span className="text-gray-400">-</span>
+                        }
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              score >= 80 ? 'bg-green-100 text-green-800' :
+                              score >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {score.toFixed(0)}
+                            </span>
+                          </div>
+                        )
                       case 'interest_level':
                         return (
                           <div className="flex items-center gap-1.5">
@@ -2166,6 +2391,123 @@ export default function LeadsPage() {
                           <div className="flex items-center gap-1.5 text-base text-gray-500">
                             <Mail size={16} />
                             <span className="break-all">{lead.email || '-'}</span>
+                          </div>
+                        )
+                      case 'metadata':
+                        if (!lead.meta_data || Object.keys(lead.meta_data).length === 0) {
+                          return <span className="text-gray-400 text-sm">No metadata</span>
+                        }
+                        
+                        const meta = lead.meta_data
+                        const metaEntries = Object.entries(meta).filter(([key]) => {
+                          // Exclude internal/system fields
+                          return !['platform', 'Platform', 'customer_id'].includes(key)
+                        })
+                        
+                        if (metaEntries.length === 0) {
+                          return <span className="text-gray-400 text-sm">-</span>
+                        }
+                        
+                        // Get key metadata fields to display (prioritize important ones)
+                        const importantFields: Array<{key: string, value: any, icon: string}> = []
+                        
+                        // Company
+                        if (meta.company || meta.Company) {
+                          importantFields.push({ key: 'Company', value: meta.company || meta.Company, icon: '🏢' })
+                        }
+                        
+                        // Location
+                        if (meta.city && meta.country) {
+                          importantFields.push({ key: 'Location', value: `${meta.city}, ${meta.country}`, icon: '📍' })
+                        } else if (meta.location) {
+                          importantFields.push({ key: 'Location', value: meta.location, icon: '📍' })
+                        }
+                        
+                        // Budget/Payment
+                        if (meta.payment_amount) {
+                          importantFields.push({ key: 'Payment', value: `$${Number(meta.payment_amount).toLocaleString()}`, icon: '💰' })
+                        } else if (meta.budget_range) {
+                          importantFields.push({ key: 'Budget', value: meta.budget_range, icon: '💰' })
+                        }
+                        
+                        // Timeline
+                        if (meta.timeline) {
+                          importantFields.push({ key: 'Timeline', value: meta.timeline, icon: '📅' })
+                        }
+                        
+                        // Payment Status
+                        if (meta.payment_status) {
+                          importantFields.push({ key: 'Payment Status', value: String(meta.payment_status).replace(/_/g, ' '), icon: '💳' })
+                        }
+                        
+                        // Vehicle/Service
+                        const vehicle = meta['what_services_are_you_looking_for?'] || 
+                                       meta['what_services_are_you_looking_for'] ||
+                                       meta.vehicle ||
+                                       meta.car_model
+                        if (vehicle) {
+                          importantFields.push({ key: 'Vehicle', value: String(vehicle).replace(/_/g, ' '), icon: '🚗' })
+                        }
+                        
+                        // Build tooltip with all metadata
+                        const allMetaText = metaEntries
+                          .map(([key, value]) => {
+                            const displayKey = key.replace(/_/g, ' ').replace(/\?/g, '')
+                            const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
+                            return `${displayKey}: ${displayValue}`
+                          })
+                          .join('\n')
+                        
+                        return (
+                          <div 
+                            className="relative group"
+                            title={allMetaText}
+                          >
+                            <div className="flex flex-col gap-1 text-sm">
+                              {importantFields.length > 0 ? (
+                                <>
+                                  {importantFields.slice(0, 3).map((field, idx) => (
+                                    <div key={idx} className="flex items-center gap-1 text-gray-700">
+                                      <span>{field.icon}</span>
+                                      <span className="truncate" title={`${field.key}: ${field.value}`}>
+                                        {field.value}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {metaEntries.length > importantFields.length && (
+                                    <span className="text-gray-400 text-xs">
+                                      +{metaEntries.length - importantFields.length} more field{metaEntries.length - importantFields.length !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="text-sm text-gray-600">
+                                  <span className="font-medium">{metaEntries.length}</span> field{metaEntries.length !== 1 ? 's' : ''}
+                                  <span className="text-gray-400 text-xs block mt-0.5">Hover to see details</span>
+                                </div>
+                              )}
+                            </div>
+                            {/* Tooltip on hover */}
+                            <div className="absolute left-full ml-2 top-0 z-50 hidden group-hover:block bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl max-w-xs whitespace-pre-wrap break-words">
+                              <div className="font-semibold mb-2 text-white">All Metadata:</div>
+                              <div className="space-y-1">
+                                {metaEntries.slice(0, 10).map(([key, value], idx) => {
+                                  const displayKey = key.replace(/_/g, ' ').replace(/\?/g, '')
+                                  const displayValue = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)
+                                  return (
+                                    <div key={idx} className="border-b border-gray-700 pb-1 last:border-0">
+                                      <span className="font-medium text-yellow-300">{displayKey}:</span>
+                                      <span className="ml-1 text-gray-200">{displayValue}</span>
+                                    </div>
+                                  )
+                                })}
+                                {metaEntries.length > 10 && (
+                                  <div className="text-gray-400 pt-1">
+                                    ... and {metaEntries.length - 10} more
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         )
                       default:

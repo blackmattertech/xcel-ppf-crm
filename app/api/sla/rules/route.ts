@@ -21,7 +21,7 @@ const createSLARuleSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const authResult = await requirePermission(request, PERMISSIONS.LEADS_READ)
+    const authResult = await requirePermission(request, PERMISSIONS.SLA_READ)
     
     if ('error' in authResult) {
       return authResult.error
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requirePermission(request, PERMISSIONS.LEADS_UPDATE)
+    const authResult = await requirePermission(request, PERMISSIONS.SLA_MANAGE)
     
     if ('error' in authResult) {
       return authResult.error

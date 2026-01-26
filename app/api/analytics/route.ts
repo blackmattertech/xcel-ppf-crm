@@ -10,6 +10,10 @@ export async function GET(request: NextRequest) {
       return authResult.error
     }
 
+    const { user } = authResult
+    const userRole = user.role.name
+    const userId = user.id
+
     const supabase = createServiceClient()
     
     // Check if tables exist, return empty data if not
@@ -33,107 +37,168 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate') || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const endDate = searchParams.get('endDate') || new Date().toISOString()
 
-    // Leads by source
-    const { data: leadsBySource } = await supabase
+    // Build base query for leads based on user role
+    let leadsQuery = supabase
       .from('leads')
-      .select('source')
+      .select('id, source, status, assigned_to, created_at, first_contact_at')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
 
+    // For tele-callers, filter by their assigned leads
+    if (userRole === 'tele_caller') {
+      leadsQuery = leadsQuery.eq('assigned_to', userId)
+    }
+
+    // Execute all queries in parallel for better performance
+    const [
+      leadsResult,
+      followUpsResult,
+    ] = await Promise.all([
+      leadsQuery,
+      // Follow-up compliance
+      supabase
+        .from('follow_ups')
+        .select('status, scheduled_at')
+        .gte('scheduled_at', startDate)
+        .lte('scheduled_at', endDate),
+    ])
+
+    const allLeads = leadsResult.data || []
+    const followUps = followUpsResult.data || []
+
+    // Get all lead IDs to check for conversions
+    const leadIds = allLeads.map((lead: any) => lead.id)
+    
+    // Fetch customers to determine actual conversions (conversion = lead exists in customers table)
+    let convertedLeadIds: string[] = []
+    if (leadIds.length > 0) {
+      const { data: customers } = await supabase
+        .from('customers')
+        .select('lead_id')
+        .in('lead_id', leadIds)
+        .not('lead_id', 'is', null)
+      
+      convertedLeadIds = (customers || []).map((c: any) => c.lead_id)
+    }
+
+    // Process source counts
     const sourceCounts: Record<string, number> = {}
-    leadsBySource?.forEach((lead) => {
+    allLeads.forEach((lead: any) => {
       sourceCounts[lead.source] = (sourceCounts[lead.source] || 0) + 1
     })
 
-    // Leads by status
-    const { data: leadsByStatus } = await supabase
-      .from('leads')
-      .select('status')
-      .gte('created_at', startDate)
-      .lte('created_at', endDate)
-
+    // Process status counts
     const statusCounts: Record<string, number> = {}
-    leadsByStatus?.forEach((lead) => {
+    allLeads.forEach((lead: any) => {
       statusCounts[lead.status] = (statusCounts[lead.status] || 0) + 1
     })
 
-    // Conversion rate
-    const totalLeads = leadsByStatus?.length || 0
-    const convertedLeads = statusCounts['converted'] || 0
+    // Calculate conversion rate based on actual customers (not lead status)
+    // Conversion rate = (leads converted to customers / total assigned leads) * 100
+    const totalLeads = allLeads.length
+    const convertedLeads = convertedLeadIds.length
     const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0
 
-    // Rep performance
-    const { data: repPerformance } = await supabase
-      .from('leads')
-      .select('assigned_to, status')
-      .gte('created_at', startDate)
-      .lte('created_at', endDate)
-      .not('assigned_to', 'is', null)
+    // Rep performance - only for admins/super_admins (all tele-callers)
+    let repPerformanceData: any[] = []
+    if (userRole === 'admin' || userRole === 'super_admin') {
+      // Get all leads assigned to tele-callers
+      const { data: allTeleCallerLeads } = await supabase
+        .from('leads')
+        .select('id, assigned_to, status')
+        .gte('created_at', startDate)
+        .lte('created_at', endDate)
+        .not('assigned_to', 'is', null)
+      
+      if (allTeleCallerLeads && allTeleCallerLeads.length > 0) {
+        const allTeleCallerLeadIds = allTeleCallerLeads.map((l: any) => l.id)
+        
+        // Get all customers for these leads
+        const { data: allCustomers } = await supabase
+          .from('customers')
+          .select('lead_id')
+          .in('lead_id', allTeleCallerLeadIds)
+          .not('lead_id', 'is', null)
+        
+        const convertedLeadIdsSet = new Set((allCustomers || []).map((c: any) => c.lead_id))
+        
+        // Process rep performance
+        const repStats: Record<string, { total: number; converted: number }> = {}
+        allTeleCallerLeads.forEach((lead: any) => {
+          if (lead.assigned_to) {
+            if (!repStats[lead.assigned_to]) {
+              repStats[lead.assigned_to] = { total: 0, converted: 0 }
+            }
+            repStats[lead.assigned_to].total++
+            if (convertedLeadIdsSet.has(lead.id)) {
+              repStats[lead.assigned_to].converted++
+            }
+          }
+        })
 
-    const repStats: Record<string, { total: number; converted: number }> = {}
-    repPerformance?.forEach((lead) => {
-      if (lead.assigned_to) {
-        if (!repStats[lead.assigned_to]) {
-          repStats[lead.assigned_to] = { total: 0, converted: 0 }
-        }
-        repStats[lead.assigned_to].total++
-        if (lead.status === 'converted') {
-          repStats[lead.assigned_to].converted++
+        // Get user names and profile images for rep performance
+        const userIds = Object.keys(repStats)
+        if (userIds.length > 0) {
+          const { data: usersData } = await supabase
+            .from('users')
+            .select('id, name, profile_image_url')
+            .in('id', userIds)
+          
+          const users = usersData || []
+          
+          repPerformanceData = userIds.map((userId) => {
+            const user = users.find((u: any) => u.id === userId)
+            const stats = repStats[userId]
+            return {
+              user_id: userId,
+              user_name: user?.name || 'Unknown',
+              total_leads: stats.total,
+              converted_leads: stats.converted,
+              conversion_rate: stats.total > 0 ? (stats.converted / stats.total) * 100 : 0,
+              profile_image_url: user?.profile_image_url || null,
+            }
+          })
         }
       }
-    })
-
-    // Get user names for rep performance
-    const userIds = Object.keys(repStats)
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, name')
-      .in('id', userIds)
-
-    const repPerformanceWithNames = userIds.map((userId) => {
-      const user = users?.find((u) => u.id === userId)
-      const stats = repStats[userId]
-      return {
+    } else if (userRole === 'tele_caller') {
+      // For tele-callers, show their own performance
+      // Get profile image for the tele-caller
+      const { data: userData } = await supabase
+        .from('users')
+        .select('profile_image_url')
+        .eq('id', userId)
+        .single()
+      
+      repPerformanceData = [{
         user_id: userId,
-        user_name: user?.name || 'Unknown',
-        total_leads: stats.total,
-        converted_leads: stats.converted,
-        conversion_rate: stats.total > 0 ? (stats.converted / stats.total) * 100 : 0,
-      }
-    })
+        user_name: user.name || 'You',
+        total_leads: totalLeads,
+        converted_leads: convertedLeads,
+        conversion_rate: conversionRate,
+        profile_image_url: userData?.profile_image_url || null,
+      }]
+    }
 
     // Follow-up compliance
-    const { data: followUps } = await supabase
-      .from('follow_ups')
-      .select('status, scheduled_at')
-      .gte('scheduled_at', startDate)
-      .lte('scheduled_at', endDate)
-
-    const totalFollowUps = followUps?.length || 0
-    const completedFollowUps = followUps?.filter((f) => f.status === 'done').length || 0
+    const totalFollowUps = followUps.length
+    const completedFollowUps = followUps.filter((f) => f.status === 'done').length
     const followUpCompliance = totalFollowUps > 0 ? (completedFollowUps / totalFollowUps) * 100 : 0
 
-    // SLA breaches (leads without first contact within 5 minutes)
-    const { data: slaLeads } = await supabase
-      .from('leads')
-      .select('created_at, first_contact_at')
-      .gte('created_at', startDate)
-      .lte('created_at', endDate)
-      .eq('status', 'new')
-
-    const slaBreaches = slaLeads?.filter((lead) => {
+    // SLA breaches - leads with status 'new' that haven't been contacted within 5 minutes
+    const slaLeads = allLeads.filter((lead: any) => lead.status === 'new')
+    const slaBreaches = slaLeads.filter((lead: any) => {
       if (!lead.first_contact_at) return true
       const created = new Date(lead.created_at)
       const contacted = new Date(lead.first_contact_at)
       const diffMinutes = (contacted.getTime() - created.getTime()) / (1000 * 60)
       return diffMinutes > 5
-    }).length || 0
+    }).length
 
     return NextResponse.json({
       leadsBySource: sourceCounts,
       leadsByStatus: statusCounts,
       conversionRate: Math.round(conversionRate * 100) / 100,
-      repPerformance: repPerformanceWithNames,
+      repPerformance: repPerformanceData,
       followUpCompliance: Math.round(followUpCompliance * 100) / 100,
       slaBreaches,
       period: {
