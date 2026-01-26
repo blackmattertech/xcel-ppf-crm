@@ -2,6 +2,10 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { Database } from '@/shared/types/database'
 import { assignLeadRoundRobin } from './assignment.service'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
+import { applySLARuleToLead, resolveSLAViolation } from './sla.service'
+import { checkForDuplicatesBeforeCreate } from './duplicate-detection.service'
+import { cleanLeadData } from './enrichment.service'
+import { calculateLeadScore } from './scoring.service'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type LeadInsert = Database['public']['Tables']['leads']['Insert']
@@ -129,36 +133,70 @@ export async function getLeadById(id: string, userId?: string, userRole?: string
 export async function createLead(leadData: LeadInsert, autoAssign: boolean = true) {
   const supabase = createServiceClient()
 
-  // Check for duplicate by phone
-  if (leadData.phone) {
-    const { data: existing } = await supabase
-      .from('leads')
-      .select('id')
-      .eq('phone', leadData.phone)
-      .single()
+  // Check for duplicates using advanced detection
+  const duplicateCheck = await checkForDuplicatesBeforeCreate(leadData)
+  if (duplicateCheck.isDuplicate && duplicateCheck.duplicateLead) {
+    // Update existing lead instead of creating duplicate
+    return updateLead(duplicateCheck.duplicateLead.id, {
+      ...leadData,
+      status: leadData.status || 'new',
+    } as Partial<LeadInsert>)
+  }
 
-    if (existing) {
-      // Update existing lead instead
-      return updateLead(existing.id, {
-        ...leadData,
-        status: leadData.status || 'new',
-      } as Partial<LeadInsert>)
-    }
+  // Clean and enrich lead data
+  const { cleaned, enrichment, warnings } = await cleanLeadData(leadData)
+  
+  // Log warnings if any
+  if (warnings.length > 0) {
+    console.warn('Lead data warnings:', warnings)
+  }
+
+  // Use cleaned data for insertion
+  const enrichedLeadData = {
+    ...cleaned,
+    ...leadData, // Keep original data for fields not cleaned
   }
 
   // Auto-assign if enabled
-  if (autoAssign && leadData.source && !leadData.assigned_to) {
-    const assignedUserId = await assignLeadRoundRobin(leadData.source as 'meta' | 'manual' | 'form')
+  if (autoAssign && enrichedLeadData.source && !enrichedLeadData.assigned_to) {
+    // Calculate score first to determine priority
+    let leadScore = 0
+    try {
+      const tempLead = { ...enrichedLeadData, id: 'temp' } as any
+      // Quick score estimation before full calculation
+      if (enrichedLeadData.interest_level === 'hot') {
+        leadScore = 85
+      } else if (enrichedLeadData.interest_level === 'warm') {
+        leadScore = 60
+      } else if (enrichedLeadData.interest_level === 'cold') {
+        leadScore = 30
+      } else {
+        leadScore = 50 // Default
+      }
+    } catch (e) {
+      // Ignore
+    }
+
+    // Note: leadId will be available after insert, but we can't use it here
+    // Skill-based routing will happen on lead update if territory/industry/language is added
+    const assignedUserId = await assignLeadRoundRobin(
+      enrichedLeadData.source as 'meta' | 'manual' | 'form',
+      {
+        leadScore,
+        priority: leadScore >= 80 ? 'high' : leadScore >= 60 ? 'normal' : 'low',
+        interestLevel: enrichedLeadData.interest_level as 'hot' | 'warm' | 'cold' | undefined,
+      }
+    )
     if (assignedUserId) {
-      leadData.assigned_to = assignedUserId
+      enrichedLeadData.assigned_to = assignedUserId
     }
   }
 
   const { data, error } = await supabase
     .from('leads')
     .insert({
-      ...leadData,
-      status: leadData.status || LEAD_STATUS.NEW,
+      ...enrichedLeadData,
+      status: enrichedLeadData.status || LEAD_STATUS.NEW,
     } as any)
     .select(`
       *,
@@ -192,6 +230,22 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
       // Log but don't fail the lead creation if status history fails
       console.error('Failed to create status history:', historyError)
     }
+  }
+
+  // Apply SLA rule to the new lead
+  try {
+    await applySLARuleToLead(createdLead.id)
+  } catch (slaError) {
+    // Log but don't fail the lead creation if SLA application fails
+    console.error('Failed to apply SLA rule:', slaError)
+  }
+
+  // Calculate initial lead score
+  try {
+    await calculateLeadScore(createdLead.id)
+  } catch (scoreError) {
+    // Log but don't fail the lead creation if scoring fails
+    console.error('Failed to calculate lead score:', scoreError)
   }
 
   return data
@@ -364,9 +418,14 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
   // Get current lead to check status change
   const { data: currentLead } = await supabase
     .from('leads')
-    .select('status, assigned_to')
+    .select('status, assigned_to, source, interest_level')
     .eq('id', id)
     .single()
+
+  // Check if source or interest_level changed (affects SLA rule)
+  const shouldReapplySLA = 
+    (updates.source && updates.source !== currentLead?.source) ||
+    (updates.interest_level !== undefined && updates.interest_level !== currentLead?.interest_level)
 
   const { data, error } = await supabase
     .from('leads')
@@ -399,6 +458,16 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
       new_status: updates.status,
       changed_by: currentLeadData.assigned_to || id,
     } as any)
+  }
+
+  // Re-apply SLA rule if source or interest level changed
+  if (shouldReapplySLA) {
+    try {
+      await applySLARuleToLead(id)
+    } catch (slaError) {
+      // Log but don't fail the update if SLA re-application fails
+      console.error('Failed to re-apply SLA rule:', slaError)
+    }
   }
 
   return data

@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLeads } from '@/hooks/useLeads'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
+import { LEAD_STATUS } from '@/shared/constants/lead-status'
 import { Bell, Search, MoreVertical, Plus, Download, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake } from 'lucide-react'
 import Image from 'next/image'
 import NewLeadForm from '@/components/NewLeadForm'
@@ -760,6 +762,7 @@ function KanbanBoard({
 
 export default function LeadsPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { user, isLoading: authLoading, isAuthenticated } = useAuth()
   const { data: allLeadsData = [], isLoading: leadsLoading } = useLeads()
   const [leads, setLeads] = useState<Lead[]>([])
@@ -1305,7 +1308,7 @@ export default function LeadsPage() {
       const data = await response.json()
 
       if (response.ok) {
-        await fetchLeads()
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
         setSelectedLeadIds(new Set())
         setBulkReassignModalOpen(false)
         setBulkReassignTeleCaller('')
@@ -1331,7 +1334,7 @@ export default function LeadsPage() {
       })
 
       if (response.ok) {
-        await fetchLeads()
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
       } else {
         const data = await response.json()
         alert(data.error || 'Failed to update lead status')
@@ -1359,7 +1362,7 @@ export default function LeadsPage() {
       const data = await response.json()
 
       if (response.ok) {
-        await fetchLeads()
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
         setReassigningLeadId(null)
         setSelectedTeleCaller('')
         alert('Lead reassigned successfully')
@@ -1613,6 +1616,32 @@ export default function LeadsPage() {
             }}
           >
             <div className="flex items-center gap-3 flex-1">
+              {/* Quick Filter: Discarded Leads */}
+              <button
+                onClick={() => {
+                  const discardedFilter = filterConditions.find(c => c.column === 'status' && c.value === LEAD_STATUS.DISCARDED)
+                  if (discardedFilter) {
+                    // Remove filter if already applied
+                    setFilterConditions(filterConditions.filter(c => c.id !== discardedFilter.id))
+                  } else {
+                    // Add filter for discarded leads
+                    setFilterConditions([...filterConditions, {
+                      id: `discarded-${Date.now()}`,
+                      column: 'status',
+                      operator: 'equals',
+                      value: LEAD_STATUS.DISCARDED,
+                    }])
+                  }
+                }}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  filterConditions.some(c => c.column === 'status' && c.value === LEAD_STATUS.DISCARDED)
+                    ? 'bg-red-600 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                🗑️ Discarded
+              </button>
+              
               {/* Advanced Filter Dropdown */}
               <div className="relative filter-dropdown">
                 <button 

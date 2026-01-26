@@ -9,6 +9,7 @@ export const LEAD_STATUS = {
   INTERESTED: 'interested',
   NEGOTIATION: 'negotiation',
   LOST: 'lost',
+  DISCARDED: 'discarded',
   CONVERTED: 'converted',
   DEAL_WON: 'deal_won',
   PAYMENT_PENDING: 'payment_pending',
@@ -29,6 +30,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   [LEAD_STATUS.INTERESTED]: 'Interested',
   [LEAD_STATUS.NEGOTIATION]: 'Negotiation',
   [LEAD_STATUS.LOST]: 'Lost',
+  [LEAD_STATUS.DISCARDED]: 'Discarded',
   [LEAD_STATUS.CONVERTED]: 'Converted',
   [LEAD_STATUS.DEAL_WON]: 'Deal Won',
   [LEAD_STATUS.PAYMENT_PENDING]: 'Payment Pending',
@@ -47,6 +49,7 @@ export const LEAD_STATUS_ICONS: Record<LeadStatus, string> = {
   [LEAD_STATUS.INTERESTED]: '🟢',
   [LEAD_STATUS.NEGOTIATION]: '🟡',
   [LEAD_STATUS.LOST]: '🔴',
+  [LEAD_STATUS.DISCARDED]: '🗑️',
   [LEAD_STATUS.CONVERTED]: '💼',
   [LEAD_STATUS.DEAL_WON]: '✔️',
   [LEAD_STATUS.PAYMENT_PENDING]: '💰',
@@ -96,6 +99,7 @@ export const LEAD_STATUS_FLOW: Record<LeadStatus, LeadStatus[]> = {
   [LEAD_STATUS.INTERESTED]: [LEAD_STATUS.NEGOTIATION, LEAD_STATUS.DEAL_WON, LEAD_STATUS.LOST],
   [LEAD_STATUS.NEGOTIATION]: [LEAD_STATUS.DEAL_WON, LEAD_STATUS.LOST, LEAD_STATUS.INTERESTED],
   [LEAD_STATUS.LOST]: [], // Terminal state
+  [LEAD_STATUS.DISCARDED]: [], // Terminal state (wrong number, etc.)
   [LEAD_STATUS.CONVERTED]: [LEAD_STATUS.DEAL_WON], // Legacy support
   [LEAD_STATUS.DEAL_WON]: [LEAD_STATUS.PAYMENT_PENDING],
   [LEAD_STATUS.PAYMENT_PENDING]: [LEAD_STATUS.ADVANCE_RECEIVED, LEAD_STATUS.FULLY_PAID],

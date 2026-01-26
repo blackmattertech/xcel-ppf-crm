@@ -24,9 +24,16 @@ interface ProductWithStats extends Product {
 async function fetchProducts(): Promise<ProductWithStats[]> {
   const response = await fetch('/api/products?with_stats=true')
   if (!response.ok) {
-    throw new Error('Failed to fetch products')
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    const errorMessage = errorData.error || `Failed to fetch products (${response.status})`
+    console.error('Failed to fetch products:', errorMessage, response.status)
+    throw new Error(errorMessage)
   }
   const data = await response.json()
+  // Handle both array response and object with products property
+  if (Array.isArray(data)) {
+    return data
+  }
   return data.products || []
 }
 

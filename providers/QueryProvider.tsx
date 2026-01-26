@@ -15,6 +15,10 @@ export function QueryProvider({ children }: { children: ReactNode }) {
             gcTime: 5 * 60 * 1000, // 5 minutes (formerly cacheTime)
             retry: 1,
             refetchOnWindowFocus: false,
+            onError: (error) => {
+              // Log all query errors for debugging
+              console.error('React Query Error:', error)
+            },
           },
         },
       })

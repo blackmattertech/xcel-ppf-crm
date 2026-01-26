@@ -25,7 +25,10 @@ interface Order {
 async function fetchOrders(): Promise<Order[]> {
   const response = await fetch('/api/orders')
   if (!response.ok) {
-    throw new Error('Failed to fetch orders')
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    const errorMessage = errorData.error || `Failed to fetch orders (${response.status})`
+    console.error('Failed to fetch orders:', errorMessage, response.status)
+    throw new Error(errorMessage)
   }
   const data = await response.json()
   return data.orders || []

@@ -23,7 +23,10 @@ interface FollowUpNotifications {
 async function fetchFollowUpNotifications(): Promise<FollowUpNotifications> {
   const response = await fetch('/api/followups/notifications')
   if (!response.ok) {
-    throw new Error('Failed to fetch follow-up notifications')
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    const errorMessage = errorData.error || `Failed to fetch follow-up notifications (${response.status})`
+    console.error('Failed to fetch follow-up notifications:', errorMessage, response.status)
+    throw new Error(errorMessage)
   }
   return response.json()
 }

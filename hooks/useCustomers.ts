@@ -14,7 +14,10 @@ interface Customer {
 async function fetchCustomers(): Promise<Customer[]> {
   const response = await fetch('/api/customers')
   if (!response.ok) {
-    throw new Error('Failed to fetch customers')
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    const errorMessage = errorData.error || `Failed to fetch customers (${response.status})`
+    console.error('Failed to fetch customers:', errorMessage, response.status)
+    throw new Error(errorMessage)
   }
   const data = await response.json()
   return data.customers || []

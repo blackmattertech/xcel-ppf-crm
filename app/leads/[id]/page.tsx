@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
@@ -522,6 +523,8 @@ export default function LeadDetailPage() {
     }
   }
 
+  const queryClient = useQueryClient()
+
   async function handleStatusUpdate() {
     if (!newStatus || newStatus === lead?.status) {
       return
@@ -544,6 +547,8 @@ export default function LeadDetailPage() {
         const data = await response.json()
         setLead(data.lead)
         setStatusNotes('')
+        // Invalidate leads query to refresh the leads list
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
         alert('Status updated successfully')
       } else {
         const errorData = await response.json()
@@ -616,12 +621,12 @@ export default function LeadDetailPage() {
 
       // Handle outcome-specific actions
       if (callOutcome === 'wrong_number') {
-        // Update status to lost
+        // Update status to discarded
         const statusResponse = await fetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            status: LEAD_STATUS.LOST,
+            status: LEAD_STATUS.DISCARDED,
             notes: 'Wrong number - Lead discarded',
           }),
         })
@@ -630,11 +635,13 @@ export default function LeadDetailPage() {
           console.error('Failed to update status after wrong number call')
         }
 
+        // Invalidate leads query to refresh the leads list
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
         // Refresh and close
         await fetchLead()
         setShowCallModal(false)
         resetCallForm()
-        alert('Call recorded - Lead status updated to Lost (Wrong Number)')
+        alert('Call recorded - Lead status updated to Discarded (Wrong Number)')
         return
       }
 
@@ -1533,7 +1540,7 @@ export default function LeadDetailPage() {
                       {callOutcome === 'wrong_number' && (
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                           <p className="text-sm text-red-800">
-                            <strong>Warning:</strong> Selecting "Wrong Number" will automatically update the lead status to <strong>Lost</strong> and discard this lead.
+                            <strong>Warning:</strong> Selecting "Wrong Number" will automatically update the lead status to <strong>Discarded</strong> and discard this lead.
                           </p>
                         </div>
                       )}

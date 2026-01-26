@@ -20,7 +20,10 @@ interface Analytics {
 async function fetchAnalytics(): Promise<Analytics> {
   const response = await fetch('/api/analytics')
   if (!response.ok) {
-    throw new Error('Failed to fetch analytics')
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    const errorMessage = errorData.error || `Failed to fetch analytics (${response.status})`
+    console.error('Failed to fetch analytics:', errorMessage, response.status)
+    throw new Error(errorMessage)
   }
   return response.json()
 }

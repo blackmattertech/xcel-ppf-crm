@@ -27,7 +27,10 @@ interface Lead {
 async function fetchLeads(): Promise<Lead[]> {
   const response = await fetch('/api/leads')
   if (!response.ok) {
-    throw new Error('Failed to fetch leads')
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    const errorMessage = errorData.error || `Failed to fetch leads (${response.status})`
+    console.error('Failed to fetch leads:', errorMessage, response.status)
+    throw new Error(errorMessage)
   }
   const data = await response.json()
   return data.leads || []

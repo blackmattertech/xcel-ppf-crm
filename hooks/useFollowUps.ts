@@ -19,7 +19,10 @@ interface FollowUp {
 async function fetchFollowUps(): Promise<FollowUp[]> {
   const response = await fetch('/api/followups')
   if (!response.ok) {
-    throw new Error('Failed to fetch follow-ups')
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+    const errorMessage = errorData.error || `Failed to fetch follow-ups (${response.status})`
+    console.error('Failed to fetch follow-ups:', errorMessage, response.status)
+    throw new Error(errorMessage)
   }
   const data = await response.json()
   return data.followUps || []

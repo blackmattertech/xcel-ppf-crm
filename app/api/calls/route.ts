@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
+import { resolveSLAViolation } from '@/backend/services/sla.service'
+import { recalculateLeadScore } from '@/backend/services/scoring.service'
 import { z } from 'zod'
 
 const createCallSchema = z.object({
@@ -67,6 +69,21 @@ export async function POST(request: NextRequest) {
           first_contact_at: new Date().toISOString(),
         })
         .eq('id', lead_id)
+      
+      // Resolve first_contact SLA violation if it exists
+      try {
+        await resolveSLAViolation(lead_id, 'first_contact', authResult.user.id)
+      } catch (slaError) {
+        // Log but don't fail the call creation if SLA resolution fails
+        console.error('Failed to resolve SLA violation:', slaError)
+      }
+
+      // Recalculate lead score (engagement increased)
+      try {
+        await recalculateLeadScore(lead_id)
+      } catch (scoreError) {
+        console.error('Failed to recalculate lead score:', scoreError)
+      }
     }
 
     // Auto-create follow-up for certain call outcomes
