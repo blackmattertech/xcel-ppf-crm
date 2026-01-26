@@ -102,7 +102,7 @@ export default function CustomerDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <p className="mt-1 text-sm text-gray-900">{customer.name}</p>
+                  <p className="mt-1 text-sm font-bold text-gray-900">{customer.name}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Phone</label>

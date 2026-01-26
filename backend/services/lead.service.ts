@@ -24,7 +24,8 @@ export async function getAllLeads(filters?: {
       assigned_user:users!leads_assigned_to_fkey (
         id,
         name,
-        email
+        email,
+        profile_image_url
       )
     `)
     .order('created_at', { ascending: false })
@@ -76,7 +77,8 @@ export async function getLeadById(id: string, userId?: string, userRole?: string
       assigned_user:users!leads_assigned_to_fkey (
         id,
         name,
-        email
+        email,
+        profile_image_url
       ),
       status_history:lead_status_history (
         *,
@@ -163,7 +165,8 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
       assigned_user:users!leads_assigned_to_fkey (
         id,
         name,
-        email
+        email,
+        profile_image_url
       )
     `)
     .single()
@@ -377,7 +380,8 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
       assigned_user:users!leads_assigned_to_fkey (
         id,
         name,
-        email
+        email,
+        profile_image_url
       )
     `)
     .single()

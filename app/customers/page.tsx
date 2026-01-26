@@ -18,11 +18,25 @@ export default function CustomersPage() {
   const router = useRouter()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
+  const [totalLeads, setTotalLeads] = useState(0)
 
   useEffect(() => {
     checkAuth()
     fetchCustomers()
+    fetchTotalLeads()
   }, [])
+
+  async function fetchTotalLeads() {
+    try {
+      const response = await fetch('/api/leads')
+      if (response.ok) {
+        const data = await response.json()
+        setTotalLeads(data.leads?.length || 0)
+      }
+    } catch (error) {
+      console.error('Failed to fetch total leads:', error)
+    }
+  }
 
   async function checkAuth() {
     const supabase = createClient()
@@ -63,6 +77,22 @@ export default function CustomersPage() {
         <div className="max-w-7xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">Customers</h1>
 
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
+              <p className="text-2xl font-bold text-gray-900 mt-2">
+                {totalLeads}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-sm font-medium text-gray-500">Total Customers</h3>
+              <p className="text-2xl font-bold text-gray-900 mt-2">
+                {customers.length}
+              </p>
+            </div>
+          </div>
+
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -78,7 +108,7 @@ export default function CustomersPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {customers.map((customer) => (
                   <tr key={customer.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                       {customer.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

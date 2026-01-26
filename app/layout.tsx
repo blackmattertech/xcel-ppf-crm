@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Xcel CRM",
   description: "Customer Relationship Management System",
+  icons: {
+    icon: '/favicon.png',
+  },
 };
 
 export default function RootLayout({

@@ -28,6 +28,13 @@ interface Order {
   } | null
 }
 
+interface UserDataWithRole {
+  role_id: string
+  roles: {
+    name: string
+  } | null
+}
+
 export default function OrderDetailPage() {
   const router = useRouter()
   const params = useParams()
@@ -65,9 +72,8 @@ export default function OrderDetailPage() {
       .single()
 
     if (userData) {
-      const roleName = Array.isArray(userData.roles) 
-        ? userData.roles[0]?.name 
-        : (userData.roles as any)?.name
+      const typedUserData = userData as UserDataWithRole
+      const roleName = typedUserData.roles?.name || null
       setUserRole(roleName)
     }
   }
@@ -271,7 +277,7 @@ export default function OrderDetailPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Name</label>
-                    <p className="mt-1 text-sm text-gray-900">{order.customer.name}</p>
+                    <p className="mt-1 text-sm font-bold text-gray-900">{order.customer.name}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Phone</label>
