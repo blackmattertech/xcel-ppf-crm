@@ -110,15 +110,16 @@ export async function updateUser(
 ) {
   const supabase = createServiceClient()
 
+  const updateData = {
+    name,
+    phone,
+    role_id: roleId,
+    branch_id: branchId,
+    updated_at: new Date().toISOString(),
+  }
   const { data, error } = await supabase
     .from('users')
-    .update({
-      name,
-      phone,
-      role_id: roleId,
-      branch_id: branchId,
-      updated_at: new Date().toISOString(),
-    } as any)
+    .update(updateData as never)
     .eq('id', id)
     .select(`
       *,

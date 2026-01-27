@@ -105,11 +105,14 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
 
   // Check for duplicate by phone
   if (leadData.phone) {
+    interface LeadIdRow {
+      id: string
+    }
     const { data: existing } = await supabase
       .from('leads')
       .select('id')
       .eq('phone', leadData.phone)
-      .single()
+      .single<LeadIdRow>()
 
     if (existing) {
       // Update existing lead instead
@@ -164,18 +167,23 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
   const supabase = createServiceClient()
 
   // Get current lead to check status change
+  interface LeadStatusAssignedRow {
+    status: string
+    assigned_to: string | null
+  }
   const { data: currentLead } = await supabase
     .from('leads')
     .select('status, assigned_to')
     .eq('id', id)
-    .single()
+    .single<LeadStatusAssignedRow>()
 
+  const updateData = {
+    ...updates,
+    updated_at: new Date().toISOString(),
+  }
   const { data, error } = await supabase
     .from('leads')
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    } as any)
+    .update(updateData as never)
     .eq('id', id)
     .select(`
       *,

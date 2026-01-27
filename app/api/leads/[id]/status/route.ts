@@ -20,7 +20,7 @@ const updateStatusSchema = z.object({
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requireAuth(request)
@@ -29,16 +29,17 @@ export async function PUT(
       return authResult.error
     }
 
+    const { id } = await params
     const body = await request.json()
     const { status, notes } = updateStatusSchema.parse(body)
 
-    const lead = await updateLeadStatus(params.id, status, authResult.user.id, notes)
+    const lead = await updateLeadStatus(id, status, authResult.user.id, notes || undefined)
 
     return NextResponse.json({ lead })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

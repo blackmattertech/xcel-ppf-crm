@@ -13,11 +13,14 @@ export async function updateLeadStatus(
   const supabase = createServiceClient()
 
   // Get current lead
+  interface LeadStatusRow {
+    status: string
+  }
   const { data: currentLead, error: fetchError } = await supabase
     .from('leads')
     .select('status')
     .eq('id', leadId)
-    .single()
+    .single<LeadStatusRow>()
 
   if (fetchError || !currentLead) {
     throw new Error('Lead not found')
@@ -46,7 +49,7 @@ export async function updateLeadStatus(
 
   const { data: updatedLead, error: updateError } = await supabase
     .from('leads')
-    .update(updateData)
+    .update(updateData as never)
     .eq('id', leadId)
     .select()
     .single()

@@ -11,7 +11,7 @@ const updateFollowUpSchema = z.object({
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requireAuth(request)
@@ -20,16 +20,17 @@ export async function PUT(
       return authResult.error
     }
 
+    const { id } = await params
     const body = await request.json()
     const updates = updateFollowUpSchema.parse(body)
 
-    const followUp = await updateFollowUp(params.id, updates)
+    const followUp = await updateFollowUp(id, updates)
 
     return NextResponse.json({ followUp })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }
@@ -43,7 +44,7 @@ export async function PUT(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requireAuth(request)
@@ -52,10 +53,11 @@ export async function POST(
       return authResult.error
     }
 
+    const { id } = await params
     const body = await request.json()
     const { notes } = body
 
-    const followUp = await completeFollowUp(params.id, notes)
+    const followUp = await completeFollowUp(id, notes)
 
     return NextResponse.json({ followUp })
   } catch (error) {

@@ -63,13 +63,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const leadData = createLeadSchema.parse(body)
 
-    const lead = await createLead(leadData, true) // Auto-assign enabled
+    const lead = await createLead(leadData as any, true) // Auto-assign enabled
 
     return NextResponse.json({ lead }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

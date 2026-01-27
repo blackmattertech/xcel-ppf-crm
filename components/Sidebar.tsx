@@ -73,11 +73,18 @@ export default function Sidebar() {
     }
 
     // Fetch user data
+    interface UserNameRoleRow {
+      name: string
+      role_id: string | null
+    }
+    interface RoleNameRow {
+      name: string
+    }
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('name, role_id')
       .eq('id', user.id)
-      .single()
+      .single<UserNameRoleRow>()
 
     if (userData) {
       setUserName(userData.name)
@@ -88,7 +95,7 @@ export default function Sidebar() {
           .from('roles')
           .select('name')
           .eq('id', userData.role_id)
-          .single()
+          .single<RoleNameRow>()
         
         if (roleData) {
           setUserRole(roleData.name)

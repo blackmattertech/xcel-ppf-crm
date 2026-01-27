@@ -2,6 +2,34 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 
+interface LeadSourceRow {
+  source: string
+}
+
+interface LeadStatusRow {
+  status: string
+}
+
+interface LeadRepRow {
+  assigned_to: string | null
+  status: string
+}
+
+interface UserRow {
+  id: string
+  name: string
+}
+
+interface FollowUpRow {
+  status: string
+  scheduled_at: string
+}
+
+interface LeadSLARow {
+  created_at: string
+  first_contact_at: string | null
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request)
@@ -39,6 +67,7 @@ export async function GET(request: NextRequest) {
       .select('source')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
+      .returns<LeadSourceRow[]>()
 
     const sourceCounts: Record<string, number> = {}
     leadsBySource?.forEach((lead) => {
@@ -51,6 +80,7 @@ export async function GET(request: NextRequest) {
       .select('status')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
+      .returns<LeadStatusRow[]>()
 
     const statusCounts: Record<string, number> = {}
     leadsByStatus?.forEach((lead) => {
@@ -69,6 +99,7 @@ export async function GET(request: NextRequest) {
       .gte('created_at', startDate)
       .lte('created_at', endDate)
       .not('assigned_to', 'is', null)
+      .returns<LeadRepRow[]>()
 
     const repStats: Record<string, { total: number; converted: number }> = {}
     repPerformance?.forEach((lead) => {
@@ -89,6 +120,7 @@ export async function GET(request: NextRequest) {
       .from('users')
       .select('id, name')
       .in('id', userIds)
+      .returns<UserRow[]>()
 
     const repPerformanceWithNames = userIds.map((userId) => {
       const user = users?.find((u) => u.id === userId)
@@ -108,6 +140,7 @@ export async function GET(request: NextRequest) {
       .select('status, scheduled_at')
       .gte('scheduled_at', startDate)
       .lte('scheduled_at', endDate)
+      .returns<FollowUpRow[]>()
 
     const totalFollowUps = followUps?.length || 0
     const completedFollowUps = followUps?.filter((f) => f.status === 'done').length || 0
@@ -120,6 +153,7 @@ export async function GET(request: NextRequest) {
       .gte('created_at', startDate)
       .lte('created_at', endDate)
       .eq('status', 'new')
+      .returns<LeadSLARow[]>()
 
     const slaBreaches = slaLeads?.filter((lead) => {
       if (!lead.first_contact_at) return true

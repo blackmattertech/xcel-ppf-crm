@@ -20,6 +20,14 @@ interface User {
   created_at: string
 }
 
+interface UserRoleRow {
+  role_id: string | null
+}
+
+interface RoleNameRow {
+  name: string
+}
+
 export default function UsersPage() {
   const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
@@ -53,7 +61,7 @@ export default function UsersPage() {
       .from('users')
       .select('role_id')
       .eq('id', user.id)
-      .single()
+      .single<UserRoleRow>()
 
     if (userData?.role_id) {
       // Fetch role name using role_id
@@ -61,7 +69,7 @@ export default function UsersPage() {
         .from('roles')
         .select('name')
         .eq('id', userData.role_id)
-        .single()
+        .single<RoleNameRow>()
 
       const roleName = roleData?.name
       if (roleName !== 'super_admin' && roleName !== 'admin') {

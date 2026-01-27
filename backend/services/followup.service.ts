@@ -83,24 +83,25 @@ export async function getFollowUps(filters?: {
     query = query.gte('scheduled_at', filters.scheduledAfter)
   }
 
-  const { data, error } = await query
+  const { data, error } = await query.returns<any[]>()
 
   if (error) {
     throw new Error(`Failed to fetch follow-ups: ${error.message}`)
   }
 
-  return data
+  return data || []
 }
 
 export async function updateFollowUp(id: string, updates: Partial<FollowUpInsert>) {
   const supabase = createServiceClient()
 
+  const updateData = {
+    ...updates,
+    updated_at: new Date().toISOString(),
+  }
   const { data, error } = await supabase
     .from('follow_ups')
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    } as any)
+    .update(updateData as never)
     .eq('id', id)
     .select(`
       *,
@@ -144,7 +145,7 @@ export async function getPendingFollowUps(assignedTo?: string) {
 
 export async function getOverdueFollowUps(assignedTo?: string) {
   const now = new Date().toISOString()
-  const { data } = await getFollowUps({
+  const data = await getFollowUps({
     status: 'pending',
     scheduledBefore: now,
     assignedTo,

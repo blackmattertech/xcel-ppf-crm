@@ -3,6 +3,18 @@ import { Database } from '@/shared/types/database'
 
 type LeadSource = 'meta' | 'manual' | 'form'
 
+interface UserIdRow {
+  id: string
+}
+
+interface AssignmentRow {
+  id: string
+  user_id: string
+  lead_source: string
+  last_assigned_at: string
+  assignment_count: number
+}
+
 export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<string | null> {
   const supabase = createServiceClient()
 
@@ -12,6 +24,7 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
     .from('users')
     .select('id')
     .limit(100) // Reasonable limit
+    .returns<UserIdRow[]>()
 
   if (usersError || !users || users.length === 0) {
     return null
@@ -25,6 +38,7 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
     .select('*')
     .eq('lead_source', leadSource)
     .in('user_id', userIds)
+    .returns<AssignmentRow[]>()
 
   if (assignmentsError) {
     throw new Error(`Failed to fetch assignments: ${assignmentsError.message}`)
@@ -54,6 +68,7 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
     .order('last_assigned_at', { ascending: true })
     .order('assignment_count', { ascending: true })
     .limit(1)
+    .returns<AssignmentRow[]>()
 
   if (allAssignmentsError || !allAssignments || allAssignments.length === 0) {
     return null
@@ -63,12 +78,13 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
   const selectedUserId = selectedAssignment.user_id
 
   // Update assignment record
+  const updateData = {
+    last_assigned_at: new Date().toISOString(),
+    assignment_count: (selectedAssignment.assignment_count || 0) + 1,
+  }
   await supabase
     .from('assignments')
-    .update({
-      last_assigned_at: new Date().toISOString(),
-      assignment_count: (selectedAssignment.assignment_count || 0) + 1,
-    })
+    .update(updateData as never)
     .eq('id', selectedAssignment.id)
 
   return selectedUserId

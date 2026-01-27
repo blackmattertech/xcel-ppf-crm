@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid email address', details: error.errors },
+        { error: 'Invalid email address', details: error.issues },
         { status: 400 }
       )
     }

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     // Parse Meta leads
     const parsedLeads = parseMetaWebhook(body)
 
-    const createdLeads = []
+    const createdLeads: any[] = []
 
     for (const parsedLead of parsedLeads) {
       // Validate required fields
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
           campaign_name: parsedLead.campaignName || null,
           meta_data: parsedLead.metaData,
           status: 'new',
-        }, true) // Auto-assign enabled
+        } as any, true) // Auto-assign enabled
 
         createdLeads.push(lead)
       } catch (error) {

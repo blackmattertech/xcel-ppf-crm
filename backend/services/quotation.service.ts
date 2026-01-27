@@ -36,13 +36,16 @@ export async function createQuotation(
   validityDate.setDate(validityDate.getDate() + validityDays)
 
   // Get latest version for this lead
+  interface QuotationVersionRow {
+    version: number
+  }
   const { data: latestQuote } = await supabase
     .from('quotations')
     .select('version')
     .eq('lead_id', leadId)
     .order('version', { ascending: false })
     .limit(1)
-    .single()
+    .single<QuotationVersionRow>()
 
   const version = latestQuote ? latestQuote.version + 1 : 1
 
@@ -174,12 +177,13 @@ export async function getQuotationById(id: string) {
 export async function updateQuotationStatus(id: string, status: 'sent' | 'viewed' | 'accepted' | 'expired') {
   const supabase = createServiceClient()
 
+  const updateData = {
+    status,
+    updated_at: new Date().toISOString(),
+  }
   const { data, error } = await supabase
     .from('quotations')
-    .update({
-      status,
-      updated_at: new Date().toISOString(),
-    } as any)
+    .update(updateData as never)
     .eq('id', id)
     .select()
     .single()

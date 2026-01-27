@@ -19,7 +19,7 @@ const updateLeadSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_READ)
@@ -28,7 +28,8 @@ export async function GET(
       return authResult.error
     }
 
-    const lead = await getLeadById(params.id)
+    const { id } = await params
+    const lead = await getLeadById(id)
     return NextResponse.json({ lead })
   } catch (error) {
     return NextResponse.json(
@@ -40,7 +41,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_UPDATE)
@@ -49,16 +50,17 @@ export async function PUT(
       return authResult.error
     }
 
+    const { id } = await params
     const body = await request.json()
     const updates = updateLeadSchema.parse(body)
 
-    const lead = await updateLead(params.id, updates)
+    const lead = await updateLead(id, updates)
 
     return NextResponse.json({ lead })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }
@@ -72,7 +74,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_DELETE)
@@ -81,7 +83,8 @@ export async function DELETE(
       return authResult.error
     }
 
-    await deleteLead(params.id)
+    const { id } = await params
+    await deleteLead(id)
     return NextResponse.json({ message: 'Lead deleted successfully' })
   } catch (error) {
     return NextResponse.json(

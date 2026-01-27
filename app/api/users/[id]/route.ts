@@ -13,7 +13,7 @@ const updateUserSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requirePermission(request, PERMISSIONS.USERS_READ)
@@ -22,7 +22,8 @@ export async function GET(
       return authResult.error
     }
 
-    const user = await getUserById(params.id)
+    const { id } = await params
+    const user = await getUserById(id)
     return NextResponse.json({ user })
   } catch (error) {
     return NextResponse.json(
@@ -34,7 +35,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requirePermission(request, PERMISSIONS.USERS_UPDATE)
@@ -43,16 +44,17 @@ export async function PUT(
       return authResult.error
     }
 
+    const { id } = await params
     const body = await request.json()
     const { name, phone, roleId, branchId } = updateUserSchema.parse(body)
 
-    const user = await updateUser(params.id, name, phone || null, roleId, branchId || null)
+    const user = await updateUser(id, name, phone || null, roleId, branchId || null)
 
     return NextResponse.json({ user })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }
@@ -66,7 +68,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requirePermission(request, PERMISSIONS.USERS_DELETE)
@@ -75,7 +77,8 @@ export async function DELETE(
       return authResult.error
     }
 
-    await deleteUser(params.id)
+    const { id } = await params
+    await deleteUser(id)
     return NextResponse.json({ message: 'User deleted successfully' })
   } catch (error) {
     return NextResponse.json(

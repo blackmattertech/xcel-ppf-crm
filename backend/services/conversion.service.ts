@@ -6,11 +6,18 @@ export async function convertLeadToCustomer(leadId: string) {
   const supabase = createServiceClient()
 
   // Get lead
+  interface LeadRow {
+    status: string
+    phone: string
+    name: string
+    email: string | null
+    [key: string]: any
+  }
   const { data: lead, error: leadError } = await supabase
     .from('leads')
     .select('*')
     .eq('id', leadId)
-    .single()
+    .single<LeadRow>()
 
   if (leadError || !lead) {
     throw new Error('Lead not found')
@@ -21,23 +28,27 @@ export async function convertLeadToCustomer(leadId: string) {
   }
 
   // Check if customer already exists
+  interface CustomerIdRow {
+    id: string
+  }
   const { data: existingCustomer } = await supabase
     .from('customers')
     .select('id')
     .eq('phone', lead.phone)
-    .single()
+    .single<CustomerIdRow>()
 
   if (existingCustomer) {
     // Update existing customer
     const leadData = lead as any
+    const updateData = {
+      name: leadData.name,
+      email: leadData.email || null,
+      customer_type: 'repeat',
+      updated_at: new Date().toISOString(),
+    }
     const { data: customer, error: customerError } = await supabase
       .from('customers')
-      .update({
-        name: leadData.name,
-        email: leadData.email || null,
-        customer_type: 'repeat',
-        updated_at: new Date().toISOString(),
-      } as any)
+      .update(updateData as never)
       .eq('id', existingCustomer.id)
       .select()
       .single()

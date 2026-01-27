@@ -11,7 +11,7 @@ const convertSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authResult = await requireAuth(request)
@@ -20,16 +20,17 @@ export async function POST(
       return authResult.error
     }
 
+    const { id } = await params
     // First, update lead status to converted
-    await updateLeadStatus(params.id, LEAD_STATUS.CONVERTED, authResult.user.id)
+    await updateLeadStatus(id, LEAD_STATUS.CONVERTED, authResult.user.id)
 
     // Convert lead to customer
-    const customer = await convertLeadToCustomer(params.id)
+    const customer = await convertLeadToCustomer(id) as { id: string; [key: string]: any }
 
     // Create order
     const body = await request.json().catch(() => ({}))
     const { assigned_team } = convertSchema.parse(body)
-    const order = await createOrderFromLead(params.id, customer.id, assigned_team)
+    const order = await createOrderFromLead(id, customer.id, assigned_team)
 
     return NextResponse.json({
       customer,
@@ -39,7 +40,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

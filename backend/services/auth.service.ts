@@ -2,6 +2,23 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 
+interface RoleIdRow {
+  id: string
+}
+
+interface UserWithRole {
+  id: string
+  email: string
+  name: string
+  role_id: string
+  role?: {
+    name: string
+    role_permissions?: Array<{ permission: any }>
+    permissions?: Array<{ permission: any }>
+  }
+  [key: string]: any
+}
+
 export async function createInitialSuperAdmin(email: string, password: string, name: string) {
   const supabase = createServiceClient()
 
@@ -21,7 +38,7 @@ export async function createInitialSuperAdmin(email: string, password: string, n
     .from('roles')
     .select('id')
     .eq('name', SYSTEM_ROLES.SUPER_ADMIN)
-    .single()
+    .single<RoleIdRow>()
 
   if (roleError || !role) {
     throw new Error('Super admin role not found. Please run migrations first.')
@@ -35,9 +52,17 @@ export async function createInitialSuperAdmin(email: string, password: string, n
       email,
       name,
       role_id: role.id,
-    })
-    .select()
-    .single()
+    } as any)
+    .select(`
+      *,
+      role:roles (
+        name,
+        role_permissions (
+          permission
+        )
+      )
+    `)
+    .single<UserWithRole>()
 
   if (userError) {
     // Clean up auth user if user creation fails
@@ -77,7 +102,7 @@ export async function login(email: string, password: string) {
       )
     `)
     .eq('id', data.user.id)
-    .single()
+    .single<UserWithRole>()
 
   if (userError || !user) {
     throw new Error('User not found')
@@ -86,10 +111,11 @@ export async function login(email: string, password: string) {
   return {
     user: {
       ...user,
-      role: {
+      role: user.role ? {
         ...user.role,
-        permissions: user.role.role_permissions.map((rp: any) => rp.permission),
-      },
+        permissions: (user.role as any).role_permissions?.map((rp: any) => rp.permission) || 
+                    (user.role as any).permissions?.map((rp: any) => rp.permission) || [],
+      } : undefined,
     },
     session: data.session,
   }
