@@ -24,6 +24,14 @@ interface User {
   created_at: string
 }
 
+interface UserRoleRow {
+  role_id: string | null
+}
+
+interface RoleNameRow {
+  name: string
+}
+
 export default function UsersPage() {
   const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
@@ -59,20 +67,23 @@ export default function UsersPage() {
       return
     }
 
-    const { data: userData } = await supabase
+    const { data } = await supabase
       .from('users')
       .select('role_id')
       .eq('id', user.id)
       .single()
 
+    const userData = data as UserRoleRow | null
+
     if (userData?.role_id) {
       // Fetch role name using role_id
-      const { data: roleData } = await supabase
+      const { data: roleDataResult } = await supabase
         .from('roles')
         .select('name')
         .eq('id', userData.role_id)
         .single()
 
+      const roleData = roleDataResult as RoleNameRow | null
       const roleName = roleData?.name
       if (roleName !== 'super_admin' && roleName !== 'admin') {
         router.push('/dashboard')

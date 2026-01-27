@@ -69,13 +69,13 @@ export async function PUT(
     const body = await request.json()
     const { status, notes } = updateStatusSchema.parse(body)
 
-    const lead = await updateLeadStatus(id, status, userId, notes)
+    const lead = await updateLeadStatus(id, status, userId, notes || undefined)
 
     return NextResponse.json({ lead })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

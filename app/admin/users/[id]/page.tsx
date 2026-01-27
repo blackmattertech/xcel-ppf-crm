@@ -36,6 +36,31 @@ interface UserStats {
   convertedLeads: number
 }
 
+interface UserDataWithRole {
+  role_id: string | null
+  roles: {
+    name: string
+  } | {
+    name: string
+  }[] | null
+}
+
+interface LeadIdRow {
+  id: string
+}
+
+interface OrderWithProduct {
+  id: string
+  lead_id: string
+  product: {
+    price: number | string
+  } | null
+}
+
+interface LeadCreatedAtRow {
+  created_at: string
+}
+
 interface Call {
   id: string
   lead_id: string
@@ -97,16 +122,18 @@ export default function UserDetailPage() {
 
     setCurrentUserId(user.id)
 
-    const { data: userData } = await supabase
+    const { data } = await supabase
       .from('users')
       .select('role_id, roles!users_role_id_fkey(name)')
       .eq('id', user.id)
       .single()
 
+    const userData = data as UserDataWithRole | null
+
     if (userData) {
       const roleName = Array.isArray(userData.roles) 
         ? userData.roles[0]?.name 
-        : (userData.roles as any)?.name
+        : userData.roles?.name || null
       setUserRole(roleName)
       
       if (roleName !== 'super_admin' && roleName !== 'admin' && user.id !== userId) {
@@ -171,7 +198,7 @@ export default function UserDetailPage() {
       const supabase = createClient()
       
       // Get first deal date (first converted lead)
-      const { data: firstDeal } = await supabase
+      const { data } = await supabase
         .from('leads')
         .select('created_at')
         .eq('assigned_to', userId)
@@ -180,15 +207,19 @@ export default function UserDetailPage() {
         .limit(1)
         .single()
       
+      const firstDeal = data as LeadCreatedAtRow | null
+      
       // Get total converted customers (leads converted to customers)
-      const { data: convertedLeads } = await supabase
+      const { data: convertedLeadsData } = await supabase
         .from('leads')
         .select('id')
         .eq('assigned_to', userId)
         .in('status', ['converted', 'deal_won', 'fully_paid'])
       
+      const convertedLeads = convertedLeadsData as LeadIdRow[] | null
+      
       // Get total sales (sum of order values from converted leads)
-      const { data: orders } = await supabase
+      const { data: ordersData } = await supabase
         .from('orders')
         .select(`
           id,
@@ -199,10 +230,12 @@ export default function UserDetailPage() {
         `)
         .in('lead_id', convertedLeads?.map(l => l.id) || [])
       
+      const orders = ordersData as OrderWithProduct[] | null
+      
       // Calculate total sales
       const totalSales = orders?.reduce((sum, order) => {
-        const price = (order.product as any)?.price || 0
-        return sum + parseFloat(price)
+        const price = order.product?.price || 0
+        return sum + parseFloat(String(price))
       }, 0) || 0
       
       // Get assigned and converted leads count
@@ -351,9 +384,14 @@ export default function UserDetailPage() {
     }
   }
 
-  function getLanguageDisplay(lang: string) {
+  function getLanguageDisplay(lang: string): { native: string; english: string } {
     const langInfo = languageMap[lang]
-    if (!langInfo) return lang
+    if (!langInfo) {
+      return {
+        native: lang,
+        english: lang,
+      }
+    }
     
     return {
       native: langInfo.native,

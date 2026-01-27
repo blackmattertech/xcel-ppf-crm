@@ -3,6 +3,16 @@ import { requirePermission } from '@/backend/middleware/auth'
 import { updateLead } from '@/backend/services/lead.service'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 import { z } from 'zod'
+
+interface UserWithRole {
+  id: string
+  name?: string
+  roles: {
+    name: string
+  } | {
+    name: string
+  }[] | null
+}
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 
 const reassignLeadSchema = z.object({
@@ -46,7 +56,7 @@ export async function POST(
 
     // Verify that the assigned user is a tele_caller
     const supabase = (await import('@/lib/supabase/service')).createServiceClient()
-    const { data: assignedUser, error: userError } = await supabase
+    const { data: assignedUserData, error: userError } = await supabase
       .from('users')
       .select(`
         id,
@@ -57,6 +67,8 @@ export async function POST(
       .eq('id', assigned_to)
       .single()
 
+    const assignedUser = assignedUserData as UserWithRole | null
+
     if (userError || !assignedUser) {
       return NextResponse.json(
         { error: 'Assigned user not found' },
@@ -66,7 +78,7 @@ export async function POST(
 
     const assignedUserRole = Array.isArray(assignedUser.roles) 
       ? assignedUser.roles[0]?.name 
-      : (assignedUser.roles as any)?.name
+      : assignedUser.roles?.name || null
 
     if (assignedUserRole !== SYSTEM_ROLES.TELE_CALLER) {
       return NextResponse.json(
@@ -101,7 +113,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

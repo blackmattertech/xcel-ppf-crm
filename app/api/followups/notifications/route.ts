@@ -4,6 +4,14 @@ import { getFollowUps } from '@/backend/services/followup.service'
 import { createServiceClient } from '@/lib/supabase/service'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 
+interface FollowUp {
+  id: string
+  lead_id: string
+  assigned_to: string
+  scheduled_at: string
+  status: string
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request)
@@ -36,8 +44,9 @@ export async function GET(request: NextRequest) {
       })
 
       // Filter out overdue from upcoming
-      const upcoming = (upcomingFollowUps || []).filter(
-        (upcoming) => !(overdueFollowUps || []).some((overdue) => overdue.id === upcoming.id)
+      const overdue = (overdueFollowUps || []) as FollowUp[]
+      const upcoming = ((upcomingFollowUps || []) as FollowUp[]).filter(
+        (upcoming) => !overdue.some((overdue) => overdue.id === upcoming.id)
       )
 
       return NextResponse.json({
@@ -59,7 +68,8 @@ export async function GET(request: NextRequest) {
       })
 
       // Filter follow-ups that are more than 1 day overdue
-      const adminNotifications = (allPendingFollowUps || []).filter((followUp) => {
+      const allPending = (allPendingFollowUps || []) as FollowUp[]
+      const adminNotifications = allPending.filter((followUp) => {
         const scheduledDate = new Date(followUp.scheduled_at)
         return scheduledDate < oneDayAgo
       })

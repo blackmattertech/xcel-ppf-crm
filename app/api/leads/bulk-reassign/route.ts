@@ -4,6 +4,16 @@ import { updateLead } from '@/backend/services/lead.service'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 import { z } from 'zod'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
+
+interface UserWithRole {
+  id: string
+  name?: string
+  roles: {
+    name: string
+  } | {
+    name: string
+  }[] | null
+}
 import { createServiceClient } from '@/lib/supabase/service'
 
 const bulkReassignSchema = z.object({
@@ -43,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     // Verify that the assigned user is a tele_caller
     const supabase = createServiceClient()
-    const { data: assignedUser, error: userError } = await supabase
+    const { data: assignedUserData, error: userError } = await supabase
       .from('users')
       .select(`
         id,
@@ -55,6 +65,8 @@ export async function POST(request: NextRequest) {
       .eq('id', assigned_to)
       .single()
 
+    const assignedUser = assignedUserData as UserWithRole | null
+
     if (userError || !assignedUser) {
       return NextResponse.json(
         { error: 'Assigned user not found' },
@@ -64,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     const assignedUserRole = Array.isArray(assignedUser.roles) 
       ? assignedUser.roles[0]?.name 
-      : (assignedUser.roles as any)?.name
+      : assignedUser.roles?.name || null
 
     if (assignedUserRole !== SYSTEM_ROLES.TELE_CALLER) {
       return NextResponse.json(
@@ -86,13 +98,12 @@ export async function POST(request: NextRequest) {
       .in('id', lead_ids)
 
     // Update leads in batch
-    const { data: updatedLeads, error: updateError } = await supabase
-      .from('leads')
-      .update({
-        assigned_to,
-        updated_at: new Date().toISOString(),
-      } as any)
-      .in('id', lead_ids)
+    // @ts-ignore - Supabase type inference issue with dynamic updates
+    const updateQuery: any = supabase.from('leads').update({
+      assigned_to,
+      updated_at: new Date().toISOString(),
+    }).in('id', lead_ids)
+    const { data: updatedLeads, error: updateError } = await updateQuery
       .select(`
         *,
         assigned_user:users!leads_assigned_to_fkey (
@@ -151,7 +162,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

@@ -25,6 +25,10 @@ interface UserRoleRow {
   role_id: string | null
 }
 
+interface RoleNameRow {
+  name: string
+}
+
 export default function RolesPage() {
   const router = useRouter()
   const [roles, setRoles] = useState<Role[]>([])
@@ -65,12 +69,13 @@ export default function RolesPage() {
 
     if (userData?.role_id) {
       // Fetch role name using role_id
-      const { data: roleData } = await supabase
+      const { data } = await supabase
         .from('roles')
         .select('name')
         .eq('id', userData.role_id)
         .single()
 
+      const roleData = data as RoleNameRow | null
       const roleName = roleData?.name
       if (roleName !== 'super_admin' && roleName !== 'admin') {
         router.push('/dashboard')

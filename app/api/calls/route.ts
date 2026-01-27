@@ -4,6 +4,21 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
 import { z } from 'zod'
 
+interface CallInsert {
+  lead_id: string
+  called_by: string
+  outcome: 'connected' | 'not_reachable' | 'wrong_number' | 'call_later'
+  disposition?: string | null
+  notes?: string | null
+  call_duration?: number | null
+}
+
+interface LeadQueryRow {
+  first_contact_at: string | null
+  assigned_to: string | null
+  status: string
+}
+
 const createCallSchema = z.object({
   lead_id: z.string().uuid(),
   outcome: z.enum(['connected', 'not_reachable', 'wrong_number', 'call_later']),
@@ -34,7 +49,7 @@ export async function POST(request: NextRequest) {
         disposition,
         notes,
         call_duration,
-      })
+      } as any)
       .select(`
         *,
         called_by_user:users!calls_called_by_fkey (
@@ -54,11 +69,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Get current lead status and first_contact_at
-    const { data: lead } = await supabase
+    const { data: leadData } = await supabase
       .from('leads')
       .select('first_contact_at, assigned_to, status')
       .eq('id', lead_id)
       .single()
+    
+    const lead = leadData as LeadQueryRow | null
     
     if (!lead) {
       throw new Error('Lead not found')
@@ -111,6 +128,7 @@ export async function POST(request: NextRequest) {
     if (Object.keys(updates).length > 0) {
       await supabase
         .from('leads')
+        // @ts-ignore - Supabase type inference issue with dynamic updates
         .update(updates)
         .eq('id', lead_id)
     }
@@ -138,7 +156,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

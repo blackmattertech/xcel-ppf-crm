@@ -2,6 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 
+interface LeadSourceRow {
+  source: string
+}
+
+interface LeadStatusRow {
+  status: string
+}
+
+interface LeadRepPerformanceRow {
+  assigned_to: string | null
+  status: string
+}
+
+interface UserRow {
+  id: string
+  name: string
+}
+
+interface FollowUpRow {
+  status: string
+  scheduled_at: string
+}
+
+interface LeadSlaRow {
+  created_at: string
+  first_contact_at: string | null
+}
+
+interface FollowUpRow {
+  status: string
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request)
@@ -34,11 +66,13 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate') || new Date().toISOString()
 
     // Leads by source
-    const { data: leadsBySource } = await supabase
+    const { data: leadsBySourceData } = await supabase
       .from('leads')
       .select('source')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
+
+    const leadsBySource = leadsBySourceData as LeadSourceRow[] | null
 
     const sourceCounts: Record<string, number> = {}
     leadsBySource?.forEach((lead) => {
@@ -46,11 +80,13 @@ export async function GET(request: NextRequest) {
     })
 
     // Leads by status
-    const { data: leadsByStatus } = await supabase
+    const { data: leadsByStatusData } = await supabase
       .from('leads')
       .select('status')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
+
+    const leadsByStatus = leadsByStatusData as LeadStatusRow[] | null
 
     const statusCounts: Record<string, number> = {}
     leadsByStatus?.forEach((lead) => {
@@ -63,12 +99,14 @@ export async function GET(request: NextRequest) {
     const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0
 
     // Rep performance
-    const { data: repPerformance } = await supabase
+    const { data: repPerformanceData } = await supabase
       .from('leads')
       .select('assigned_to, status')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
       .not('assigned_to', 'is', null)
+
+    const repPerformance = repPerformanceData as LeadRepPerformanceRow[] | null
 
     const repStats: Record<string, { total: number; converted: number }> = {}
     repPerformance?.forEach((lead) => {
@@ -85,10 +123,12 @@ export async function GET(request: NextRequest) {
 
     // Get user names for rep performance
     const userIds = Object.keys(repStats)
-    const { data: users } = await supabase
+    const { data: usersData } = await supabase
       .from('users')
       .select('id, name')
       .in('id', userIds)
+
+    const users = usersData as UserRow[] | null
 
     const repPerformanceWithNames = userIds.map((userId) => {
       const user = users?.find((u) => u.id === userId)
@@ -103,23 +143,27 @@ export async function GET(request: NextRequest) {
     })
 
     // Follow-up compliance
-    const { data: followUps } = await supabase
+    const { data: followUpsData } = await supabase
       .from('follow_ups')
       .select('status, scheduled_at')
       .gte('scheduled_at', startDate)
       .lte('scheduled_at', endDate)
+
+    const followUps = followUpsData as FollowUpRow[] | null
 
     const totalFollowUps = followUps?.length || 0
     const completedFollowUps = followUps?.filter((f) => f.status === 'done').length || 0
     const followUpCompliance = totalFollowUps > 0 ? (completedFollowUps / totalFollowUps) * 100 : 0
 
     // SLA breaches (leads without first contact within 5 minutes)
-    const { data: slaLeads } = await supabase
+    const { data: slaLeadsData } = await supabase
       .from('leads')
       .select('created_at, first_contact_at')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
       .eq('status', 'new')
+
+    const slaLeads = slaLeadsData as LeadSlaRow[] | null
 
     const slaBreaches = slaLeads?.filter((lead) => {
       if (!lead.first_contact_at) return true
