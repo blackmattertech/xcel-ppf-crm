@@ -160,8 +160,8 @@ export default function LoginPage() {
       </div> */}
 
       {/* Login Card - Vertically centered and responsive */}
-      <div className="absolute right-4 md:right-8 lg:right-[80px] top-1/2 -translate-y-1/2 z-20 w-[calc(100%-2rem)] md:w-[500px] lg:w-[546px] max-h-[90vh] lg:h-[740px] overflow-y-auto">
-        <div className="relative w-full min-h-[600px] lg:h-full bg-[rgba(255,255,255,0.1)] backdrop-blur-sm rounded-2xl md:rounded-[34px] shadow-[0px_4px_200px_0px_rgba(46,99,234,0.1)]">
+      <div className="absolute left-1/2 top-6 bottom-6 z-20 w-[calc(100%-2rem)] -translate-x-1/2 translate-y-0 max-h-[90vh] overflow-y-auto md:left-auto md:right-8 md:top-1/2 md:bottom-auto md:-translate-x-0 md:-translate-y-1/2 md:w-[500px] lg:right-[80px] lg:w-[546px] lg:h-[740px]">
+        <div className="relative w-full min-h-[520px] sm:min-h-[560px] md:min-h-[600px] lg:h-full bg-white/5 backdrop-blur-[2px] rounded-2xl md:rounded-[34px] border border-white/10 shadow-[0px_6px_120px_rgba(0,0,0,0.35)]">
           <div className="flex flex-col px-4 md:px-8 lg:px-[60px] pt-8 md:pt-12 lg:pt-[90px] pb-8 md:pb-12 lg:pb-[80px] h-full">
             {/* Logo - Positioned on the left inside the dialog */}
             <div className="mb-6 md:mb-8 lg:mb-[40px] self-start">
