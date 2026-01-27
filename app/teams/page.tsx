@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useAuthContext } from '@/components/AuthProvider'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
 import { Plus, Table2, LayoutGrid, Phone, Mail, Calendar, Star, Users, UserCheck, Wifi, Award, X, ArrowLeft, DollarSign, Clock, Play, Download } from 'lucide-react'
@@ -62,6 +63,7 @@ interface Call {
 
 export default function TeamsPage() {
   const router = useRouter()
+  const { isAuthenticated, role } = useAuthContext()
   const [users, setUsers] = useState<UserWithStats[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
@@ -102,36 +104,25 @@ export default function TeamsPage() {
   const [savingDetail, setSavingDetail] = useState(false)
 
   useEffect(() => {
-    checkAuth()
-    fetchUsers()
-    fetchRoles()
-  }, [])
-
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
+    if (!isAuthenticated) {
       router.push('/login')
       return
     }
+    checkAuth()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated])
 
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role_id, roles!users_role_id_fkey(name)')
-      .eq('id', user.id)
-      .single()
+  useEffect(() => {
+    if (!isAuthenticated) return
+    fetchUsers()
+    fetchRoles()
+  }, [isAuthenticated])
 
-    if (userData) {
-      const userDataTyped = userData as any
-      const roleName = Array.isArray(userDataTyped.roles) 
-        ? userDataTyped.roles[0]?.name 
-        : userDataTyped.roles?.name
-      
-      // Only admins can access teams page
-      if (roleName !== 'super_admin' && roleName !== 'admin') {
-        router.push('/dashboard')
-      }
+  async function checkAuth() {
+    // Preserve the original restriction: only admins can access teams page.
+    const roleName = role?.name ?? null
+    if (roleName && roleName !== 'super_admin' && roleName !== 'admin') {
+      router.push('/dashboard')
     }
   }
 
@@ -141,18 +132,41 @@ export default function TeamsPage() {
       if (response.ok) {
         const data = await response.json()
         const usersList: User[] = data.users || []
-        
-        // Fetch performance stats for each user
-        const usersWithStats = await Promise.all(
-          usersList.map(async (user) => {
-            const stats = await fetchUserStats(user.id)
+
+        // Fetch aggregated performance stats once and join with user list.
+        const perfResponse = await fetch('/api/users/performance')
+        let performanceByUser: Record<string, ReturnType<typeof mapPerfEntry>> = {}
+
+        if (perfResponse.ok) {
+          const perfData = await perfResponse.json()
+          const entries: any[] = perfData.performance || []
+          performanceByUser = entries.reduce((acc, entry) => {
+            const mapped = mapPerfEntry(entry)
+            acc[mapped.userId] = mapped
+            return acc
+          }, {} as Record<string, ReturnType<typeof mapPerfEntry>>)
+        }
+
+        const usersWithStats: UserWithStats[] = usersList.map((user) => {
+          const perf = performanceByUser[user.id]
+          if (perf) {
             return {
               ...user,
-              ...stats,
-            } as UserWithStats
-          })
-        )
-        
+              assignedLeads: perf.assignedLeads,
+              convertedLeads: perf.convertedLeads,
+              rating: perf.rating,
+              status: perf.status,
+            }
+          }
+          return {
+            ...user,
+            assignedLeads: 0,
+            convertedLeads: 0,
+            rating: 0,
+            status: 'active',
+          }
+        })
+
         setUsers(usersWithStats)
       }
     } catch (error) {
@@ -162,50 +176,13 @@ export default function TeamsPage() {
     }
   }
 
-  async function fetchUserStats(userId: string) {
-    try {
-      const supabase = createClient()
-      
-      // Get assigned leads count
-      const { count: assignedCount } = await supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .eq('assigned_to', userId)
-      
-      // Get converted leads count
-      const { count: convertedCount } = await supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .eq('assigned_to', userId)
-        .in('status', ['converted', 'deal_won', 'fully_paid'])
-      
-      const assigned = assignedCount || 0
-      const converted = convertedCount || 0
-      
-      // Calculate rating (0-5) based on conversion rate
-      // If no assigned leads or no conversions, rating is 0
-      const conversionRate = assigned > 0 ? (converted / assigned) : 0
-      const rating = assigned > 0 && converted > 0
-        ? Math.min(5, Math.max(0, conversionRate * 5)) // Scale conversion rate directly to 0-5 range
-        : 0
-      
-      // Determine status (active by default, can be enhanced with actual status field)
-      const status: 'active' | 'on_leave' = 'active'
-      
-      return {
-        assignedLeads: assigned,
-        convertedLeads: converted,
-        rating: Math.round(rating * 10) / 10, // Round to 1 decimal
-        status,
-      }
-    } catch (error) {
-      console.error('Failed to fetch user stats:', error)
-      return {
-        assignedLeads: 0,
-        convertedLeads: 0,
-        rating: 0,
-        status: 'active' as const,
-      }
+  function mapPerfEntry(entry: any) {
+    return {
+      userId: String(entry.userId),
+      assignedLeads: Number(entry.assignedLeads ?? 0),
+      convertedLeads: Number(entry.convertedLeads ?? 0),
+      rating: Number(entry.rating ?? 0),
+      status: (entry.status as 'active' | 'on_leave') || 'active',
     }
   }
 

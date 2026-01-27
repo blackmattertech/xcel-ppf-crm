@@ -284,14 +284,6 @@ export default function RolesPage() {
     return acc
   }, {} as Record<string, Permission[]>)
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    )
-  }
-
   return (
     <Layout>
       <div className="p-8">
@@ -319,6 +311,16 @@ export default function RolesPage() {
           </div>
         </div>
 
+        {loading ? (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div className="h-4 w-40 rounded bg-gray-200 animate-pulse" />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-10 rounded bg-gray-100 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -374,6 +376,7 @@ export default function RolesPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

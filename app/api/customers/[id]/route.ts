@@ -30,10 +30,17 @@ export async function GET(
       )
     }
 
-    // Get orders for this customer
+    // Get orders for this customer (including lead payment amount for totals)
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
-      .select('*')
+      .select(
+        `
+        *,
+        lead:leads (
+          payment_amount
+        )
+      `
+      )
       .eq('customer_id', id)
       .order('created_at', { ascending: false })
 

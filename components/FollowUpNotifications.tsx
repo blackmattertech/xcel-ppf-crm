@@ -1,86 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
-
-interface FollowUp {
-  id: string
-  scheduled_at: string
-  notes: string | null
-  lead: {
-    id: string
-    name: string
-    phone: string
-  } | null
-}
-
-interface FollowUpNotifications {
-  overdue: FollowUp[]
-  upcoming: FollowUp[]
-  totalPending: number
-  adminNotifications?: FollowUp[]
-}
+import { useAuthContext } from './AuthProvider'
+import { useFollowupNotifications } from './FollowupNotificationsProvider'
 
 export default function FollowUpNotifications() {
-  const [notifications, setNotifications] = useState<FollowUpNotifications | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState<string | null>(null)
+  const { role } = useAuthContext()
+  const { loading, data: notifications } = useFollowupNotifications()
   const [showNotifications, setShowNotifications] = useState(true)
-
-  useEffect(() => {
-    checkUserRole()
-  }, [])
-
-  useEffect(() => {
-    if (userRole === 'tele_caller') {
-      fetchNotifications()
-      // Refresh notifications every 5 minutes
-      const interval = setInterval(fetchNotifications, 5 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [userRole])
-
-  async function checkUserRole() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) return
-
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role_id, roles!users_role_id_fkey(name)')
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      const userDataTyped = userData as any
-      const roleName = Array.isArray(userDataTyped.roles) 
-        ? userDataTyped.roles[0]?.name 
-        : userDataTyped.roles?.name
-      setUserRole(roleName)
-    }
-  }
-
-  async function fetchNotifications() {
-    try {
-      const response = await fetch('/api/followups/notifications')
-      if (response.ok) {
-        const data = await response.json()
-        setNotifications(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch follow-up notifications:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   // Show for tele-callers and admins
   if (loading || !notifications) {
     return null
   }
 
+  const userRole = role?.name ?? null
   const isTeleCaller = userRole === 'tele_caller'
   const isAdmin = userRole === 'admin' || userRole === 'super_admin'
   

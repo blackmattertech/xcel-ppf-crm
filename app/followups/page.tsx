@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useAuthContext } from '@/components/AuthProvider'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
 
@@ -22,6 +23,7 @@ interface FollowUp {
 
 export default function FollowUpsPage() {
   const router = useRouter()
+  const { isAuthenticated } = useAuthContext()
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -29,17 +31,31 @@ export default function FollowUpsPage() {
   const [totalLeads, setTotalLeads] = useState(0)
 
   useEffect(() => {
+    // Redirect unauthenticated users to login, mirroring previous behaviour.
+    if (!isAuthenticated) {
+      router.push('/login')
+      return
+    }
     checkAuth()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
     fetchFollowUps()
+  }, [filter, isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
     fetchTotalLeads()
-  }, [filter])
+  }, [isAuthenticated])
 
   async function fetchTotalLeads() {
     try {
-      const response = await fetch('/api/leads')
+      const response = await fetch('/api/leads/count')
       if (response.ok) {
         const data = await response.json()
-        setTotalLeads(data.leads?.length || 0)
+        setTotalLeads(data.count || 0)
       }
     } catch (error) {
       console.error('Failed to fetch total leads:', error)

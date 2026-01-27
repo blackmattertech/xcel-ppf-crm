@@ -11,6 +11,7 @@ interface Customer {
   phone: string
   email: string | null
   customer_type: string
+  tags: string[] | null
   lead_id: string | null
   created_at: string
   updated_at: string
@@ -22,6 +23,9 @@ interface Order {
   status: string
   payment_status: string
   created_at: string
+  lead?: {
+    payment_amount: string | null
+  } | null
 }
 
 export default function CustomerDetailPage() {
@@ -80,6 +84,20 @@ export default function CustomerDetailPage() {
     return null
   }
 
+  const uiType = (() => {
+    const tags = customer.tags || []
+    if (tags.some((t) => t.toLowerCase().includes('dealership'))) return 'Dealership'
+    if (tags.some((t) => t.toLowerCase().includes('individual'))) return 'Individual'
+    return 'Individual'
+  })()
+
+  const totalRevenue = orders.reduce((sum, order) => {
+    const isClosed = order.payment_status === 'fully_paid'
+    const amount = order.lead?.payment_amount ? Number(order.lead.payment_amount) : 0
+    if (!isClosed || !amount || Number.isNaN(amount)) return sum
+    return sum + amount
+  }, 0)
+
   return (
     <Layout>
       <div className="p-8">
@@ -114,14 +132,20 @@ export default function CustomerDetailPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Customer Type</label>
-                  <span className="mt-1 inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 capitalize">
-                    {customer.customer_type.replace('_', ' ')}
+                  <span className="mt-1 inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                    {uiType}
                   </span>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Created At</label>
                   <p className="mt-1 text-sm text-gray-900">
                     {new Date(customer.created_at).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Total Purchase Value</label>
+                  <p className="mt-1 text-sm font-semibold text-green-700">
+                    ₹{totalRevenue.toLocaleString('en-IN')}
                   </p>
                 </div>
                 {customer.lead_id && (

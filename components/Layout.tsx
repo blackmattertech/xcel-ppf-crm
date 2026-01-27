@@ -1,9 +1,15 @@
 'use client'
 
 import { ReactNode, useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import Sidebar from './Sidebar'
-import FollowUpNotifications from './FollowUpNotifications'
-import PopupNotification from './PopupNotification'
+import { FollowupNotificationsProvider } from './FollowupNotificationsProvider'
+
+// Notifications are still available via the popup, but the header banner
+// is commented out for a cleaner layout on all pages.
+const PopupNotification = dynamic(() => import('./PopupNotification'), {
+  ssr: false,
+})
 
 interface LayoutProps {
   children: ReactNode
@@ -37,11 +43,13 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <main className={`flex-1 overflow-x-hidden transition-all duration-300 ${isCollapsed ? 'ml-16' : 'ml-60'}`}>
-        <FollowUpNotifications />
-        {children}
-        <PopupNotification />
-      </main>
+      <FollowupNotificationsProvider>
+        <main className={`flex-1 overflow-x-hidden transition-all duration-300 ${isCollapsed ? 'ml-16' : 'ml-60'}`}>
+          {/* <FollowUpNotifications /> */}
+          {children}
+          <PopupNotification />
+        </main>
+      </FollowupNotificationsProvider>
     </div>
   )
 }

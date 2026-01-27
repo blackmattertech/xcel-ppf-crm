@@ -7,17 +7,14 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
 import { ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
+import { useAuthContext } from './AuthProvider'
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [userName, setUserName] = useState<string>('')
-  const [userEmail, setUserEmail] = useState<string>('')
-  const [userProfileImage, setUserProfileImage] = useState<string | null>(null)
-  const [userPermissions, setUserPermissions] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
+  const { loading, userId, role, profile } = useAuthContext()
+  const userRole = role?.name ?? null
+  const userPermissions = role?.permissions ?? []
   const [followUpCount, setFollowUpCount] = useState(0)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
@@ -43,10 +40,6 @@ export default function Sidebar() {
   }, [isCollapsed])
 
   useEffect(() => {
-    checkAuth()
-  }, [])
-
-  useEffect(() => {
     if (userRole === 'tele_caller') {
       fetchFollowUpCount()
       const interval = setInterval(fetchFollowUpCount, 5 * 60 * 1000)
@@ -64,69 +57,6 @@ export default function Sidebar() {
     } catch (error) {
       console.error('Failed to fetch follow-up count:', error)
     }
-  }
-
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      router.push('/login')
-      return
-    }
-
-    setUserId(user.id) // Store user ID for profile editing
-
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select(`
-        name,
-        email,
-        profile_image_url,
-        role_id,
-        roles!users_role_id_fkey (
-          name,
-          role_permissions (
-            permissions (
-              name
-            )
-          )
-        )
-      `)
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      const userDataTyped = userData as any
-      setUserName(userDataTyped.name || '')
-      setUserEmail(userDataTyped.email || '')
-      // Ensure profile_image_url is set correctly (could be null, empty string, or a URL)
-      const profileImage = userDataTyped.profile_image_url && userDataTyped.profile_image_url.trim() !== '' 
-        ? userDataTyped.profile_image_url 
-        : null
-      setUserProfileImage(profileImage)
-      
-      console.log('User data loaded:', {
-        name: userDataTyped.name,
-        email: userDataTyped.email,
-        profile_image_url: profileImage,
-      })
-      
-      const roleData = userDataTyped.roles
-      if (roleData) {
-        setUserRole(roleData.name)
-        
-        const permissions = (roleData.role_permissions || [])
-          .map((rp: any) => rp.permissions?.name)
-          .filter(Boolean)
-        
-        setUserPermissions(permissions)
-      }
-    } else if (userError) {
-      console.error('Error fetching user:', userError)
-    }
-    
-    setLoading(false)
   }
 
   // Close profile menu when clicking outside
@@ -169,15 +99,11 @@ export default function Sidebar() {
     return false
   })
 
-  if (loading) {
-    return (
-      <div className={`fixed left-0 top-0 h-screen bg-black flex items-center justify-center z-50 transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-60'}`}>
-        <div className="text-white">Loading...</div>
-      </div>
-    )
-  }
-
   const sidebarWidth = isCollapsed ? 'w-16' : 'w-60'
+
+  const userName = profile?.name || ''
+  const userEmail = profile?.email || ''
+  const userProfileImage = profile?.profileImageUrl || null
 
   return (
     <div className={`fixed left-0 top-0 h-screen bg-black flex flex-col z-50 overflow-y-auto transition-all duration-300 ${sidebarWidth} border-r border-gray-800`}>
@@ -210,7 +136,18 @@ export default function Sidebar() {
 
       {/* Navigation Items */}
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
-        {filteredMenuItems.map((item) => {
+        {loading ? (
+          // Lightweight skeleton while auth/user data resolves.
+          Array.from({ length: 6 }).map((_, index) => (
+            <div
+              key={index}
+              className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-start px-4'} py-3 rounded-lg bg-gray-900/60 animate-pulse`}
+            >
+              <div className="w-6 h-6 rounded-full bg-gray-700" />
+              {!isCollapsed && <div className="ml-3 h-3 w-24 rounded bg-gray-700" />}
+            </div>
+          ))
+        ) : filteredMenuItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
           const showBadge = item.href === '/leads' && userRole === 'tele_caller' && followUpCount > 0
           

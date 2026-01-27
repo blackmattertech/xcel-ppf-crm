@@ -7,8 +7,14 @@ import Link from 'next/link'
 import Layout from '@/components/Layout'
 import { Bell, Search, MoreVertical, Plus, Download, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake } from 'lucide-react'
 import Image from 'next/image'
-import NewLeadForm from '@/components/NewLeadForm'
+import dynamic from 'next/dynamic'
 import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
+
+// New lead modal is quite heavy; load it only when the user actually opens it
+// so the main Leads list and filters become interactive faster.
+const NewLeadForm = dynamic(() => import('@/components/NewLeadForm'), {
+  ssr: false,
+})
 
 // Source Icon Component with fallback
 function SourceIcon({ platform, source }: { platform?: string | null; source: string }) {

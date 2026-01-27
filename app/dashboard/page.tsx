@@ -1,10 +1,11 @@
-'use client'
+ 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
+import { useAuthContext } from '@/components/AuthProvider'
 
 interface Analytics {
   leadsBySource: Record<string, number>
@@ -23,6 +24,7 @@ interface Analytics {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const { isAuthenticated, role } = useAuthContext()
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -33,37 +35,26 @@ export default function DashboardPage() {
   } | null>(null)
 
   useEffect(() => {
-    checkAuth()
-    fetchAnalytics()
-  }, [])
-
-  useEffect(() => {
-    if (userRole === 'tele_caller') {
-      fetchFollowUpAlerts()
-      // Refresh alerts every 5 minutes
-      const interval = setInterval(fetchFollowUpAlerts, 5 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [userRole])
-
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
+    if (!isAuthenticated) {
       router.push('/login')
       return
     }
+    checkAuth()
+    fetchAnalytics()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated])
 
-    // Get user role
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role:roles(name)')
-      .eq('id', user.id)
-      .single()
-
-    const roleName = (userData as any)?.role?.name
+  async function checkAuth() {
+    // Use auth context role name instead of duplicating Supabase queries.
+    const roleName = role?.name ?? null
     setUserRole(roleName)
+
+    if (roleName === 'tele_caller' || roleName === 'admin' || roleName === 'super_admin') {
+      fetchFollowUpAlerts()
+      // Refresh alerts every 5 minutes, matching previous behaviour.
+      const interval = setInterval(fetchFollowUpAlerts, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
   }
 
   async function fetchAnalytics() {
@@ -79,6 +70,11 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+
+  const totalLeads = useMemo(() => {
+    if (!analytics) return 0
+    return Object.values(analytics.leadsByStatus).reduce((a, b) => a + b, 0)
+  }, [analytics])
 
   async function fetchFollowUpAlerts() {
     try {
@@ -96,20 +92,26 @@ export default function DashboardPage() {
     }
   }
 
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    )
-  }
-
   return (
     <Layout>
       <div className="p-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Dashboard</h1>
+
+          {loading && (
+            // Keep shell visible and show a lightweight skeleton instead of a blank screen.
+            <div className="mb-8 space-y-4">
+              <div className="h-4 w-40 rounded bg-gray-200 animate-pulse" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="bg-white rounded-lg shadow p-6 space-y-3">
+                    <div className="h-3 w-24 rounded bg-gray-200 animate-pulse" />
+                    <div className="h-6 w-16 rounded bg-gray-200 animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Follow-up Alerts for Tele-callers */}
           {userRole === 'tele_caller' && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
@@ -190,7 +192,7 @@ export default function DashboardPage() {
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
               <p className="text-2xl font-bold text-gray-900 mt-2">
-                {analytics ? Object.values(analytics.leadsByStatus).reduce((a, b) => a + b, 0) : 0}
+                {analytics ? totalLeads : 0}
               </p>
             </div>
 
