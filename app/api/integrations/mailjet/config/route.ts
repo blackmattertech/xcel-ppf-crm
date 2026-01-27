@@ -5,6 +5,19 @@ import { createServiceClient } from '@/lib/supabase/service'
 const TABLE = 'mailjet_settings'
 const SINGLETON_ID = 1
 
+interface MailjetSettings {
+  api_key: string
+  api_secret: string
+  sender_email: string
+}
+
+interface MailjetSettingsRow {
+  id: number
+  api_key: string
+  api_secret: string
+  sender_email: string
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request)
@@ -33,11 +46,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ config: null })
     }
 
+    const settings = data as MailjetSettings
+
     return NextResponse.json({
       config: {
-        apiKey: data.api_key,
-        apiSecret: data.api_secret,
-        senderEmail: data.sender_email,
+        apiKey: settings.api_key,
+        apiSecret: settings.api_secret,
+        senderEmail: settings.sender_email,
       },
     })
   } catch (error) {
@@ -73,15 +88,16 @@ export async function PUT(request: NextRequest) {
 
     const supabase = createServiceClient()
 
-    const { error } = await supabase.from(TABLE).upsert(
-      {
-        id: SINGLETON_ID,
-        api_key: apiKey,
-        api_secret: apiSecret,
-        sender_email: senderEmail,
-      },
-      { onConflict: 'id' }
-    )
+    const upsertData: MailjetSettingsRow = {
+      id: SINGLETON_ID,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      sender_email: senderEmail,
+    }
+
+    const { error } = await supabase
+      .from(TABLE)
+      .upsert(upsertData as any, { onConflict: 'id' })
 
     if (error) {
       console.error('Error saving Mailjet settings:', error)
