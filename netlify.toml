@@ -1,0 +1,8 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Only omit keys that are safe/public. Do NOT include sensitive keys here.
+  # These are public keys that are intentionally exposed to the client
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL"
