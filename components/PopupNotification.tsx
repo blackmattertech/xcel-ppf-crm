@@ -41,9 +41,10 @@ export default function PopupNotification() {
       .single()
 
     if (userData) {
-      const roleName = Array.isArray(userData.roles) 
-        ? userData.roles[0]?.name 
-        : (userData.roles as any)?.name
+      const userDataTyped = userData as any
+      const roleName = Array.isArray(userDataTyped.roles) 
+        ? userDataTyped.roles[0]?.name 
+        : userDataTyped.roles?.name
       setUserRole(roleName)
     }
   }

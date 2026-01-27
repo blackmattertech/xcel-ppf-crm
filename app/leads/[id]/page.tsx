@@ -14,7 +14,9 @@ import {
   INTEREST_LEVEL,
   INTEREST_LEVEL_LABELS,
   CALL_OUTCOME,
-  CALL_OUTCOME_LABELS
+  CALL_OUTCOME_LABELS,
+  type CallOutcome,
+  type InterestLevel
 } from '@/shared/constants/lead-status'
 import { 
   Phone, 
@@ -463,11 +465,11 @@ export default function LeadDetailPage() {
   
   // Call status update
   const [showCallModal, setShowCallModal] = useState(false)
-  const [callOutcome, setCallOutcome] = useState<keyof typeof CALL_OUTCOME | ''>('')
+  const [callOutcome, setCallOutcome] = useState<CallOutcome | ''>('')
   const [callNotes, setCallNotes] = useState('')
   const [callStartTime, setCallStartTime] = useState('')
   const [callEndTime, setCallEndTime] = useState('')
-  const [callInterestLevel, setCallInterestLevel] = useState<keyof typeof INTEREST_LEVEL | ''>('')
+  const [callInterestLevel, setCallInterestLevel] = useState<InterestLevel | ''>('')
   const [callFollowUpDate, setCallFollowUpDate] = useState('')
   const [callFollowUpTime, setCallFollowUpTime] = useState('')
   const [submittingCall, setSubmittingCall] = useState(false)
@@ -481,7 +483,7 @@ export default function LeadDetailPage() {
   
   // Qualification
   const [showQualifyModal, setShowQualifyModal] = useState(false)
-  const [interestLevel, setInterestLevel] = useState<keyof typeof INTEREST_LEVEL | ''>('')
+  const [interestLevel, setInterestLevel] = useState<InterestLevel | ''>('')
   const [qualifyNotes, setQualifyNotes] = useState('')
   const [submittingQualify, setSubmittingQualify] = useState(false)
   
@@ -552,9 +554,10 @@ export default function LeadDetailPage() {
       .single()
 
     if (userData) {
-      const roleName = Array.isArray(userData.roles) 
-        ? userData.roles[0]?.name 
-        : (userData.roles as any)?.name
+      const userDataTyped = userData as any
+      const roleName = Array.isArray(userDataTyped.roles) 
+        ? userDataTyped.roles[0]?.name 
+        : userDataTyped.roles?.name
       setUserRole(roleName)
       setUserId(user.id)
     }
@@ -633,12 +636,12 @@ export default function LeadDetailPage() {
     }
 
     // Validate based on outcome
-    if (callOutcome === 'connected') {
+    if (callOutcome === CALL_OUTCOME.CONNECTED) {
       if (!callStartTime || !callEndTime) {
         alert('Please select both start and end time for the call')
         return
       }
-    } else if (callOutcome === 'not_reachable' || callOutcome === 'call_later') {
+    } else if (callOutcome === CALL_OUTCOME.NOT_REACHABLE || callOutcome === CALL_OUTCOME.CALL_LATER) {
       if (!callFollowUpDate || !callFollowUpTime) {
         alert('Please select follow-up date and time')
         return
@@ -649,7 +652,7 @@ export default function LeadDetailPage() {
     try {
       // Calculate call duration for connected calls
       let callDuration: number | null = null
-      if (callOutcome === 'connected' && callStartTime && callEndTime) {
+      if (callOutcome === CALL_OUTCOME.CONNECTED && callStartTime && callEndTime) {
         const start = new Date(`2000-01-01T${callStartTime}`)
         const end = new Date(`2000-01-01T${callEndTime}`)
         if (end < start) {
@@ -677,7 +680,7 @@ export default function LeadDetailPage() {
       }
 
       // Handle outcome-specific actions
-      if (callOutcome === 'wrong_number') {
+      if (callOutcome === CALL_OUTCOME.WRONG_NUMBER) {
         // Update status to lost
         const statusResponse = await fetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
@@ -701,7 +704,7 @@ export default function LeadDetailPage() {
       }
 
       // Update interest level if connected
-      if (callOutcome === 'connected' && callInterestLevel && lead) {
+      if (callOutcome === CALL_OUTCOME.CONNECTED && callInterestLevel && lead) {
         try {
           const updateResponse = await fetch(`/api/leads/${leadId}`, {
             method: 'PUT',
@@ -719,7 +722,8 @@ export default function LeadDetailPage() {
       }
 
       // Create follow-up for not_reachable or call_later
-      if ((callOutcome === 'not_reachable' || callOutcome === 'call_later') && callFollowUpDate && callFollowUpTime && lead?.assigned_to) {
+      const leadData = lead as any
+      if ((callOutcome === CALL_OUTCOME.NOT_REACHABLE || callOutcome === CALL_OUTCOME.CALL_LATER) && callFollowUpDate && callFollowUpTime && leadData?.assigned_to) {
         // Combine date and time
         const scheduledAt = new Date(`${callFollowUpDate}T${callFollowUpTime}`)
         
@@ -729,7 +733,7 @@ export default function LeadDetailPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               lead_id: leadId,
-              assigned_to: lead.assigned_to,
+              assigned_to: leadData.assigned_to,
               scheduled_at: scheduledAt.toISOString(),
               notes: `Follow-up scheduled after call: ${CALL_OUTCOME_LABELS[callOutcome]}. ${callNotes || ''}`,
             }),
@@ -746,7 +750,7 @@ export default function LeadDetailPage() {
       }
 
       // Auto-qualify if connected and new lead
-      if (callOutcome === 'connected' && lead?.status === LEAD_STATUS.NEW) {
+      if (callOutcome === CALL_OUTCOME.CONNECTED && lead?.status === LEAD_STATUS.NEW) {
         try {
           await fetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
@@ -842,7 +846,8 @@ export default function LeadDetailPage() {
         alert('Call recorded - Lead status updated to Lost (Not Interested)')
       } else if (option === 'call_later') {
         // Call Later → Create follow-up, status = contacted
-        if (!callFollowUpDate || !callFollowUpTime || !lead?.assigned_to) {
+        const leadDataForFollowup = lead as any
+        if (!callFollowUpDate || !callFollowUpTime || !leadDataForFollowup?.assigned_to) {
           alert('Please select follow-up date and time')
           setSubmittingCall(false)
           return
@@ -853,7 +858,7 @@ export default function LeadDetailPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             lead_id: leadId,
-            assigned_to: lead.assigned_to,
+            assigned_to: leadDataForFollowup.assigned_to,
             scheduled_at: scheduledAt.toISOString(),
             notes: `Call Later - Follow-up scheduled. ${callNotes || ''}`,
           }),
@@ -927,7 +932,7 @@ export default function LeadDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: LEAD_STATUS.QUALIFIED,
-          notes: `Interested - Qualified as ${INTEREST_LEVEL_LABELS[callInterestLevel]}${interestedNotes ? ` - ${interestedNotes}` : ''}`,
+          notes: `Interested - Qualified as ${callInterestLevel ? INTEREST_LEVEL_LABELS[callInterestLevel] : ''}${interestedNotes ? ` - ${interestedNotes}` : ''}`,
         }),
       })
 
@@ -969,7 +974,7 @@ export default function LeadDetailPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             status: LEAD_STATUS.QUALIFIED,
-            notes: `Qualified as ${INTEREST_LEVEL_LABELS[interestLevel]}${qualifyNotes ? ` - ${qualifyNotes}` : ''}`,
+            notes: `Qualified as ${interestLevel ? INTEREST_LEVEL_LABELS[interestLevel] : ''}${qualifyNotes ? ` - ${qualifyNotes}` : ''}`,
           }),
         })
 
@@ -1124,7 +1129,8 @@ export default function LeadDetailPage() {
 
     setSubmittingFollowUp(true)
 
-    if (!userId || !lead?.assigned_to) {
+    const leadDataForFollowUp = lead as any
+    if (!userId || !leadDataForFollowUp?.assigned_to) {
       alert('Unable to create follow-up: Missing user or lead assignment')
       return
     }
@@ -1139,7 +1145,7 @@ export default function LeadDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lead_id: leadId,
-          assigned_to: lead.assigned_to,
+          assigned_to: leadDataForFollowUp.assigned_to,
           scheduled_at: scheduledDateTime,
           notes: followUpNotes || null,
         }),
@@ -1303,12 +1309,15 @@ export default function LeadDetailPage() {
         }
       }
       // Check for common interest fields
-      const interestFields = ['interest', 'preferences', 'looking_for', 'requirements']
-      interestFields.forEach(field => {
-        if (lead.meta_data[field]) {
-          interests.push(lead.meta_data[field])
-        }
-      })
+      if (lead.meta_data) {
+        const metaData = lead.meta_data
+        const interestFields = ['interest', 'preferences', 'looking_for', 'requirements']
+        interestFields.forEach(field => {
+          if (metaData[field]) {
+            interests.push(metaData[field])
+          }
+        })
+      }
       return interests.filter(Boolean)
     }
     return []
@@ -1786,19 +1795,19 @@ export default function LeadDetailPage() {
                       type="button"
                       onClick={() => setCallOutcome('connected')}
                       className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
-                        callOutcome === 'connected'
+                        callOutcome === CALL_OUTCOME.CONNECTED
                           ? 'border-green-500 bg-green-50'
                           : 'border-gray-200 hover:border-green-300 bg-white'
                       }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                          callOutcome === 'connected' ? 'bg-green-500' : 'bg-gray-100'
+                          callOutcome === CALL_OUTCOME.CONNECTED ? 'bg-green-500' : 'bg-gray-100'
                         }`}>
-                          <Phone size={24} className={callOutcome === 'connected' ? 'text-white' : 'text-gray-400'} />
+                          <Phone size={24} className={callOutcome === CALL_OUTCOME.CONNECTED ? 'text-white' : 'text-gray-400'} />
       </div>
                         <div className="flex-1">
-                          <p className={`font-semibold mb-1 ${callOutcome === 'connected' ? 'text-green-700' : 'text-gray-900'}`}>
+                          <p className={`font-semibold mb-1 ${callOutcome === CALL_OUTCOME.CONNECTED ? 'text-green-700' : 'text-gray-900'}`}>
                             Connected
                           </p>
                           <p className="text-sm text-gray-600">Successfully spoke with the lead.</p>
@@ -1811,14 +1820,14 @@ export default function LeadDetailPage() {
                       type="button"
                       onClick={() => setCallOutcome('not_reachable')}
                       className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
-                        callOutcome === 'not_reachable'
+                        callOutcome === CALL_OUTCOME.NOT_REACHABLE
                           ? 'border-orange-500 bg-orange-50'
                           : 'border-gray-200 hover:border-orange-300 bg-white'
                       }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                          callOutcome === 'not_reachable' ? 'bg-orange-500' : 'bg-gray-100'
+                          callOutcome === CALL_OUTCOME.NOT_REACHABLE ? 'bg-orange-500' : 'bg-gray-100'
                         }`}>
                           <Phone size={24} className={callOutcome === 'not_reachable' ? 'text-white' : 'text-gray-400'} />
                         </div>
@@ -1861,7 +1870,7 @@ export default function LeadDetailPage() {
                   {callOutcome && (
                     <div className="border-t pt-6 space-y-4 animate-slideUp">
                       {/* Connected Flow - Show Sub-Options */}
-                      {callOutcome === 'connected' && !connectedSubOption && (
+                      {callOutcome === CALL_OUTCOME.CONNECTED && !connectedSubOption && (
                         <div>
                           <h4 className="text-base font-medium text-gray-900 mb-4">What was the outcome of the call?</h4>
                           <div className="space-y-3">
@@ -1870,19 +1879,19 @@ export default function LeadDetailPage() {
                               type="button"
                               onClick={() => setConnectedSubOption('interested')}
                               className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
-                                connectedSubOption === 'interested'
+                                (connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'interested'
                                   ? 'border-green-500 bg-green-50'
                                   : 'border-gray-200 hover:border-green-300 bg-white'
                               }`}
                             >
                               <div className="flex items-center gap-3">
                                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                                  connectedSubOption === 'interested' ? 'bg-green-500' : 'bg-gray-100'
+                                  (connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'interested' ? 'bg-green-500' : 'bg-gray-100'
                                 }`}>
-                                  <ThumbsUp size={24} className={connectedSubOption === 'interested' ? 'text-white' : 'text-gray-400'} />
+                                  <ThumbsUp size={24} className={(connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'interested' ? 'text-white' : 'text-gray-400'} />
                                 </div>
                                 <div className="flex-1">
-                                  <p className={`font-semibold mb-1 ${connectedSubOption === 'interested' ? 'text-green-700' : 'text-gray-900'}`}>
+                                  <p className={`font-semibold mb-1 ${(connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'interested' ? 'text-green-700' : 'text-gray-900'}`}>
                                     Interested
                                   </p>
                                   <p className="text-sm text-gray-600">Lead wants to proceed further.</p>
@@ -1895,19 +1904,19 @@ export default function LeadDetailPage() {
                               type="button"
                               onClick={() => setConnectedSubOption('not_interested')}
                               className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
-                                connectedSubOption === 'not_interested'
+                                (connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'not_interested'
                                   ? 'border-red-500 bg-red-50'
                                   : 'border-gray-200 hover:border-red-300 bg-white'
                               }`}
                             >
                               <div className="flex items-center gap-3">
                                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                                  connectedSubOption === 'not_interested' ? 'bg-red-500' : 'bg-gray-100'
+                                  (connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'not_interested' ? 'bg-red-500' : 'bg-gray-100'
                                 }`}>
-                                  <ThumbsDown size={24} className={connectedSubOption === 'not_interested' ? 'text-white' : 'text-gray-400'} />
+                                  <ThumbsDown size={24} className={(connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'not_interested' ? 'text-white' : 'text-gray-400'} />
                                 </div>
                                 <div className="flex-1">
-                                  <p className={`font-semibold mb-1 ${connectedSubOption === 'not_interested' ? 'text-red-700' : 'text-gray-900'}`}>
+                                  <p className={`font-semibold mb-1 ${(connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'not_interested' ? 'text-red-700' : 'text-gray-900'}`}>
                                     Not Interested
                                   </p>
                                   <p className="text-sm text-gray-600">Lead declined the offer.</p>
@@ -1920,19 +1929,19 @@ export default function LeadDetailPage() {
                               type="button"
                               onClick={() => setConnectedSubOption('call_later')}
                               className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
-                                connectedSubOption === 'call_later'
+                                (connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'call_later'
                                   ? 'border-yellow-500 bg-yellow-50'
                                   : 'border-gray-200 hover:border-yellow-300 bg-white'
                               }`}
                             >
                               <div className="flex items-center gap-3">
                                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                                  connectedSubOption === 'call_later' ? 'bg-yellow-500' : 'bg-gray-100'
+                                  (connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'call_later' ? 'bg-yellow-500' : 'bg-gray-100'
                                 }`}>
-                                  <Clock size={24} className={connectedSubOption === 'call_later' ? 'text-white' : 'text-gray-400'} />
+                                  <Clock size={24} className={(connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'call_later' ? 'text-white' : 'text-gray-400'} />
                                 </div>
                                 <div className="flex-1">
-                                  <p className={`font-semibold mb-1 ${connectedSubOption === 'call_later' ? 'text-yellow-700' : 'text-gray-900'}`}>
+                                  <p className={`font-semibold mb-1 ${(connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'call_later' ? 'text-yellow-700' : 'text-gray-900'}`}>
                                     Call Later
                                   </p>
                                   <p className="text-sm text-gray-600">Schedule a follow-up call.</p>
@@ -1944,7 +1953,7 @@ export default function LeadDetailPage() {
                       )}
 
                       {/* Not Interested Flow */}
-                      {callOutcome === 'connected' && connectedSubOption === 'not_interested' && (
+                      {callOutcome === CALL_OUTCOME.CONNECTED && connectedSubOption === 'not_interested' && (
                 <div className="space-y-4">
                           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                             <p className="text-sm text-red-800">
@@ -1984,7 +1993,7 @@ export default function LeadDetailPage() {
                       )}
 
                       {/* Call Later Flow */}
-                      {callOutcome === 'connected' && connectedSubOption === 'call_later' && (
+                      {callOutcome === CALL_OUTCOME.CONNECTED && connectedSubOption === 'call_later' && (
                         <div className="space-y-4">
                           <div>
                             <DatePicker
@@ -2063,7 +2072,7 @@ export default function LeadDetailPage() {
                       )}
 
                       {/* Interested Form - Qualification */}
-                      {callOutcome === 'connected' && connectedSubOption === 'interested' && (
+                      {callOutcome === CALL_OUTCOME.CONNECTED && connectedSubOption === 'interested' && (
                 <div className="space-y-4">
                           <h4 className="text-base font-medium text-gray-900 mb-4">Qualify the Lead</h4>
                           
@@ -2272,7 +2281,7 @@ export default function LeadDetailPage() {
                       )}
 
                       {/* Wrong Number: Show confirmation message */}
-                      {callOutcome === 'wrong_number' && (
+                      {callOutcome === CALL_OUTCOME.WRONG_NUMBER && (
                         <div className="space-y-4">
                           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                             <p className="text-sm text-red-800">
@@ -2332,7 +2341,7 @@ export default function LeadDetailPage() {
                     </label>
                     <select
                       value={interestLevel}
-                      onChange={(e) => setInterestLevel(e.target.value as keyof typeof INTEREST_LEVEL)}
+                      onChange={(e) => setInterestLevel(e.target.value as InterestLevel)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       <option value="">Select interest level...</option>

@@ -334,7 +334,7 @@ function GridView({
                               const target = e.target as HTMLImageElement
                               target.style.display = 'none'
                               const parent = target.parentElement
-                              if (parent && !parent.querySelector('.avatar-fallback')) {
+                              if (parent && !parent.querySelector('.avatar-fallback') && lead.assigned_user) {
                                 const fallback = document.createElement('div')
                                 fallback.className = 'avatar-fallback w-8 h-8 rounded-full bg-[#de0510] flex items-center justify-center text-white text-xs font-medium'
                                 fallback.textContent = lead.assigned_user.name.charAt(0).toUpperCase()
@@ -2758,13 +2758,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.containerColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, containerColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, containerColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.containerColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, containerColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, containerColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#000000"
                   />
@@ -2780,13 +2780,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.iconColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, iconColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, iconColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.iconColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, iconColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, iconColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#ffffff"
                   />
@@ -2802,13 +2802,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.textColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, textColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, textColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.textColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, textColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, textColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#ffffff"
                   />
@@ -2824,13 +2824,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.backgroundColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, backgroundColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.backgroundColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, backgroundColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#ffffff33"
                   />
@@ -2849,7 +2849,7 @@ export default function LeadsPage() {
                   max="1"
                   step="0.01"
                   value={containerStyles.opacity}
-                  onChange={(e) => setContainerStyles(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
+                  onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, opacity: parseFloat(e.target.value) }))}
                   className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">

@@ -193,7 +193,7 @@ export default function UploadLeadsPage() {
             setStep('preview')
           }
         },
-        error: (error) => {
+        error: (error: any) => {
           alert(`Error parsing CSV: ${error.message}`)
         },
       })

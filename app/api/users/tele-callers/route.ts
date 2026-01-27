@@ -40,10 +40,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all users with tele_caller role
+    const roleData = teleCallerRole as { id: string }
     const { data: teleCallers, error: usersError } = await supabase
       .from('users')
       .select('id, name, email')
-      .eq('role_id', teleCallerRole.id)
+      .eq('role_id', roleData.id)
       .order('name', { ascending: true })
 
     if (usersError) {

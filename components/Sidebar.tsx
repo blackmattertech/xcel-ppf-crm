@@ -97,21 +97,22 @@ export default function Sidebar() {
       .single()
 
     if (userData) {
-      setUserName(userData.name || '')
-      setUserEmail(userData.email || '')
+      const userDataTyped = userData as any
+      setUserName(userDataTyped.name || '')
+      setUserEmail(userDataTyped.email || '')
       // Ensure profile_image_url is set correctly (could be null, empty string, or a URL)
-      const profileImage = userData.profile_image_url && userData.profile_image_url.trim() !== '' 
-        ? userData.profile_image_url 
+      const profileImage = userDataTyped.profile_image_url && userDataTyped.profile_image_url.trim() !== '' 
+        ? userDataTyped.profile_image_url 
         : null
       setUserProfileImage(profileImage)
       
       console.log('User data loaded:', {
-        name: userData.name,
-        email: userData.email,
+        name: userDataTyped.name,
+        email: userDataTyped.email,
         profile_image_url: profileImage,
       })
       
-      const roleData = (userData as any).roles
+      const roleData = userDataTyped.roles
       if (roleData) {
         setUserRole(roleData.name)
         

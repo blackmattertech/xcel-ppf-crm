@@ -79,34 +79,13 @@ async function runMigration() {
     }
   } catch (error) {
     console.error('❌ Error:', error instanceof Error ? error.message : error)
-    
-    // Try alternative: execute via REST API
-    console.log('\n🔄 Trying alternative method...')
-    try {
-      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/exec_sql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseServiceKey,
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({ sql: migrationSQL }),
-      })
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${await response.text()}`)
-      }
-      
-      console.log('✅ Migration executed successfully via REST API!')
-    } catch (restError) {
-      console.error('❌ REST API method also failed')
-      console.error('\n📝 Please run this migration manually:')
-      console.error('   1. Go to your Supabase dashboard')
-      console.error('   2. Navigate to SQL Editor')
-      console.error('   3. Copy and paste the SQL from the migration file')
-      console.error('   4. Execute the query')
-      process.exit(1)
-    }
+    console.error('\n📝 Please run this migration manually:')
+    console.error('   1. Go to your Supabase dashboard')
+    console.error('   2. Navigate to SQL Editor')
+    console.error('   3. Copy and paste the SQL from the migration file')
+    console.error('   4. Execute the query')
+    console.error('   5. Or use the Supabase CLI: supabase db push')
+    process.exit(1)
   }
 }
 

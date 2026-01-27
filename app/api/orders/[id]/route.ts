@@ -76,12 +76,14 @@ export async function PATCH(
     const supabase = createServiceClient()
     
     // Update order
+    const updateData: any = {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    }
     const { data: order, error: updateError } = await supabase
       .from('orders')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString(),
-      } as any)
+      // @ts-ignore - Supabase type inference issue with dynamic updates
+      .update(updateData)
       .eq('id', id)
       .select(`
         *,
@@ -99,14 +101,16 @@ export async function PATCH(
     }
 
     // If payment status is fully_paid, also update the lead's payment_status and check if we should remove it from leads page
-    if (updates.payment_status === 'fully_paid' && order.lead_id) {
+    const orderData = order as any
+    if (updates.payment_status === 'fully_paid' && orderData?.lead_id) {
       const { error: leadUpdateError } = await supabase
         .from('leads')
+        // @ts-ignore - Supabase type inference issue with dynamic updates
         .update({
           payment_status: 'fully_paid',
           updated_at: new Date().toISOString(),
         } as any)
-        .eq('id', order.lead_id)
+        .eq('id', orderData.lead_id)
 
       if (leadUpdateError) {
         console.error('Failed to update lead payment status:', leadUpdateError)

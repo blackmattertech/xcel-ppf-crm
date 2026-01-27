@@ -206,7 +206,8 @@ export async function getProductsWithStats(): Promise<ProductWithStats[]> {
   }
   
   // Get leads for orders
-  const leadIds = orders?.map(o => o.lead_id).filter(Boolean) || []
+  const typedOrders = (orders || []) as { id: string; lead_id: string | null; product_id: string | null }[]
+  const leadIds = typedOrders.map(o => o.lead_id).filter(Boolean) as string[] || []
   const { data: orderLeads, error: orderLeadsError } = leadIds.length > 0
     ? await supabase
         .from('leads')
@@ -219,18 +220,21 @@ export async function getProductsWithStats(): Promise<ProductWithStats[]> {
   }
   
   // Calculate stats for each product
+  const typedLeads = (leads || []) as { id: string; requirement: string | null; meta_data: any }[]
+  const typedOrderLeads = (orderLeads || []) as { id: string; requirement: string | null; meta_data: any }[]
+
   const productsWithStats: ProductWithStats[] = products.map(product => {
     // Count leads interested
-    const leadsInterested = (leads || []).filter(lead => 
+    const leadsInterested = typedLeads.filter(lead => 
       productMatchesLead(product.title, lead.requirement, lead.meta_data)
     ).length
     
     // Count customers who bought (through orders)
     // First check if order has product_id matching
-    const ordersWithProductId = (orders || []).filter(o => o.product_id === product.id).length
+    const ordersWithProductId = typedOrders.filter(o => o.product_id === product.id).length
     
     // Then check if order's lead matches product by name
-    const ordersWithMatchingLead = (orderLeads || []).filter(lead => 
+    const ordersWithMatchingLead = typedOrderLeads.filter(lead => 
       productMatchesLead(product.title, lead.requirement, lead.meta_data)
     ).length
     
@@ -252,6 +256,7 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
   
   const { data, error } = await supabase
     .from('products')
+    // @ts-ignore - Supabase type inference issue with dynamic inserts
     .insert({
       title: input.title,
       description: input.description || null,
@@ -286,6 +291,7 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
   
   const { data, error } = await supabase
     .from('products')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update(updateData)
     .eq('id', id)
     .select()

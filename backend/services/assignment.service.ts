@@ -19,17 +19,18 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
   }
 
   // Get all users with tele_caller role only
+  const roleData = teleCallerRole as { id: string }
   const { data: users, error: usersError } = await supabase
     .from('users')
     .select('id')
-    .eq('role_id', teleCallerRole.id)
+    .eq('role_id', roleData.id)
 
   if (usersError || !users || users.length === 0) {
     console.error('No tele_caller users found:', usersError)
     return null
   }
 
-  const userIds = users.map((u) => u.id)
+  const userIds = (users as { id: string }[]).map((u) => u.id)
 
   // Get or create assignment records for this source
   const { data: assignments, error: assignmentsError } = await supabase
@@ -43,7 +44,7 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
   }
 
   // Create assignment records for users that don't have one
-  const existingUserIds = new Set(assignments?.map((a) => a.user_id) || [])
+  const existingUserIds = new Set((assignments as any[])?.map((a: any) => a.user_id) || [])
   const missingUserIds = userIds.filter((id) => !existingUserIds.has(id))
 
   if (missingUserIds.length > 0) {
@@ -71,12 +72,13 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
     return null
   }
 
-  const selectedAssignment = allAssignments[0]
+  const selectedAssignment = (allAssignments as any[])[0]
   const selectedUserId = selectedAssignment.user_id
 
   // Update assignment record
   await supabase
     .from('assignments')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update({
       last_assigned_at: new Date().toISOString(),
       assignment_count: (selectedAssignment.assignment_count || 0) + 1,

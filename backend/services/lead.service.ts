@@ -139,7 +139,8 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
 
     if (existing) {
       // Update existing lead instead
-      return updateLead(existing.id, {
+      const existingLead = existing as { id: string }
+      return updateLead(existingLead.id, {
         ...leadData,
         status: leadData.status || 'new',
       } as Partial<LeadInsert>)
@@ -223,7 +224,8 @@ export async function createLeadsBatch(
     .select('phone, id')
     .in('phone', phones)
 
-  const existingPhones = new Set(existingLeads?.map(l => l.phone) || [])
+  const typedExistingLeads = (existingLeads || []) as { phone: string | null; id: string }[]
+  const existingPhones = new Set(typedExistingLeads.map(l => l.phone).filter(Boolean) as string[])
 
   // Separate new leads from duplicates
   const newLeads: LeadInsert[] = []
@@ -231,7 +233,7 @@ export async function createLeadsBatch(
 
   leadsData.forEach((lead, index) => {
     if (lead.phone && existingPhones.has(lead.phone)) {
-      const existing = existingLeads?.find(l => l.phone === lead.phone)
+      const existing = typedExistingLeads.find(l => l.phone === lead.phone)
       if (existing) {
         duplicateMap.set(lead.phone, { index, data: lead, existingId: existing.id })
       }
@@ -370,6 +372,7 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
 
   const { data, error } = await supabase
     .from('leads')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update({
       ...updates,
       updated_at: new Date().toISOString(),
@@ -391,14 +394,16 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
   }
 
   // Log status change if status was updated
-  if (currentLead && updates.status && currentLead.status !== updates.status) {
-    const currentLeadData = currentLead as any
+  if (currentLead && updates.status) {
+    const currentLeadData = currentLead as { status: string; assigned_to: string | null }
+    if (currentLeadData.status !== updates.status) {
     await supabase.from('lead_status_history').insert({
       lead_id: id,
       old_status: currentLeadData.status,
       new_status: updates.status,
       changed_by: currentLeadData.assigned_to || id,
     } as any)
+    }
   }
 
   return data

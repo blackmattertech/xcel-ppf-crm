@@ -125,7 +125,9 @@ export async function POST(request: NextRequest) {
 
       // Create status history entries for all reassigned leads
       if (currentLeads && currentLeads.length > 0) {
-        const historyEntries = currentLeads.map((lead) => ({
+        type LeadForHistory = { id: string; status: string; assigned_to: string | null }
+        const typedCurrentLeads = currentLeads as LeadForHistory[]
+        const historyEntries = typedCurrentLeads.map((lead) => ({
           lead_id: lead.id,
           old_status: lead.status,
           new_status: lead.status, // Status doesn't change on reassignment
@@ -143,7 +145,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for any leads that weren't updated (might not exist)
-    const updatedIds = new Set(updatedLeads?.map(l => l.id) || [])
+    const updatedIds = new Set(updatedLeads?.map((l: any) => l.id) || [])
     lead_ids.forEach((leadId) => {
       if (!updatedIds.has(leadId)) {
         results.failed.push({

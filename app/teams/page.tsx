@@ -23,6 +23,7 @@ interface User {
   dob: string | null
   doj: string | null
   role: Role
+  role_id?: string
   created_at: string
 }
 
@@ -122,9 +123,10 @@ export default function TeamsPage() {
       .single()
 
     if (userData) {
-      const roleName = Array.isArray(userData.roles) 
-        ? userData.roles[0]?.name 
-        : (userData.roles as any)?.name
+      const userDataTyped = userData as any
+      const roleName = Array.isArray(userDataTyped.roles) 
+        ? userDataTyped.roles[0]?.name 
+        : userDataTyped.roles?.name
       
       // Only admins can access teams page
       if (roleName !== 'super_admin' && roleName !== 'admin') {
@@ -391,7 +393,7 @@ export default function TeamsPage() {
     setDetailFormData({
       name: user.name,
       phone: user.phone || '',
-      roleId: user.role_id,
+      roleId: user.role_id || '',
       address: user.address || '',
       dob: user.dob || '',
       doj: user.doj || '',
@@ -477,10 +479,10 @@ export default function TeamsPage() {
         .select('total_amount')
         .eq('assigned_to', userId)
       
-      const totalSales = orders?.reduce((sum, order) => sum + (parseFloat(order.total_amount) || 0), 0) || 0
+      const totalSales = (orders as any[])?.reduce((sum: number, order: any) => sum + (parseFloat(order.total_amount) || 0), 0) || 0
       
       setUserDetailStats({
-        firstDealDate: firstDeal?.created_at || null,
+        firstDealDate: (firstDeal as any)?.[0]?.created_at || null,
         totalConvertedCustomers: converted,
         rating: Math.round(rating * 10) / 10,
         totalSales,

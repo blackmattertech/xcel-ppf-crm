@@ -23,7 +23,8 @@ export async function updateLeadStatus(
     throw new Error('Lead not found')
   }
 
-  const oldStatus = currentLead.status as LeadStatus
+  const currentLeadData = currentLead as { status: string }
+  const oldStatus = currentLeadData.status as LeadStatus
 
   // Validate status transition
   const allowedStatuses = LEAD_STATUS_FLOW[oldStatus] || []
@@ -46,6 +47,7 @@ export async function updateLeadStatus(
 
   const { data: updatedLead, error: updateError } = await supabase
     .from('leads')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update(updateData)
     .eq('id', leadId)
     .select()
