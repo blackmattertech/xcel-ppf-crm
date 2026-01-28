@@ -7,7 +7,7 @@ import { z } from 'zod'
 // Schema for a single lead from uploaded file
 const uploadedLeadSchema = z.object({
   name: z.string().min(1),
-  phone: z.string().min(1),
+  phone: z.string().nullable().optional().or(z.literal('')), // Phone is optional
   email: z.string().email().nullable().optional().or(z.literal('')),
   source: z.enum(['meta', 'manual', 'form', 'whatsapp', 'ivr']).default('manual'),
   campaign_id: z.string().nullable().optional().or(z.literal('')),
@@ -51,10 +51,14 @@ export async function POST(request: NextRequest) {
       
       try {
         // Clean phone number before validation
-        let cleanedPhone = leadData.phone || ''
-        if (cleanedPhone) {
+        let cleanedPhone = leadData.phone || null
+        if (cleanedPhone && typeof cleanedPhone === 'string') {
           // Remove "p:" prefix and other common phone prefixes
           cleanedPhone = cleanedPhone.replace(/^(p|tel|phone|mobile):/i, '').trim()
+          // If phone is empty after cleaning, set to null
+          if (cleanedPhone === '') {
+            cleanedPhone = null
+          }
         }
 
         const validated = uploadedLeadSchema.parse({
@@ -77,7 +81,7 @@ export async function POST(request: NextRequest) {
         validatedLeads.push({
           ...validated,
           lead_id,
-          phone: cleanedPhone, // Use cleaned phone
+          phone: cleanedPhone, // Use cleaned phone (can be null)
           email: validated.email || null,
         })
       } catch (error) {
