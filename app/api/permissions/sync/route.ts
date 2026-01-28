@@ -20,14 +20,35 @@ export async function POST(request: NextRequest) {
 
     // Only admin and super_admin can sync permissions
     if (userRole !== SYSTEM_ROLES.ADMIN && userRole !== SYSTEM_ROLES.SUPER_ADMIN) {
+      console.error('Permission sync denied. User role:', userRole, 'Expected:', SYSTEM_ROLES.ADMIN, 'or', SYSTEM_ROLES.SUPER_ADMIN)
       return NextResponse.json(
-        { error: 'Forbidden: Only administrators can sync permissions' },
+        { error: `Forbidden: Only administrators can sync permissions. Your role: ${userRole || 'unknown'}` },
         { status: 403 }
       )
     }
 
+    console.log('Permission sync started by:', user.name, 'Role:', userRole)
+
     const supabase = createServiceClient()
     const resources = getResourcesRequiringPermissions()
+    
+    console.log('Resources requiring permissions:', resources)
+    
+    if (resources.length === 0) {
+      return NextResponse.json({
+        message: 'No resources found that require permissions',
+        summary: {
+          created: 0,
+          existing: 0,
+          errors: 0,
+        },
+        details: {
+          created: [],
+          existing: [],
+          errors: [],
+        },
+      })
+    }
     
     const results = {
       created: [] as string[],
@@ -41,18 +62,23 @@ export async function POST(request: NextRequest) {
       
       for (const permission of permissions) {
         try {
-          // Check if permission already exists
-          const { data: existing } = await supabase
+          // Check if permission already exists (use maybeSingle to avoid errors when not found)
+          const { data: existing, error: checkError } = await supabase
             .from('permissions')
             .select('id, name')
             .eq('name', permission.name)
-            .single()
+            .maybeSingle()
+          
+          if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+            results.errors.push(`${permission.name}: Check error - ${checkError.message}`)
+            continue
+          }
           
           if (existing) {
             results.existing.push(permission.name)
           } else {
             // Insert new permission
-            const { data, error } = await supabase
+            const { data, error: insertError } = await supabase
               .from('permissions')
               // @ts-ignore - Supabase type inference issue with dynamic inserts
               .insert({
@@ -64,9 +90,9 @@ export async function POST(request: NextRequest) {
               .select()
               .single()
             
-            if (error) {
-              results.errors.push(`${permission.name}: ${error.message}`)
-            } else {
+            if (insertError) {
+              results.errors.push(`${permission.name}: ${insertError.message}`)
+            } else if (data) {
               results.created.push(permission.name)
             }
           }
