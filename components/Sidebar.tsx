@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -80,24 +80,38 @@ export default function Sidebar() {
   }
 
   // Filter menu items based on user role and permissions
-  const filteredMenuItems = SIDEBAR_MENU_ITEMS.filter((item) => {
-    if (!item.requiresPermissions) {
-      return true
-    }
-
-    if (item.roles && userRole && item.roles.includes(userRole)) {
-      return true
-    }
-
-    const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
-    const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
+  // Use useMemo to avoid recalculating on every render
+  const filteredMenuItems = useMemo(() => {
+    console.log('Filtering sidebar items:', { loading, userId, userRole, permissionCount: userPermissions.length })
     
-    if (hasReadPermission || hasManagePermission) {
-      return true
+    // If still loading or no user, return empty array
+    if (loading || !userId) {
+      console.log('Sidebar: Still loading or no user, showing skeleton')
+      return []
     }
 
-    return false
-  })
+    const filtered = SIDEBAR_MENU_ITEMS.filter((item) => {
+      if (!item.requiresPermissions) {
+        return true
+      }
+
+      if (item.roles && userRole && item.roles.includes(userRole)) {
+        return true
+      }
+
+      const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
+      const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
+      
+      if (hasReadPermission || hasManagePermission) {
+        return true
+      }
+
+      return false
+    })
+    
+    console.log('Filtered sidebar items count:', filtered.length)
+    return filtered
+  }, [loading, userId, userRole, userPermissions])
 
   const sidebarWidth = isCollapsed ? 'w-16' : 'w-60'
 

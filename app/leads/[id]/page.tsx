@@ -1237,11 +1237,75 @@ export default function LeadDetailPage() {
   const availableStatuses = getAvailableStatuses()
   const canUpdateStatus = userRole === 'tele_caller' || userRole === 'admin' || userRole === 'super_admin'
 
+  // Get car model from lead
+  function getCarModelFromLead(): string | null {
+    if (!lead) return null
+    
+    // Check direct fields
+    if (lead.meta_data?.car_model) return String(lead.meta_data.car_model)
+    if (lead.meta_data?.Car_Model) return String(lead.meta_data.Car_Model)
+    if (lead.meta_data?.vehicle) return String(lead.meta_data.vehicle)
+    
+    // Check in field_data array
+    if (lead.meta_data?.field_data && Array.isArray(lead.meta_data.field_data)) {
+      const carField = lead.meta_data.field_data.find((f: any) => {
+        if (!f.name) return false
+        const name = f.name.toLowerCase()
+        return name.includes('car') || name.includes('vehicle') || name.includes('model')
+      })
+      if (carField?.values?.[0]) return String(carField.values[0])
+    }
+    
+    // Check in requirement field (format: "service | Car Model: xyz")
+    if (lead.requirement && lead.requirement.includes('Car Model:')) {
+      const match = lead.requirement.match(/Car Model:\s*([^|]+)/)
+      if (match && match[1]) return match[1].trim()
+    }
+    
+    return null
+  }
+
+  // Get service/product interest from lead
+  function getServiceFromLead(): string | null {
+    if (!lead) return null
+    
+    // Check direct fields
+    if (lead.meta_data?.['what_services_are_you_looking_for?']) {
+      return String(lead.meta_data['what_services_are_you_looking_for?'])
+    }
+    if (lead.meta_data?.service) return String(lead.meta_data.service)
+    
+    // Check in field_data array
+    if (lead.meta_data?.field_data && Array.isArray(lead.meta_data.field_data)) {
+      const serviceField = lead.meta_data.field_data.find((f: any) => {
+        if (!f.name) return false
+        const name = f.name.toLowerCase()
+        return name.includes('service') || name.includes('looking for')
+      })
+      if (serviceField?.values?.[0]) return String(serviceField.values[0])
+    }
+    
+    // Check requirement field (format: "service | Car Model: xyz")
+    if (lead.requirement) {
+      // If it contains pipe, get the part before pipe
+      if (lead.requirement.includes('|')) {
+        const parts = lead.requirement.split('|')
+        return parts[0].trim()
+      }
+      // If it doesn't contain "Car Model:", it's probably just the service
+      if (!lead.requirement.includes('Car Model:')) {
+        return lead.requirement
+      }
+    }
+    
+    return null
+  }
+
   // Get vehicle name from requirement or meta_data
   function getVehicleName() {
     if (lead?.requirement) return lead.requirement
     if (lead?.meta_data) {
-      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] || 
+      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] ||
                      lead.meta_data['what_services_are_you_looking_for'] ||
                      lead.meta_data['vehicle'] ||
                      lead.meta_data['car_model'] ||
@@ -1526,6 +1590,32 @@ export default function LeadDetailPage() {
                 <span className="capitalize">{lead?.source || 'N/A'}</span>
                     </span>
               </div>
+              {(() => {
+                const carModel = getCarModelFromLead()
+                return carModel && carModel !== '-' ? (
+                  <div className="flex items-center gap-3 text-gray-700">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-sm">
+                      <span className="font-medium">Car Model: </span>
+                      <span>{carModel}</span>
+                    </span>
+                  </div>
+                ) : null
+              })()}
+              {(() => {
+                const service = getServiceFromLead()
+                return service && service !== '-' ? (
+                  <div className="flex items-center gap-3 text-gray-700">
+                    <CheckCircle size={16} className="text-gray-400" />
+                    <span className="text-sm">
+                      <span className="font-medium">Interested in: </span>
+                      <span className="capitalize">{service.replace(/_/g, ' ')}</span>
+                    </span>
+                  </div>
+                ) : null
+              })()}
               {getEstimatedValue() && (
                     <div className="flex items-center gap-3 text-gray-700">
                       <DollarSign size={16} className="text-gray-400" />
@@ -1617,11 +1707,11 @@ export default function LeadDetailPage() {
               )}
 
               {/* Notes */}
-              {(lead?.meta_data?.notes || lead?.requirement) && (
+              {lead?.meta_data?.notes && (
                 <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                   <h2 className="text-base font-semibold text-gray-900 mb-4">Notes</h2>
                   <p className="text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
-                    {lead.meta_data?.notes || lead.requirement || '-'}
+                    {lead.meta_data.notes}
                   </p>
                 </div>
               )}

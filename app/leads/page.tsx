@@ -129,7 +129,9 @@ function GridView({
   getLastContactedTime,
   formatStageName,
   getStageBadgeColor,
-  router
+  router,
+  isAdmin,
+  onReassignClick
 }: {
   leads: Lead[]
   getVehicleName: (lead: Lead) => string
@@ -138,21 +140,86 @@ function GridView({
   formatStageName: (status: string) => string
   getStageBadgeColor: (status: string) => string
   router: ReturnType<typeof useRouter>
+  isAdmin: boolean
+  onReassignClick: (leadId: string) => void
 }) {
-  // Get budget/amount from meta_data
-  function getBudget(lead: Lead): string {
-    if (lead.meta_data?.payment_amount) {
-      return `$${Number(lead.meta_data.payment_amount).toLocaleString()}`
+  // Get car model from meta_data
+  function getCarModel(lead: Lead): string {
+    // Debug: Log field_data structure for first few leads
+    if (lead.meta_data?.field_data && Math.random() < 0.1) {
+      console.log('Field data for lead:', lead.lead_id, lead.meta_data.field_data.map((f: any) => f.name))
     }
-    if (lead.meta_data?.budget_range) {
-      return String(lead.meta_data.budget_range)
+    
+    // Check direct fields first
+    if (lead.meta_data?.car_model) {
+      return String(lead.meta_data.car_model)
     }
+    if (lead.meta_data?.Car_Model) {
+      return String(lead.meta_data.Car_Model)
+    }
+    if (lead.meta_data?.vehicle) {
+      return String(lead.meta_data.vehicle)
+    }
+    
+    // Check in field_data array (from Meta webhooks)
+    if (lead.meta_data?.field_data && Array.isArray(lead.meta_data.field_data)) {
+      // Try multiple variations of car/vehicle field names
+      const carModelField = lead.meta_data.field_data.find((field: any) => {
+        if (!field.name) return false
+        const fieldNameLower = field.name.toLowerCase()
+        return (
+          fieldNameLower.includes('car_model') ||
+          fieldNameLower.includes('car model') ||
+          fieldNameLower.includes('vehicle') ||
+          fieldNameLower.includes('car') ||
+          fieldNameLower.includes('model')
+        )
+      })
+      if (carModelField?.values?.[0]) {
+        return String(carModelField.values[0])
+      }
+    }
+    
+    // Check if it's in the requirement field (sometimes car model is concatenated there)
+    if (lead.requirement && lead.requirement.includes('Car Model:')) {
+      const match = lead.requirement.match(/Car Model:\s*([^|]+)/)
+      if (match && match[1]) {
+        return match[1].trim()
+      }
+    }
+    
     return '-'
   }
 
-  // Get company from meta_data
-  function getCompany(lead: Lead): string | null {
-    return lead.meta_data?.company || lead.meta_data?.Company || null
+  // Get services from meta_data or requirement
+  function getServices(lead: Lead): string {
+    // Check direct meta_data fields first
+    if (lead.meta_data?.['what_services_are_you_looking_for?']) {
+      return String(lead.meta_data['what_services_are_you_looking_for?'])
+    }
+    if (lead.meta_data?.service) {
+      return String(lead.meta_data.service)
+    }
+    
+    // Check in field_data array (from Meta webhooks)
+    if (lead.meta_data?.field_data && Array.isArray(lead.meta_data.field_data)) {
+      const serviceField = lead.meta_data.field_data.find((field: any) => 
+        field.name && (
+          field.name.toLowerCase().includes('service') ||
+          field.name.toLowerCase().includes('looking for')
+        )
+      )
+      if (serviceField?.values?.[0]) {
+        return String(serviceField.values[0])
+      }
+    }
+    
+    // Fall back to requirement field
+    if (lead.requirement) {
+      return lead.requirement
+    }
+    
+    return '-'
   }
 
   // Get location from meta_data
@@ -211,8 +278,8 @@ function GridView({
       {leads.map((lead) => {
         const vehicleName = getVehicleName(lead)
         const isHot = lead.interest_level === 'hot'
-        const budget = getBudget(lead)
-        const company = getCompany(lead)
+        const carModel = getCarModel(lead)
+        const services = getServices(lead)
         const location = getLocation(lead)
         const lastContact = formatLastContact(lead)
         
@@ -220,14 +287,14 @@ function GridView({
           <div
             key={lead.id}
             onClick={() => router.push(`/leads/${lead.id}`)}
-            className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border border-[#eaecee] overflow-hidden"
+            className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border border-[#eaecee] overflow-hidden relative group"
           >
             {/* CARD HEADER */}
             <div className="px-4 py-3 bg-gradient-to-r from-[#fafafa] to-white border-b border-[#eaecee]">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1 min-w-0 pr-2">
                   <h3 
-                    className="text-sm font-bold text-[#242d35] truncate hover:text-[#de0510] transition-colors cursor-pointer"
+                    className="text-sm font-bold text-[#242d35] truncate hover:text-[#de0510] transition-colors"
                     style={{ fontSize: '14px' }}
                   >
                     {lead.name}
@@ -241,15 +308,32 @@ function GridView({
                     </p>
                   )}
                 </div>
-                {/* Status Icon */}
-                <div className={`p-1.5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  isHot ? 'bg-[#FF513A] animate-pulse' : 'bg-[#64B5F6]'
-                }`}>
-                  {isHot ? (
-                    <TrendingUp className="w-3.5 h-3.5 text-white" />
-                  ) : (
-                    <Snowflake className="w-3.5 h-3.5 text-white" />
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {/* Reassign Button (Admin Only) */}
+                  {isAdmin && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onReassignClick(lead.id)
+                      }}
+                      className="p-1 hover:bg-gray-100 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                      title="Reassign lead"
+                    >
+                      <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                      </svg>
+                    </button>
                   )}
+                  {/* Status Icon */}
+                  <div className={`p-1.5 rounded-full flex items-center justify-center ${
+                    isHot ? 'bg-[#FF513A] animate-pulse' : 'bg-[#64B5F6]'
+                  }`}>
+                    {isHot ? (
+                      <TrendingUp className="w-3.5 h-3.5 text-white" />
+                    ) : (
+                      <Snowflake className="w-3.5 h-3.5 text-white" />
+                    )}
+                  </div>
                 </div>
               </div>
               
@@ -264,14 +348,16 @@ function GridView({
 
             {/* CARD BODY - 2 Column Grid */}
             <div className="px-4 py-3 grid grid-cols-2 gap-x-3 gap-y-2">
-              {/* Value (top-left) */}
+              {/* Car Model (top-left) */}
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 rounded-full bg-[#E8F5E9] flex items-center justify-center flex-shrink-0">
-                  <DollarSign className="w-3 h-3 text-[#4CAF50]" />
+                  <svg className="w-3 h-3 text-[#4CAF50]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">VALUE</p>
-                  <p className="text-[11px] font-bold text-[#242d35] truncate">{budget}</p>
+                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">CAR MODEL</p>
+                  <p className="text-[11px] font-bold text-[#242d35] truncate">{carModel}</p>
                 </div>
               </div>
 
@@ -297,14 +383,16 @@ function GridView({
                 </div>
               </div>
 
-              {/* Company (middle-right) */}
+              {/* Services Interested (middle-right) */}
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 rounded-full bg-[#F3E5F5] flex items-center justify-center flex-shrink-0">
-                  <Building2 className="w-3 h-3 text-[#9C27B0]" />
+                  <svg className="w-3 h-3 text-[#9C27B0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">COMPANY</p>
-                  <p className="text-[11px] font-medium text-[#242d35] truncate">{company || '-'}</p>
+                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">INTERESTED</p>
+                  <p className="text-[11px] font-medium text-[#242d35] truncate">{services}</p>
                 </div>
               </div>
 
@@ -871,7 +959,7 @@ export default function LeadsPage() {
             iconColor: '#ffffff',
             textColor: '#ffffff',
             opacity: 1,
-            backgroundColor: '#ffffff', // Base color, opacity handled separately
+            backgroundColor: '#000000', // Solid black background
           }
         }
       }
@@ -880,8 +968,8 @@ export default function LeadsPage() {
       containerColor: '#000000',
       iconColor: '#ffffff',
       textColor: '#ffffff',
-      opacity: 0.2,
-      backgroundColor: '#ffffff', // Base color, opacity handled separately
+      opacity: 1, // Changed from 0.2 to 1 for solid black
+      backgroundColor: '#000000', // Changed from '#ffffff' to '#000000' for black background
     }
   })
 
@@ -2156,12 +2244,18 @@ export default function LeadsPage() {
                     )}
                   </th>
                 ))}
+                {/* Actions Column Header (Admin Only) */}
+                {isAdmin && (
+                  <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase tracking-wider" style={{ width: '100px' }}>
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {leads.length === 0 ? (
                 <tr>
-                  <td colSpan={(isAdmin ? 1 : 0) + columns.filter(col => col.visible).length} className="px-6 py-12 text-center text-base text-gray-500">
+                  <td colSpan={(isAdmin ? 2 : 0) + columns.filter(col => col.visible).length} className="px-6 py-12 text-center text-base text-gray-500">
                     No leads found
                   </td>
                 </tr>
@@ -2299,6 +2393,24 @@ export default function LeadsPage() {
                           {renderCell(column)}
                     </td>
                       ))}
+                      {/* Actions Column (Admin Only) */}
+                      {isAdmin && (
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: '100px' }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setReassigningLeadId(lead.id)
+                            }}
+                            className="text-[#ed1b24] hover:text-[#d11820] font-medium text-sm flex items-center gap-1"
+                            title="Reassign lead"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                            </svg>
+                            Reassign
+                          </button>
+                        </td>
+                      )}
                   </tr>
                   )
                 })
@@ -2386,6 +2498,8 @@ export default function LeadsPage() {
                 formatStageName={formatStageName}
                 getStageBadgeColor={getStageBadgeColor}
                 router={router}
+                isAdmin={isAdmin}
+                onReassignClick={(leadId) => setReassigningLeadId(leadId)}
               />
               {/* Pagination for Grid View */}
               {totalPages > 1 && (

@@ -47,6 +47,8 @@ export default function RolesPage() {
     checkAuth()
     fetchRoles()
     fetchPermissions()
+    // Auto-sync permissions on first load to ensure all sidebar items have permissions
+    autoSyncPermissionsOnLoad()
   }, [])
 
   async function checkAuth() {
@@ -115,6 +117,26 @@ export default function RolesPage() {
     } catch (error) {
       console.error('Failed to fetch permissions:', error)
       alert('Failed to load permissions. Please refresh the page.')
+    }
+  }
+
+  async function autoSyncPermissionsOnLoad() {
+    // Silently sync permissions on page load (no confirmation needed)
+    try {
+      const response = await fetch('/api/permissions/sync', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.summary.created > 0) {
+        console.log('Auto-synced permissions:', data.summary)
+        // Refresh permissions list if new ones were created
+        await fetchPermissions()
+      }
+    } catch (error) {
+      console.error('Auto-sync failed (non-critical):', error)
+      // Silent failure - user can manually sync if needed
     }
   }
 

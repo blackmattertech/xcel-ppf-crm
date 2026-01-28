@@ -43,27 +43,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let isMounted = true
+    let isBootstrapped = false
+    const supabase = createClient()
 
-    async function bootstrapAuth() {
+    async function loadUserData(userId: string) {
       try {
-        const supabase = createClient()
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-
-        if (!isMounted) return
-
-        if (!user) {
-          setUserId(null)
-          setRole(null)
-          setProfile(null)
-          return
-        }
-
-        setUserId(user.id)
-
         // Mirror the shape used in Sidebar & other components: users joined with roles + role_permissions.
-        const { data: userData } = await supabase
+        const { data: userData, error: userError } = await supabase
           .from('users')
           .select(
             `
@@ -81,10 +67,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           )
         `
           )
-          .eq('id', user.id)
+          .eq('id', userId)
           .single()
 
         if (!isMounted) return
+
+        if (userError) {
+          console.error('Error fetching user data:', userError)
+          setRole(null)
+          setProfile(null)
+          return
+        }
 
         if (userData) {
           const u: any = userData
@@ -104,29 +97,105 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 .map((rp: any) => rp.permissions?.name)
                 .filter(Boolean) ?? []
 
+            console.log('Loaded permissions:', permissions)
+            console.log('Loaded role:', roleData.name)
+
             setRole({
               name: roleData.name ?? null,
               permissions,
             })
           } else {
+            console.warn('No role data found for user')
             setRole(null)
           }
         } else {
+          console.warn('No user data returned')
           setRole(null)
           setProfile(null)
         }
-      } finally {
+      } catch (error) {
+        console.error('Exception loading user data:', error)
         if (isMounted) {
-          setLoading(false)
+          setRole(null)
+          setProfile(null)
         }
       }
     }
 
-    // Run once on mount.
+    async function bootstrapAuth() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+
+        if (!isMounted) return
+
+        if (!user) {
+          setUserId(null)
+          setRole(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+
+        setUserId(user.id)
+        await loadUserData(user.id)
+      } finally {
+        if (isMounted) {
+          setLoading(false)
+          isBootstrapped = true
+        }
+      }
+    }
+
+    // Run once on mount
     bootstrapAuth()
+
+    // Listen for auth state changes (login/logout)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return
+
+      console.log('Auth state changed:', event, session?.user?.id)
+
+      // Skip INITIAL_SESSION and SIGNED_IN during bootstrap to avoid duplicate loading
+      if (!isBootstrapped && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+        console.log('Skipping event during bootstrap:', event)
+        return
+      }
+
+      try {
+        if (event === 'SIGNED_IN' && session?.user) {
+          // User just logged in (after bootstrap) - reload their data
+          console.log('User logged in, loading data...')
+          setUserId(session.user.id)
+          await loadUserData(session.user.id)
+        } else if (event === 'SIGNED_OUT') {
+          // User logged out - clear everything
+          console.log('User logged out, clearing data...')
+          setUserId(null)
+          setRole(null)
+          setProfile(null)
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          // Token refreshed - make sure we have latest data (don't show loading for this)
+          console.log('Token refreshed, reloading data...')
+          setUserId(session.user.id)
+          await loadUserData(session.user.id)
+        } else if (event === 'USER_UPDATED' && session?.user) {
+          // User data updated - reload
+          console.log('User updated, reloading data...')
+          setUserId(session.user.id)
+          await loadUserData(session.user.id)
+        }
+      } catch (error) {
+        console.error('Error in auth state change handler:', error)
+      }
+    })
 
     return () => {
       isMounted = false
+      subscription.unsubscribe()
     }
   }, [])
 
