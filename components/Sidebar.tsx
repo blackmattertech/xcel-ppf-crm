@@ -81,14 +81,22 @@ export default function Sidebar() {
 
   // Filter menu items based on user role and permissions
   const filteredMenuItems = SIDEBAR_MENU_ITEMS.filter((item) => {
+    // Super admin and admin can see all items
+    if (userRole === 'super_admin' || userRole === 'admin') {
+      return true
+    }
+
+    // Items that don't require permissions are visible to all authenticated users
     if (!item.requiresPermissions) {
       return true
     }
 
+    // If item has specific roles, check if user role matches
     if (item.roles && userRole && item.roles.includes(userRole)) {
       return true
     }
 
+    // Check if user has required permissions
     const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
     const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
     
@@ -101,7 +109,8 @@ export default function Sidebar() {
 
   const sidebarWidth = isCollapsed ? 'w-16' : 'w-60'
 
-  const userName = profile?.name || ''
+  // Get user name with fallback to email or role name
+  const userName = profile?.name?.trim() || profile?.email?.split('@')[0] || (userRole ? userRole.replace('_', ' ') : 'User')
   const userEmail = profile?.email || ''
   const userProfileImage = profile?.profileImageUrl || null
 
@@ -334,7 +343,7 @@ export default function Sidebar() {
           {/* User Info */}
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{userName || 'User'}</p>
+              <p className="text-sm font-medium text-white truncate">{userName}</p>
               <p className="text-xs text-gray-400 truncate capitalize">
                 {userRole ? userRole.replace('_', ' ') : 'User'}
               </p>
