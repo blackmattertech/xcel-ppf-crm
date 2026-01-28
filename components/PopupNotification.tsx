@@ -75,6 +75,8 @@ export default function PopupNotification() {
     }
   }, [showPopup, notifications])
 
+  const userRole = role?.name ?? null
+
   // Only show for tele-callers with overdue follow-ups
   if (!isTeleCaller || !showPopup || !notifications || notifications.overdue.length === 0) {
     return null

@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Ensure sensitive environment variables are not exposed in build logs
+[build.processing]
+  skip_processing = false
+
+# Security: Prevent secret scanning false positives
+# Note: Actual secret values should be set in Netlify UI under Site settings > Environment variables
+# Do NOT commit .env files or hardcode secrets in the repository

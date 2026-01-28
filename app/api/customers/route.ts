@@ -34,8 +34,50 @@ export async function GET(request: NextRequest) {
       }
       throw new Error(`Failed to fetch customers: ${error.message}`)
     }
+    const customers = (data || []) as any[]
 
-    return NextResponse.json({ customers: data || [] })
+    if (customers.length === 0) {
+      return NextResponse.json({ customers: [] })
+    }
+
+    // Compute total closed business per customer by joining orders -> leads.payment_amount
+    const customerIds = customers.map((c) => c.id)
+
+    const { data: orderRows, error: ordersError } = await supabase
+      .from('orders')
+      .select(
+        `
+        customer_id,
+        payment_status,
+        lead:leads (
+          payment_amount
+        )
+      `
+      )
+      .in('customer_id', customerIds)
+
+    if (ordersError) {
+      console.error('Failed to fetch customer orders for totals:', ordersError)
+    }
+
+    const revenueMap = new Map<string, number>()
+
+    ;(orderRows || []).forEach((row: any) => {
+      if (!row.customer_id) return
+      const isClosed = row.payment_status === 'fully_paid'
+      const amount = row.lead?.payment_amount ? Number(row.lead.payment_amount) : 0
+      if (!isClosed || !amount || Number.isNaN(amount)) return
+
+      const prev = revenueMap.get(row.customer_id) || 0
+      revenueMap.set(row.customer_id, prev + amount)
+    })
+
+    const customersWithTotals = customers.map((customer) => ({
+      ...customer,
+      total_revenue: revenueMap.get(customer.id) || 0,
+    }))
+
+    return NextResponse.json({ customers: customersWithTotals })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch customers' },
@@ -73,7 +115,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

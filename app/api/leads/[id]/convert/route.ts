@@ -4,6 +4,11 @@ import { convertLeadToCustomer, createOrderFromLead } from '@/backend/services/c
 import { updateLeadStatus } from '@/backend/services/lead-journey.service'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
 import { createServiceClient } from '@/lib/supabase/service'
+
+interface LeadStatusRow {
+  status: string
+}
+
 import { z } from 'zod'
 
 const convertSchema = z.object({
@@ -24,11 +29,13 @@ export async function POST(
 
     // Get current lead status
     const supabase = createServiceClient()
-    const { data: lead } = await supabase
+    const { data: leadData } = await supabase
       .from('leads')
       .select('status')
       .eq('id', id)
       .single()
+
+    const lead = leadData as LeadStatusRow | null
 
     // Only update to CONVERTED if not already in a convertible status
     const convertibleStatuses = [
@@ -45,7 +52,11 @@ export async function POST(
     }
 
     // Convert lead to customer
-    const customer = await convertLeadToCustomer(id)
+    const customer = await convertLeadToCustomer(id) as { id: string } | null
+
+    if (!customer) {
+      throw new Error('Failed to convert lead to customer')
+    }
 
     // Create order
     const body = await request.json().catch(() => ({}))
@@ -60,7 +71,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }

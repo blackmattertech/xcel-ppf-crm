@@ -27,10 +27,13 @@ export default function UploadLeadsPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadResults, setUploadResults] = useState<{ success: number; failed: number; errors: string[] } | null>(null)
   const [step, setStep] = useState<'upload' | 'preview' | 'results'>('upload')
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
+  const [fileEncoding, setFileEncoding] = useState<string>('')
 
   // Required fields for leads
-  const requiredFields = ['name', 'phone', 'source']
+  const requiredFields = ['name', 'source']
   const optionalFields = [
+    'phone',
     'email',
     'requirement',
     'interest_level',
@@ -46,6 +49,172 @@ export default function UploadLeadsPage() {
     'platform',
     'status',
   ]
+
+  // Column mapping for common variations (e.g., Meta Lead forms)
+  // Using lowercase keys for case-insensitive matching
+  const columnMappings: Record<string, string> = {
+    // Name variations
+    'full_name': 'name',
+    'fullname': 'name',
+    'customer_name': 'name',
+    'name': 'name',
+    
+    // Phone variations
+    'phone_number': 'phone',
+    'phonenumber': 'phone',
+    'mobile': 'phone',
+    'contact_number': 'phone',
+    'phone': 'phone',
+    
+    // Email variations
+    'email_address': 'email',
+    'e-mail': 'email',
+    'email': 'email',
+    
+    // Meta Lead form specific fields
+    'id': 'meta_lead_id',
+    'created_time': 'meta_created_time',
+    'ad_id': 'ad_id',
+    'ad_name': 'ad_name',
+    'adset_id': 'adset_id',
+    'adset_name': 'adset_name',
+    'campaign_id': 'campaign_id',
+    'campaign_name': 'campaign_name',
+    'form_id': 'form_id',
+    'form_name': 'form_name',
+    'is_organic': 'is_organic',
+    'platform': 'platform',
+    
+    // Service/requirement fields - handle specially
+    'what_services_are_you_looking_for?': 'service_requested',
+    'car_model': 'car_model_requested',
+    'service': 'requirement',
+    'requirement': 'requirement',
+  }
+
+  // Function to check if a row is completely empty
+  const isEmptyRow = (row: ParsedLead): boolean => {
+    // Get all values from the row
+    const values = Object.values(row)
+    
+    // If no values at all, it's empty
+    if (values.length === 0) return true
+    
+    // Check if all values are empty after cleaning
+    return values.every(value => {
+      if (value === null || value === undefined) return true
+      
+      if (typeof value === 'string') {
+        // Remove null bytes and other control characters before checking
+        const cleaned = value.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim()
+        return cleaned === ''
+      }
+      
+      return false
+    })
+  }
+
+  // Function to clean null bytes from strings (for encoding issues)
+  const cleanString = (value: any): any => {
+    if (value === null || value === undefined) {
+      return ''
+    }
+    
+    if (typeof value === 'string') {
+      // Remove null bytes and other control characters, then trim
+      let cleaned = value.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim()
+      
+      // Remove surrounding quotes if present (from CSV parsing issues)
+      if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+        cleaned = cleaned.slice(1, -1).trim()
+      }
+      
+      // Remove "p:" prefix from phone numbers (Meta format)
+      if (cleaned.startsWith('p:')) {
+        cleaned = cleaned.substring(2).trim()
+      }
+      
+      // Remove "l:", "ag:", "as:", "c:", "f:" prefixes (Meta ID formats)
+      if (/^[a-z]+:/.test(cleaned)) {
+        cleaned = cleaned.replace(/^[a-z]+:/, '').trim()
+      }
+      
+      return cleaned
+    }
+    
+    return String(value).trim()
+  }
+
+  // Function to normalize/map column names
+  const normalizeColumns = (data: ParsedLead[]): ParsedLead[] => {
+    if (!data || data.length === 0) return []
+    
+    return data
+      .filter(row => !isEmptyRow(row)) // Filter out completely empty rows
+      .map(row => {
+        const normalizedRow: ParsedLead = {}
+        
+        // Map each column with case-insensitive and trimmed key matching
+        Object.keys(row).forEach(key => {
+          // Clean the key first (remove null bytes from encoding issues)
+          const cleanedKey = cleanString(key)
+          
+          // Normalize the key: trim whitespace and convert to lowercase for matching
+          const normalizedKey = cleanedKey.toLowerCase()
+          const mappedKey = columnMappings[normalizedKey] || cleanedKey
+          
+          // Store the value (clean null bytes, then trim if it's a string)
+          const value = row[key]
+          const cleanedValue = cleanString(value)
+          
+          // Only store non-empty values
+          if (cleanedValue !== '') {
+            normalizedRow[mappedKey] = cleanedValue
+          }
+        })
+        
+        // Build requirement field from service_requested and/or car_model_requested
+        if (!normalizedRow.requirement || normalizedRow.requirement === '') {
+          const parts: string[] = []
+          
+          if (normalizedRow.service_requested) {
+            parts.push(normalizedRow.service_requested)
+          }
+          
+          if (normalizedRow.car_model_requested) {
+            parts.push(`Car Model: ${normalizedRow.car_model_requested}`)
+          }
+          
+          if (parts.length > 0) {
+            normalizedRow.requirement = parts.join(' | ')
+          }
+        }
+        
+        // Auto-detect source from platform if source is missing
+        if (!normalizedRow.source && normalizedRow.platform) {
+          const platform = String(normalizedRow.platform).toLowerCase().trim()
+          // Map platform to source
+          if (platform === 'ig' || platform === 'instagram' || platform === 'fb' || platform === 'facebook') {
+            normalizedRow.source = 'meta'
+          } else {
+            normalizedRow.source = 'meta' // Default to meta for Meta Lead forms
+          }
+        }
+        
+        // If still no source but we have campaign_id or form_id or meta_lead_id, assume it's from Meta
+        if ((!normalizedRow.source || normalizedRow.source.trim() === '') && 
+            (normalizedRow.campaign_id || normalizedRow.form_id || normalizedRow.meta_lead_id)) {
+          normalizedRow.source = 'meta'
+        }
+        
+        // If still no source, set default
+        if (!normalizedRow.source || (typeof normalizedRow.source === 'string' && normalizedRow.source.trim() === '')) {
+          normalizedRow.source = 'manual'
+        }
+        
+        return normalizedRow
+      })
+  }
 
   // Example template data
   const templateData = [
@@ -90,13 +259,11 @@ export default function UploadLeadsPage() {
   const validateLead = (lead: ParsedLead, index: number): ValidationError[] => {
     const errors: ValidationError[] = []
 
-    // Check required fields
-    if (!lead.name || lead.name.trim() === '') {
+    // Check required fields - only name and source are required
+    if (!lead.name || (typeof lead.name === 'string' && lead.name.trim() === '')) {
       errors.push({ row: index + 2, field: 'name', message: 'Name is required' })
     }
-    if (!lead.phone || lead.phone.trim() === '') {
-      errors.push({ row: index + 2, field: 'phone', message: 'Phone is required' })
-    }
+    
     if (!lead.source || lead.source.trim() === '') {
       errors.push({ row: index + 2, field: 'source', message: 'Source is required' })
     } else {
@@ -110,6 +277,15 @@ export default function UploadLeadsPage() {
       }
     }
 
+    // Validate phone format if provided
+    if (lead.phone && lead.phone.trim() !== '') {
+      // Basic phone validation - should contain at least some digits
+      const phoneDigits = lead.phone.replace(/\D/g, '')
+      if (phoneDigits.length < 10) {
+        errors.push({ row: index + 2, field: 'phone', message: 'Phone number should have at least 10 digits' })
+      }
+    }
+
     // Validate email format if provided
     if (lead.email && lead.email.trim() !== '') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -117,6 +293,9 @@ export default function UploadLeadsPage() {
         errors.push({ row: index + 2, field: 'email', message: 'Invalid email format' })
       }
     }
+    
+    // Note: Phone and email are both optional fields
+    // Leads can be imported without contact information if needed
 
     // Validate interest_level if provided
     if (lead.interest_level && lead.interest_level.trim() !== '') {
@@ -161,6 +340,47 @@ export default function UploadLeadsPage() {
     return errors
   }
 
+  // Function to detect and handle file encoding
+  const readFileWithEncoding = async (file: File): Promise<{ text: string; encoding: string }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      
+      reader.onload = (e) => {
+        const arrayBuffer = e.target?.result as ArrayBuffer
+        const bytes = new Uint8Array(arrayBuffer)
+        
+        // Check for UTF-16 BOM (Byte Order Mark)
+        // UTF-16 LE: FF FE
+        // UTF-16 BE: FE FF
+        let encoding = 'utf-8'
+        
+        if (bytes.length >= 2) {
+          if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+            encoding = 'utf-16le'
+          } else if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+            encoding = 'utf-16be'
+          } else if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+            encoding = 'utf-8' // UTF-8 with BOM
+          }
+        }
+        
+        // Decode with detected encoding
+        const decoder = new TextDecoder(encoding)
+        let text = decoder.decode(arrayBuffer)
+        
+        // Remove BOM if present at the start
+        if (text.charCodeAt(0) === 0xFEFF) {
+          text = text.substring(1)
+        }
+        
+        resolve({ text, encoding })
+      }
+      
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsArrayBuffer(file)
+    })
+  }
+
   // Handle file selection
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -172,12 +392,43 @@ export default function UploadLeadsPage() {
     setStep('upload')
 
     try {
-      const text = await selectedFile.text()
+      const { text, encoding } = await readFileWithEncoding(selectedFile)
+      setFileEncoding(encoding)
+      
+      console.log('File encoding detected:', encoding)
+      
       Papa.parse(text, {
         header: true,
-        skipEmptyLines: true,
+        skipEmptyLines: 'greedy', // Skip lines where all fields are empty
+        transformHeader: (header) => header.trim(), // Trim header names
         complete: (results) => {
-          const data = results.data as ParsedLead[]
+          const rawData = results.data as ParsedLead[]
+          
+          // Detect column mappings from the first row
+          const detectedMappings: Record<string, string> = {}
+          if (rawData.length > 0) {
+            Object.keys(rawData[0]).forEach(key => {
+              const normalizedKey = key.trim().toLowerCase()
+              const mappedKey = columnMappings[normalizedKey] || key.trim()
+              if (mappedKey !== key.trim()) {
+                detectedMappings[key] = mappedKey
+              }
+            })
+          }
+          setColumnMapping(detectedMappings)
+          
+          console.log('CSV Columns detected:', rawData.length > 0 ? Object.keys(rawData[0]) : [])
+          console.log('Raw data sample (first row):', rawData[0])
+          console.log('Column mappings applied:', detectedMappings)
+          console.log('Total raw rows parsed:', rawData.length)
+          
+          // Normalize column names to match expected format
+          const data = normalizeColumns(rawData)
+          
+          console.log('Total rows after normalization:', data.length)
+          console.log('Sample normalized row (first):', data[0])
+          console.log('Sample normalized row (second):', data[1])
+          
           setAllData(data)
           setPreview(data.slice(0, 10)) // Show first 10 rows
 
@@ -193,7 +444,7 @@ export default function UploadLeadsPage() {
             setStep('preview')
           }
         },
-        error: (error) => {
+        error: (error: any) => {
           alert(`Error parsing CSV: ${error.message}`)
         },
       })
@@ -217,8 +468,8 @@ export default function UploadLeadsPage() {
 
         return {
           name: lead.name?.trim() || '',
-          phone: lead.phone?.trim() || '',
-          email: lead.email?.trim() || null,
+          phone: lead.phone?.trim() || null,  // Phone is optional
+          email: lead.email?.trim() || null,  // Email is optional
           source: (lead.source?.trim() || 'manual').toLowerCase(),
           requirement: lead.requirement?.trim() || null,
           campaign_id: lead.campaign_id?.trim() || null,
@@ -271,6 +522,8 @@ export default function UploadLeadsPage() {
     setValidationErrors([])
     setUploadResults(null)
     setStep('upload')
+    setColumnMapping({})
+    setFileEncoding('')
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -310,6 +563,22 @@ export default function UploadLeadsPage() {
                 <Download size={18} />
                 Download Template
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Supported Formats Info */}
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <CheckCircle size={20} className="text-green-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="text-sm font-semibold text-green-900 mb-1">Meta Lead Form Exports Supported!</h3>
+              <p className="text-green-700 text-sm mb-2">
+                You can directly upload CSV exports from Facebook/Instagram Lead Forms. The system automatically maps columns like <code className="bg-green-100 px-1 rounded">full_name</code>, <code className="bg-green-100 px-1 rounded">phone_number</code>, and <code className="bg-green-100 px-1 rounded">platform</code> to the correct format.
+              </p>
+              <p className="text-green-700 text-sm">
+                <strong>Required:</strong> <code className="bg-green-100 px-1 rounded">name</code> · <strong>Optional:</strong> <code className="bg-green-100 px-1 rounded">phone</code>, <code className="bg-green-100 px-1 rounded">email</code> (but at least one contact method is recommended)
+              </p>
             </div>
           </div>
         </div>
@@ -357,6 +626,88 @@ export default function UploadLeadsPage() {
                   >
                     <X size={16} />
                   </button>
+                </div>
+              )}
+
+              {/* Encoding Detection Info */}
+              {fileEncoding && fileEncoding !== 'utf-8' && (
+                <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle size={20} className="text-green-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h3 className="font-semibold text-green-900 text-sm">
+                        File Encoding Detected & Converted
+                      </h3>
+                      <p className="text-green-700 text-sm mt-1">
+                        Your file was encoded in <code className="bg-green-100 px-1.5 py-0.5 rounded font-mono">{fileEncoding.toUpperCase()}</code> format and has been automatically converted to UTF-8 for processing.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Column Mapping Info */}
+              {Object.keys(columnMapping).length > 0 && (
+                <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start gap-2 mb-2">
+                    <CheckCircle size={20} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h3 className="font-semibold text-blue-900 text-sm">
+                        Auto-mapped {Object.keys(columnMapping).length} column(s)
+                      </h3>
+                      <p className="text-blue-700 text-sm mt-1">
+                        The following columns were automatically mapped:
+                      </p>
+                      <ul className="text-sm text-blue-700 mt-2 space-y-1">
+                        {Object.entries(columnMapping).map(([original, mapped]) => (
+                          <li key={original}>
+                            <code className="bg-blue-100 px-1.5 py-0.5 rounded">{original}</code>
+                            {' → '}
+                            <code className="bg-blue-100 px-1.5 py-0.5 rounded">{mapped}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Data Info */}
+              {file && allData.length > 0 && validationErrors.length > 0 && (
+                <div className="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={20} className="text-gray-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 text-sm mb-2">
+                        Debug Information
+                      </h3>
+                      <div className="text-sm text-gray-700 space-y-2">
+                        <p><strong>Rows parsed:</strong> {allData.length}</p>
+                        <p><strong>Columns detected:</strong> {preview.length > 0 ? Object.keys(preview[0]).join(', ') : 'none'}</p>
+                        {preview.length > 0 && (
+                          <>
+                            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                              <p className="font-semibold mb-1">Fields Check (First Row):</p>
+                              <ul className="list-disc list-inside space-y-1">
+                                <li><strong>name (required):</strong> {preview[0].name ? `✅ "${preview[0].name}"` : '❌ Missing'}</li>
+                                <li><strong>phone (optional):</strong> {preview[0].phone ? `✅ "${preview[0].phone}"` : '⚠️ Not provided'}</li>
+                                <li><strong>email (optional):</strong> {preview[0].email ? `✅ "${preview[0].email}"` : '⚠️ Not provided'}</li>
+                                <li><strong>source (required):</strong> {preview[0].source ? `✅ "${preview[0].source}"` : '❌ Missing'}</li>
+                              </ul>
+                            </div>
+                            <details className="mt-2">
+                              <summary className="cursor-pointer text-blue-600 hover:text-blue-700 font-medium">
+                                View complete first row data
+                              </summary>
+                              <pre className="mt-2 p-2 bg-white rounded border border-gray-300 text-xs overflow-x-auto max-h-96">
+                                {JSON.stringify(preview[0], null, 2)}
+                              </pre>
+                            </details>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 

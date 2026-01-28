@@ -77,6 +77,7 @@ export async function createUser(
   // Create user record
   const { data: user, error: userError } = await supabase
     .from('users')
+    // @ts-ignore - Supabase type inference issue with dynamic inserts
     .insert({
       id: authData.user.id,
       email,
@@ -118,7 +119,8 @@ export async function updateUser(
   profileImageUrl?: string | null,
   address?: string | null,
   dob?: string | null,
-  doj?: string | null
+  doj?: string | null,
+  languagesKnown?: string[] | null
 ) {
   const supabase = createServiceClient()
 
@@ -143,9 +145,13 @@ export async function updateUser(
   if (doj !== undefined) {
     updateData.doj = doj
   }
+  if (languagesKnown !== undefined) {
+    updateData.languages_known = languagesKnown
+  }
 
   const { data, error } = await supabase
     .from('users')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update(updateData)
     .eq('id', id)
     .select(`

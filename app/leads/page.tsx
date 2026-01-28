@@ -10,7 +10,14 @@ import Layout from '@/components/Layout'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
 import { Bell, Search, MoreVertical, Plus, Download, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake } from 'lucide-react'
 import Image from 'next/image'
-import NewLeadForm from '@/components/NewLeadForm'
+import dynamic from 'next/dynamic'
+import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
+
+// New lead modal is quite heavy; load it only when the user actually opens it
+// so the main Leads list and filters become interactive faster.
+const NewLeadForm = dynamic(() => import('@/components/NewLeadForm'), {
+  ssr: false,
+})
 
 // Source Icon Component with fallback
 function SourceIcon({ platform, source }: { platform?: string | null; source: string }) {
@@ -43,16 +50,16 @@ function SourceIcon({ platform, source }: { platform?: string | null; source: st
 
   // If no icon path found or image error, show emoji fallback
   if (!iconPath || imgError) {
-    return <span className="text-2xl">📱</span>
+    return <span className="text-3xl">📱</span>
   }
 
   return (
     <Image
       src={iconPath}
       alt={platform || source}
-      width={24}
-      height={24}
-      className="w-6 h-6 object-contain"
+      width={32}
+      height={32}
+      className="w-8 h-8 object-contain"
       style={{ width: 'auto', height: 'auto' }}
       onError={() => setImgError(true)}
     />
@@ -352,7 +359,7 @@ function GridView({
                               const target = e.target as HTMLImageElement
                               target.style.display = 'none'
                               const parent = target.parentElement
-                              if (parent && !parent.querySelector('.avatar-fallback')) {
+                              if (parent && !parent.querySelector('.avatar-fallback') && lead.assigned_user) {
                                 const fallback = document.createElement('div')
                                 fallback.className = 'avatar-fallback w-8 h-8 rounded-full bg-[#de0510] flex items-center justify-center text-white text-xs font-medium'
                                 fallback.textContent = lead.assigned_user?.name?.charAt(0).toUpperCase() || '?'
@@ -376,7 +383,7 @@ function GridView({
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <div className="w-5 h-5 flex items-center justify-center">
+                  <div className="w-8 h-8 flex items-center justify-center">
                     <SourceIcon 
                       platform={lead.meta_data?.platform || lead.meta_data?.Platform} 
                       source={lead.source} 
@@ -404,6 +411,7 @@ function KanbanBoard({
   groupBy, 
   onLeadMove,
   getVehicleName,
+  getProductInterest,
   getTimeAgo,
   router
 }: {
@@ -412,6 +420,7 @@ function KanbanBoard({
   groupBy: string
   onLeadMove: (leadId: string, newStatus: string) => Promise<void>
   getVehicleName: (lead: Lead) => string
+  getProductInterest: (lead: Lead) => string
   getTimeAgo: (date: string | null) => string
   router: ReturnType<typeof useRouter>
 }) {
@@ -423,9 +432,9 @@ function KanbanBoard({
     if (groupBy === 'status') {
       // All possible status values (using formatStageName for consistency)
       const allStatuses = [
-        'new', 'qualified', 'unqualified', 'quotation_shared', 'quotation_viewed',
+        'new', 'contacted', 'qualified', 'unqualified', 'quotation_shared', 'quotation_viewed',
         'quotation_accepted', 'quotation_expired', 'interested', 'negotiation',
-        'lost', 'converted', 'deal_won', 'payment_pending', 'advance_received', 'fully_paid'
+        'lost', 'discarded', 'converted', 'deal_won', 'payment_pending', 'advance_received', 'fully_paid'
       ]
       // Use formatStageName to get display names, then remove duplicates
       const formattedStatuses = allStatuses.map(status => formatStageName(status))
@@ -501,23 +510,30 @@ function KanbanBoard({
   function getColumnValue(lead: Lead, column: string): any {
     switch (column) {
       case 'name': return lead.name
+      case 'interest': return getProductInterest(lead)
       case 'phone': return lead.phone
       case 'email': return lead.email
       case 'source': return lead.source
       case 'platform': return lead.meta_data?.platform || lead.meta_data?.Platform || null
       case 'status': return lead.status
       case 'interest_level': return lead.interest_level
-      case 'requirement': return lead.requirement || getVehicleName(lead)
+      case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
       default: return null
     }
   }
 
   function formatStageName(status: string): string {
+    // Use LEAD_STATUS_LABELS if available, otherwise format manually
+    if (LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]) {
+      return LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]
+    }
     const statusLower = status.toLowerCase()
     if (statusLower.includes('negotiation')) return 'Negotiation'
     if (statusLower.includes('review') || statusLower.includes('qualified')) return 'In review'
     if (statusLower === 'new') return 'New'
+    if (statusLower === 'contacted') return 'Contacted'
+    if (statusLower === 'discarded') return 'Discarded'
     if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) return 'Approved'
     if (statusLower === 'lost') return 'Lost'
     if (statusLower === 'closed') return 'Closed'
@@ -851,6 +867,7 @@ export default function LeadsPage() {
 
   const defaultColumns: ColumnConfig[] = [
     { key: 'name', label: 'Name/Vehicle', visible: true, width: 200 },
+    { key: 'interest', label: 'Interest', visible: true, width: 180 },
     { key: 'status', label: 'Lead stage', visible: true, width: 150 },
     { key: 'interest_level', label: 'Lead Type', visible: true, width: 120 },
     { key: 'source', label: 'Source', visible: true, width: 150 },
@@ -1026,84 +1043,59 @@ export default function LeadsPage() {
     }
   }, [columns])
 
-  // Calculate stats from leads
+  // LEAD JOURNEY: Calculate stats from leads with new buckets
   useEffect(() => {
-    // Filter out converted leads for display stats (they shouldn't be counted in untouched/hot leads)
-    const activeLeads = allLeads.filter(lead => {
-      // Exclude leads that have been converted to customers
-      const hasCustomer = (lead as any).customer && (lead as any).customer.lead_id === lead.id
-      return !hasCustomer
-    })
-    
-    // Untouched: leads with status 'new' and no first_contact_at (only active leads)
-    const untouched = activeLeads.filter(lead => 
-      lead.status === 'new' && !lead.first_contact_at
-    ).length
-    
-    // Hot Leads: leads with interest_level 'hot' (only active leads)
-    const hotLeads = activeLeads.filter(lead => 
-      lead.interest_level === 'hot'
-    ).length
-    
-    // Conversions: Calculate based on user role
-    let converted = 0
-    let totalLeadsForConversion = activeLeads.length
-    
-    // For admins, use overall conversion stats across all tele-callers
-    if (isAdmin && overallStats) {
-      converted = overallStats.convertedLeads
-      totalLeadsForConversion = overallStats.totalLeads
-    }
-    // For tele-callers, use the conversion data from backend if available
-    else if (userRole === 'tele_caller' && allLeads.length > 0) {
-      // Check if first lead has conversion metadata
-      const firstLead = allLeads[0] as any
-      if (firstLead._totalLeadsCount !== undefined && firstLead._convertedLeadsCount !== undefined) {
-        converted = firstLead._convertedLeadsCount
-        totalLeadsForConversion = firstLead._totalLeadsCount
-      } else {
-        // Fallback: count converted leads from customer data
-        converted = allLeads.filter(lead => {
-          const hasCustomer = (lead as any).customer && (lead as any).customer.lead_id === lead.id
-          return hasCustomer
-        }).length
-        // For tele-callers, we need to fetch all their leads including converted ones
-        // Since converted leads are excluded from allLeads, we need to estimate
-        // This is a limitation - ideally we'd have the total count from backend
-        totalLeadsForConversion = allLeads.length + converted
-      }
-    } else {
-      // For other roles, conversion rate is 0 (they don't see converted leads)
-      converted = 0
-      totalLeadsForConversion = activeLeads.length
-    }
-    
-    // Calculate conversion rate (percentage)
-    // Conversion rate = (leads converted to customers / total assigned leads) * 100
-    const conversionRate = totalLeadsForConversion > 0 
-      ? Math.round((converted / totalLeadsForConversion) * 100) 
-      : 0
-    
-    // Only update stats if values actually changed to prevent infinite loops
-    setStats(prev => {
-      if (
-        prev.untouched === untouched &&
-        prev.hotLeads === hotLeads &&
-        prev.conversions === conversionRate &&
-        prev.convertedCount === converted &&
-        prev.totalLeadsCount === totalLeadsForConversion
-      ) {
-        return prev // No change, return previous state
-      }
-      return {
+    if (allLeads.length > 0) {
+      // Untouched: leads with status 'new' and no first_contact_at
+      const untouched = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.NEW && !lead.first_contact_at
+      ).length
+      
+      // Contacted: leads with status 'contacted' (after first call attempt)
+      const contacted = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.CONTACTED
+      ).length
+      
+      // Qualified: leads with status 'qualified'
+      const qualified = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.QUALIFIED
+      ).length
+      
+      // Negotiation: leads with status 'negotiation'
+      const negotiation = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.NEGOTIATION
+      ).length
+      
+      // Won: leads with status 'deal_won' or 'converted'
+      const won = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.DEAL_WON || lead.status === LEAD_STATUS.CONVERTED
+      ).length
+      
+      // Discarded: leads with status 'lost' or 'discarded'
+      const discarded = allLeads.filter(lead => 
+        lead.status === LEAD_STATUS.LOST || lead.status === LEAD_STATUS.DISCARDED
+      ).length
+      
+      // Hot Leads: leads with interest_level 'hot' (for backward compatibility)
+      const hotLeads = allLeads.filter(lead => 
+        lead.interest_level === 'hot'
+      ).length
+      
+      // Conversion Rate: Won / Total Leads
+      const conversionRate = allLeads.length > 0 
+        ? Math.round((won / allLeads.length) * 100) 
+        : 0
+      
+      setStats({
         untouched,
         hotLeads,
-        conversions: conversionRate,
-        convertedCount: converted,
-        totalLeadsCount: totalLeadsForConversion
-      }
-    })
-  }, [allLeads, userRole, isAdmin, overallStats])
+        conversions: conversionRate
+      })
+      
+      // Store detailed stats for potential future use
+      // Note: stats interface may need to be extended to include all buckets
+    }
+  }, [allLeads])
 
   // Filter, sort and paginate leads
   useEffect(() => {
@@ -1138,7 +1130,8 @@ export default function LeadsPage() {
         lead.phone.includes(query) ||
         lead.email?.toLowerCase().includes(query) ||
         lead.requirement?.toLowerCase().includes(query) ||
-        getVehicleName(lead).toLowerCase().includes(query)
+        getVehicleName(lead).toLowerCase().includes(query) ||
+        getProductInterest(lead).toLowerCase().includes(query)
       )
     }
     
@@ -1228,13 +1221,13 @@ export default function LeadsPage() {
   function getColumnValue(lead: Lead, column: string): any {
     switch (column) {
       case 'name': return lead.name
+      case 'interest': return getProductInterest(lead)
       case 'phone': return lead.phone
       case 'email': return lead.email
       case 'source': return lead.source
       case 'status': return lead.status
       case 'interest_level': return lead.interest_level
-      case 'lead_score': return (lead as any).lead_score || null
-      case 'requirement': return lead.requirement || getVehicleName(lead)
+      case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
       case 'created_at': return lead.created_at
       case 'updated_at': return lead.updated_at
@@ -1371,29 +1364,51 @@ export default function LeadsPage() {
     }
   }
 
-  // Get car model from lead (prioritize car_model over product/service)
+  async function fetchLeads() {
+    try {
+      const response = await fetch('/api/leads')
+      if (response.ok) {
+        const data = await response.json()
+        setAllLeads(data.leads || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch leads:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Get car model from lead meta_data
   function getVehicleName(lead: Lead): string {
     if (lead.meta_data) {
-      // Prioritize car_model first
-      const carModel = lead.meta_data['car_model'] || 
-                      lead.meta_data['Car Model'] ||
-                      lead.meta_data['carModel'] ||
-                      lead.meta_data['vehicle'] ||
-                      lead.meta_data['Vehicle'] ||
-                      null
+      const carModel = lead.meta_data['car_model'] ||
+                     lead.meta_data['Car Model'] ||
+                     lead.meta_data['vehicle_model'] ||
+                     lead.meta_data['Vehicle Model'] ||
+                     lead.meta_data['vehicle'] ||
+                     lead.meta_data['Vehicle'] ||
+                     null
       if (carModel) {
         return String(carModel).replace(/_/g, ' ')
       }
-      // Fallback to requirement if no car model found
-      if (lead.requirement) {
-        return lead.requirement
-      }
-      // Last resort: check for product/service fields (but prioritize car model)
-      const product = lead.meta_data['what_services_are_you_looking_for?'] || 
-                     lead.meta_data['what_services_are_you_looking_for'] ||
-                     null
-      if (product) {
-        return String(product).replace(/_/g, ' ')
+    }
+    return ''
+  }
+
+  // Get product/service interest from lead
+  function getProductInterest(lead: Lead): string {
+    if (lead.requirement) {
+      return lead.requirement.replace(/_/g, ' ')
+    }
+    if (lead.meta_data) {
+      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] || 
+                             lead.meta_data['what_services_are_you_looking_for'] ||
+                             lead.meta_data['What services are you looking for?'] ||
+                             lead.meta_data['product_interest'] ||
+                             lead.meta_data['service'] ||
+                             null
+      if (productInterest) {
+        return String(productInterest).replace(/_/g, ' ')
       }
     } else if (lead.requirement) {
       return lead.requirement
@@ -1409,8 +1424,12 @@ export default function LeadsPage() {
       return 'bg-red-100 text-red-800'
     } else if (statusLower.includes('review') || statusLower.includes('qualified')) {
       return 'bg-orange-100 text-orange-800'
+    } else if (statusLower === 'contacted') {
+      return 'bg-purple-100 text-purple-800'
     } else if (statusLower.includes('new')) {
       return 'bg-blue-100 text-blue-800'
+    } else if (statusLower === 'discarded' || statusLower === 'lost') {
+      return 'bg-gray-100 text-gray-800'
     } else if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) {
       return 'bg-green-100 text-green-800'
     }
@@ -1419,10 +1438,16 @@ export default function LeadsPage() {
 
   // Format stage name
   function formatStageName(status: string): string {
+    // Use LEAD_STATUS_LABELS if available, otherwise format manually
+    if (LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]) {
+      return LEAD_STATUS_LABELS[status as keyof typeof LEAD_STATUS_LABELS]
+    }
     const statusLower = status.toLowerCase()
     if (statusLower.includes('negotiation')) return 'Negotiation'
     if (statusLower.includes('review')) return 'In review'
     if (statusLower.includes('new')) return 'New'
+    if (statusLower === 'contacted') return 'Contacted'
+    if (statusLower === 'discarded') return 'Discarded'
     if (statusLower.includes('approved') || statusLower.includes('converted') || statusLower.includes('deal_won')) return 'Approved'
     if (statusLower.includes('qualified')) return 'Qualified'
     return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
@@ -1937,6 +1962,7 @@ export default function LeadsPage() {
                               >
                                 {[
                                   { key: 'name', label: 'Name' },
+                                  { key: 'interest', label: 'Interest' },
                                   { key: 'phone', label: 'Phone' },
                                   { key: 'email', label: 'Email' },
                                   { key: 'source', label: 'Source' },
@@ -2024,6 +2050,7 @@ export default function LeadsPage() {
                           { key: 'updated_at', label: 'Updated At' },
                           { key: 'first_contact_at', label: 'First Contact At' },
                           { key: 'name', label: 'Name' },
+                          { key: 'interest', label: 'Interest' },
                           { key: 'phone', label: 'Phone' },
                           { key: 'email', label: 'Email' },
                           { key: 'source', label: 'Source' },
@@ -2291,6 +2318,7 @@ export default function LeadsPage() {
               ) : (
                 leads.map((lead) => {
                   const vehicleName = getVehicleName(lead)
+                  const productInterest = getProductInterest(lead)
                   const isHot = lead.interest_level === 'hot'
                   
                   function renderCell(column: ColumnConfig) {
@@ -2304,6 +2332,12 @@ export default function LeadsPage() {
                                 {vehicleName}
                               </span>
                             )}
+                          </div>
+                        )
+                      case 'interest':
+                        return (
+                          <div className="text-base text-gray-900">
+                            {productInterest || '-'}
                           </div>
                         )
                       case 'status':
@@ -2618,6 +2652,7 @@ export default function LeadsPage() {
               groupBy={groupBy}
               onLeadMove={handleLeadMove}
               getVehicleName={getVehicleName}
+              getProductInterest={getProductInterest}
               getTimeAgo={getTimeAgo}
               router={router}
             />
@@ -3012,13 +3047,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.containerColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, containerColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, containerColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.containerColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, containerColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, containerColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#000000"
                   />
@@ -3034,13 +3069,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.iconColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, iconColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, iconColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.iconColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, iconColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, iconColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#ffffff"
                   />
@@ -3056,13 +3091,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.textColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, textColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, textColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.textColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, textColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, textColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#ffffff"
                   />
@@ -3078,13 +3113,13 @@ export default function LeadsPage() {
                   <input
                     type="color"
                     value={containerStyles.backgroundColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, backgroundColor: e.target.value }))}
                     className="w-16 h-10 rounded border border-gray-300 cursor-pointer"
                   />
                   <input
                     type="text"
                     value={containerStyles.backgroundColor}
-                    onChange={(e) => setContainerStyles(prev => ({ ...prev, backgroundColor: e.target.value }))}
+                    onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, backgroundColor: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
                     placeholder="#ffffff33"
                   />
@@ -3103,7 +3138,7 @@ export default function LeadsPage() {
                   max="1"
                   step="0.01"
                   value={containerStyles.opacity}
-                  onChange={(e) => setContainerStyles(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
+                  onChange={(e) => setContainerStyles((prev: any) => ({ ...prev, opacity: parseFloat(e.target.value) }))}
                   className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">

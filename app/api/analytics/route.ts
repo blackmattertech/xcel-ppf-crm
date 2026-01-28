@@ -2,6 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 
+interface LeadSourceRow {
+  source: string
+}
+
+interface LeadStatusRow {
+  status: string
+}
+
+interface LeadRepPerformanceRow {
+  assigned_to: string | null
+  status: string
+}
+
+interface UserRow {
+  id: string
+  name: string
+}
+
+interface FollowUpRow {
+  status: string
+  scheduled_at: string
+}
+
+interface LeadSlaRow {
+  created_at: string
+  first_contact_at: string | null
+}
+
+interface FollowUpRow {
+  status: string
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request)

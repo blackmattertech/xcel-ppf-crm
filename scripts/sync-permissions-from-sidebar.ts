@@ -44,6 +44,7 @@ async function syncPermissions() {
           // Insert new permission
           const { data, error } = await supabase
             .from('permissions')
+            // @ts-ignore - Supabase type inference issue with dynamic inserts in script
             .insert({
               name: permission.name,
               resource: permission.resource,

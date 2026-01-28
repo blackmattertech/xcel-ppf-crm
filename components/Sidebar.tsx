@@ -7,14 +7,14 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
 import { ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuthContext } from './AuthProvider'
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, isLoading } = useAuth()
-  const userRole = user?.role ?? null
-  const userPermissions = user?.permissions ?? []
+  const { loading, userId, role, profile } = useAuthContext()
+  const userRole = role?.name ?? null
+  const userPermissions = role?.permissions ?? []
   const [followUpCount, setFollowUpCount] = useState(0)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
@@ -101,9 +101,9 @@ export default function Sidebar() {
 
   const sidebarWidth = isCollapsed ? 'w-16' : 'w-60'
 
-  const userName = user?.name || ''
-  const userEmail = user?.email || ''
-  const userId = user?.id || null
+  const userName = profile?.name || ''
+  const userEmail = profile?.email || ''
+  const userProfileImage = profile?.profileImageUrl || null
 
   return (
     <div className={`fixed left-0 top-0 h-screen bg-black flex flex-col z-50 overflow-y-auto transition-all duration-300 ${sidebarWidth} border-r border-gray-800`}>
@@ -136,7 +136,7 @@ export default function Sidebar() {
 
       {/* Navigation Items */}
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
-        {isLoading ? (
+        {loading ? (
           // Lightweight skeleton while auth/user data resolves.
           Array.from({ length: 6 }).map((_, index) => (
             <div
@@ -273,9 +273,33 @@ export default function Sidebar() {
               className="relative focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:ring-offset-2 focus:ring-offset-black rounded-full transition-transform hover:scale-105"
               aria-label="Profile menu"
             >
-              <div className="w-12 h-12 rounded-full bg-[#de0510] flex items-center justify-center text-white font-semibold text-base border-2 border-gray-700 cursor-pointer">
-                {userName ? userName.charAt(0).toUpperCase() : 'U'}
-              </div>
+              {userProfileImage ? (
+                <div className="relative">
+                  <Image
+                    src={userProfileImage}
+                    alt={userName}
+                    width={48}
+                    height={48}
+                    className="rounded-full object-cover border-2 border-gray-700 cursor-pointer"
+                    onError={(e) => {
+                      // Hide image on error and show fallback
+                      const target = e.target as HTMLImageElement
+                      target.style.display = 'none'
+                      const parent = target.parentElement
+                      if (parent) {
+                        const fallback = document.createElement('div')
+                        fallback.className = 'w-12 h-12 rounded-full bg-[#de0510] flex items-center justify-center text-white font-semibold text-base border-2 border-gray-700 cursor-pointer'
+                        fallback.textContent = userName ? userName.charAt(0).toUpperCase() : 'U'
+                        parent.appendChild(fallback)
+                      }
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-[#de0510] flex items-center justify-center text-white font-semibold text-base border-2 border-gray-700 cursor-pointer">
+                  {userName ? userName.charAt(0).toUpperCase() : 'U'}
+                </div>
+              )}
               {/* Online indicator */}
               <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-black" />
             </button>

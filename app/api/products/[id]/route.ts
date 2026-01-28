@@ -94,7 +94,15 @@ export async function PUT(
     const body = await request.json()
     const validatedData = updateProductSchema.parse(body)
 
-    const product = await updateProduct(id, validatedData)
+    // Convert null values to undefined for UpdateProductInput type compatibility
+    const updateData = {
+      ...validatedData,
+      description: validatedData.description ?? undefined,
+      image_url: validatedData.image_url ?? undefined,
+      sku: validatedData.sku ?? undefined,
+    }
+
+    const product = await updateProduct(id, updateData)
 
     return NextResponse.json(product)
   } catch (error) {

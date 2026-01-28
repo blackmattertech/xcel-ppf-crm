@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
     // Update user record with image URL
     const { error: updateError } = await supabase
       .from('users')
+      // @ts-ignore - Supabase type inference issue with dynamic updates
       .update({ profile_image_url: publicUrl })
       .eq('id', userId)
 

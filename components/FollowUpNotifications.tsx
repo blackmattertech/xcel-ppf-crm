@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useAuth } from '@/contexts/AuthContext'
-import { useFollowUpNotifications } from '@/hooks/useFollowUpNotifications'
+import { useAuthContext } from './AuthProvider'
+import { useFollowupNotifications } from './FollowupNotificationsProvider'
 
 export default function FollowUpNotifications() {
-  const { user } = useAuth()
+  const { role } = useAuthContext()
+  const { loading, data: notifications } = useFollowupNotifications()
   const [showNotifications, setShowNotifications] = useState(true)
   
   const userRole = user?.role || null
@@ -17,11 +18,15 @@ export default function FollowUpNotifications() {
   const shouldFetch = isTeleCaller || isAdmin
   const { data: notifications, isLoading } = useFollowUpNotifications(shouldFetch)
 
-  // Don't show if loading or no notifications
-  if (isLoading || !notifications) {
+  // Show for tele-callers and admins
+  if (loading || !notifications) {
     return null
   }
 
+  const userRole = role?.name ?? null
+  const isTeleCaller = userRole === 'tele_caller'
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin'
+  
   const overdueCount = notifications.overdue.length
   const upcomingCount = notifications.upcoming.length
   const adminNotificationCount = notifications.adminNotifications?.length || 0

@@ -21,6 +21,14 @@ interface Role {
   permissions: Permission[]
 }
 
+interface UserRoleRow {
+  role_id: string | null
+}
+
+interface RoleNameRow {
+  name: string
+}
+
 export default function RolesPage() {
   const router = useRouter()
   const [roles, setRoles] = useState<Role[]>([])
@@ -51,20 +59,23 @@ export default function RolesPage() {
     }
 
     // Check if user has permission
-    const { data: userData } = await supabase
+    const { data } = await supabase
       .from('users')
       .select('role_id')
       .eq('id', user.id)
       .single()
 
+    const userData = data as UserRoleRow | null
+
     if (userData?.role_id) {
       // Fetch role name using role_id
-      const { data: roleData } = await supabase
+      const { data } = await supabase
         .from('roles')
         .select('name')
         .eq('id', userData.role_id)
         .single()
 
+      const roleData = data as RoleNameRow | null
       const roleName = roleData?.name
       if (roleName !== 'super_admin' && roleName !== 'admin') {
         router.push('/dashboard')
@@ -291,14 +302,6 @@ export default function RolesPage() {
     return acc
   }, {} as Record<string, Permission[]>)
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    )
-  }
-
   return (
     <Layout>
       <div className="p-8">
@@ -331,6 +334,16 @@ export default function RolesPage() {
           </div>
         </div>
 
+        {loading ? (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div className="h-4 w-40 rounded bg-gray-200 animate-pulse" />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-10 rounded bg-gray-100 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -386,6 +399,7 @@ export default function RolesPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

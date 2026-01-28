@@ -44,7 +44,8 @@ export async function createQuotation(
     .limit(1)
     .single()
 
-  const version = latestQuote ? latestQuote.version + 1 : 1
+  const latestQuoteData = latestQuote as { version: number } | null
+  const version = latestQuoteData ? latestQuoteData.version + 1 : 1
 
   const { data, error } = await supabase
     .from('quotations')
@@ -65,13 +66,15 @@ export async function createQuotation(
       *,
       lead:leads (
         id,
-        name,
+        first_name,
+        last_name,
         phone,
         email
       ),
-      created_by_user:users!quotations_created_by_fkey (
+      created_by_user:profiles!quotations_created_by_fkey (
         id,
-        name
+        full_name,
+        email
       )
     `)
     .single()
@@ -111,13 +114,15 @@ export async function getQuotations(filters?: {
       *,
       lead:leads (
         id,
-        name,
+        first_name,
+        last_name,
         phone,
         email
       ),
-      created_by_user:users!quotations_created_by_fkey (
+      created_by_user:profiles!quotations_created_by_fkey (
         id,
-        name
+        full_name,
+        email
       )
     `)
     .order('created_at', { ascending: false })
@@ -152,13 +157,15 @@ export async function getQuotationById(id: string) {
       *,
       lead:leads (
         id,
-        name,
+        first_name,
+        last_name,
         phone,
         email
       ),
-      created_by_user:users!quotations_created_by_fkey (
+      created_by_user:profiles!quotations_created_by_fkey (
         id,
-        name
+        full_name,
+        email
       )
     `)
     .eq('id', id)
@@ -188,6 +195,7 @@ export async function updateQuotationStatus(id: string, status: 'sent' | 'viewed
   // Update quotation status
   const { data, error } = await supabase
     .from('quotations')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update({
       status,
       updated_at: new Date().toISOString(),
@@ -204,41 +212,43 @@ export async function updateQuotationStatus(id: string, status: 'sent' | 'viewed
   const { data: lead } = await supabase
     .from('leads')
     .select('id, status, assigned_to')
-    .eq('id', quotation.lead_id)
+    .eq('id', (quotation as any).lead_id)
     .single()
 
   if (lead) {
+    const leadData = lead as { id: string; status: string; assigned_to: string | null }
     // Update lead status based on quotation status
     let newLeadStatus: string | null = null
-    if (status === 'viewed' && lead.status !== 'quotation_viewed') {
+    if (status === 'viewed' && leadData.status !== 'quotation_viewed') {
       newLeadStatus = 'quotation_viewed'
-    } else if (status === 'accepted' && lead.status !== 'quotation_accepted') {
+    } else if (status === 'accepted' && leadData.status !== 'quotation_accepted') {
       newLeadStatus = 'quotation_accepted'
-    } else if (status === 'expired' && lead.status !== 'quotation_expired') {
+    } else if (status === 'expired' && leadData.status !== 'quotation_expired') {
       newLeadStatus = 'quotation_expired'
     }
 
     if (newLeadStatus) {
       await supabase
         .from('leads')
+        // @ts-ignore - Supabase type inference issue with dynamic updates
         .update({
           status: newLeadStatus,
           updated_at: new Date().toISOString(),
         } as any)
-        .eq('id', lead.id)
+        .eq('id', leadData.id)
 
       // Create status history
       await supabase.from('lead_status_history').insert({
-        lead_id: lead.id,
-        old_status: lead.status,
+        lead_id: leadData.id,
+        old_status: leadData.status,
         new_status: newLeadStatus,
-        changed_by: lead.assigned_to || lead.id, // Use assigned user or lead ID as fallback
+        changed_by: leadData.assigned_to || leadData.id, // Use assigned user or lead ID as fallback
         notes: `Quotation ${status}`,
       } as any)
     }
 
     // Auto-create follow-up for viewed or expired quotations
-    if ((status === 'viewed' || status === 'expired') && lead.assigned_to) {
+    if ((status === 'viewed' || status === 'expired') && leadData.assigned_to) {
       try {
         const followUpDate = new Date()
         if (status === 'viewed') {
@@ -249,13 +259,16 @@ export async function updateQuotationStatus(id: string, status: 'sent' | 'viewed
           followUpDate.setHours(followUpDate.getHours() + 1)
         }
 
-        await supabase.from('follow_ups').insert({
-          lead_id: lead.id,
-          assigned_to: lead.assigned_to,
-          scheduled_at: followUpDate.toISOString(),
-          notes: `Auto-scheduled follow-up: Quotation ${status}`,
-          status: 'pending',
-        } as any)
+        await supabase
+          .from('follow_ups')
+          // @ts-ignore - Supabase type inference issue with dynamic inserts
+          .insert({
+            lead_id: leadData.id,
+            assigned_to: leadData.assigned_to,
+            scheduled_at: followUpDate.toISOString(),
+            notes: `Auto-scheduled follow-up: Quotation ${status}`,
+            status: 'pending',
+          } as any)
       } catch (followUpError) {
         // Log but don't fail the quotation update
         console.error('Failed to create automatic follow-up for quotation:', followUpError)

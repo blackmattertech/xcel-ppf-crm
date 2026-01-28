@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
             // Insert new permission
             const { data, error: insertError } = await supabase
               .from('permissions')
+              // @ts-ignore - Supabase type inference issue with dynamic inserts
               .insert({
                 name: permission.name,
                 resource: permission.resource,

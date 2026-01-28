@@ -28,13 +28,15 @@ export async function createInitialSuperAdmin(email: string, password: string, n
   }
 
   // Create user record
+  const roleData = role as { id: string }
   const { data: user, error: userError } = await supabase
     .from('users')
+    // @ts-ignore - Supabase type inference issue with dynamic inserts
     .insert({
       id: authData.user.id,
       email,
       name,
-      role_id: role.id,
+      role_id: roleData.id,
     })
     .select()
     .single()
@@ -83,12 +85,13 @@ export async function login(email: string, password: string) {
     throw new Error('User not found')
   }
 
+  const userData = user as any
   return {
     user: {
-      ...user,
+      ...userData,
       role: {
-        ...user.role,
-        permissions: user.role.role_permissions.map((rp: any) => rp.permission),
+        ...userData.role,
+        permissions: userData.role.role_permissions.map((rp: any) => rp.permission),
       },
     },
     session: data.session,
