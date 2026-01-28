@@ -1,21 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import TypingAnimation from '@/components/TypingAnimation'
 
 export default function LoginPage() {
   const router = useRouter()
-  const queryClient = useQueryClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [muted, setMuted] = useState(true)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
 
   // Load remembered credentials on mount and check session expiration
   useEffect(() => {
@@ -106,13 +106,6 @@ export default function LoginPage() {
           localStorage.removeItem('remembered_credentials')
         }
 
-        // Clear all React Query cache to ensure fresh data for new user
-        queryClient.clear()
-        // Invalidate auth query to fetch new user data
-        queryClient.invalidateQueries({ queryKey: ['auth', 'user'] })
-        // Invalidate all other queries
-        queryClient.invalidateQueries()
-        
         // Redirect to dashboard
         router.push('/dashboard')
         router.refresh()
@@ -123,27 +116,33 @@ export default function LoginPage() {
     }
   }
 
+  // Ensure the background video starts automatically when available.
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    const play = async () => {
+      try {
+        await video.play()
+      } catch (err) {
+        // Autoplay might be blocked; keep silent failure to avoid user-facing error.
+        console.warn('Background video autoplay prevented by browser:', err)
+      }
+    }
+    play()
+  }, [])
+
   return (
-    <div className="relative min-h-screen w-full overflow-hidden">
-      {/* Background Image - Mobile uses mobileloginimage.jpg, Desktop uses login-bg.png */}
+    <div className="relative min-h-screen w-full overflow-hidden bg-black">
+      {/* Background Video (uses full height and proportional width) */}
       <div className="absolute inset-0 z-0">
-        {/* Mobile Image */}
-        <Image
-          src="/mobileloginimage.jpg"
-          alt="Background"
-          fill
-          className="object-cover md:hidden"
-          priority
-          sizes="(max-width: 768px) 100vw, 100vw"
-        />
-        {/* Desktop Image */}
-        <Image
-          src="/login-bg.png"
-          alt="Background"
-          fill
-          className="object-cover hidden md:block"
-          priority
-          sizes="(min-width: 768px) 100vw, 100vw"
+        <video
+          ref={videoRef}
+          className="h-full w-full object-cover"
+          src="/loginpage.mp4"
+          autoPlay
+          loop
+          muted={muted}
+          playsInline
         />
       </div>
 
@@ -271,7 +270,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full h-10 md:h-[40px] bg-[#ed1b24] rounded-md md:rounded-[6px] flex items-center justify-center text-white text-sm md:text-[15px] font-bold leading-[20px] font-roboto tracking-[0.3px] hover:bg-[#d0171f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? 'Logging in...' : 'Login in'}
+                {loading ? 'Logging in...' : 'Login'}
               </button>
             </form>
           </div>
@@ -284,6 +283,32 @@ export default function LoginPage() {
           {error}
         </div>
       )}
+
+      {/* Video Controls (mute / fullscreen) */}
+      <div className="absolute bottom-4 left-4 z-30 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setMuted((m) => !m)}
+          className="px-3 py-1.5 rounded-full bg-black/60 text-white text-xs font-medium hover:bg-black/80"
+        >
+          {muted ? 'Unmute' : 'Mute'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const video = document.querySelector('video')
+            if (!video) return
+            if (document.fullscreenElement) {
+              document.exitFullscreen().catch(() => {})
+            } else {
+              video.requestFullscreen().catch(() => {})
+            }
+          }}
+          className="px-3 py-1.5 rounded-full bg-black/60 text-white text-xs font-medium hover:bg-black/80"
+        >
+          Fullscreen
+        </button>
+      </div>
     </div>
   )
 }
