@@ -91,7 +91,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     name: 'Products',
     href: '/products',
     icon: '🛍️',
-    iconPath: '/assets/sidebar/f8b40449e5aa67074f17a74d67d90c3482e90978.svg',
+    iconPath: '/assets/sidebar/products.svg',
     resource: 'products',
     roles: ['super_admin', 'admin', 'marketing'],
     requiresPermissions: true,
