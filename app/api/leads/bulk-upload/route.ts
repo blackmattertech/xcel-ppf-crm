@@ -3,6 +3,8 @@ import { requirePermission } from '@/backend/middleware/auth'
 import { createLeadsBatch } from '@/backend/services/lead.service'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 import { z } from 'zod'
+import { rateLimitWrapper, RATE_LIMITS } from '@/lib/rate-limit'
+import { invalidateCachePrefix, CACHE_KEYS } from '@/lib/cache'
 
 // Schema for a single lead from uploaded file
 const uploadedLeadSchema = z.object({
@@ -22,6 +24,15 @@ const uploadedLeadSchema = z.object({
 })
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 3 imports per minute per IP
+  const rateLimitResponse = await rateLimitWrapper(request, {
+    ...RATE_LIMITS.LEAD_IMPORT,
+    errorMessage: 'Too many bulk upload attempts. Please wait before trying again.',
+  })
+  if (rateLimitResponse) {
+    return rateLimitResponse
+  }
+
   try {
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_CREATE)
     
@@ -91,6 +102,11 @@ export async function POST(request: NextRequest) {
 
     // Batch create all validated leads at once (much faster!)
     const batchResults = await createLeadsBatch(validatedLeads, true, currentUserId)
+
+    // Invalidate related caches when leads are bulk uploaded
+    await invalidateCachePrefix(CACHE_KEYS.LEADS_LIST)
+    await invalidateCachePrefix(CACHE_KEYS.ANALYTICS)
+    await invalidateCachePrefix(CACHE_KEYS.DASHBOARD)
 
     // Map batch results to include row numbers
     const results = {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
+import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache'
 
 interface LeadSourceRow {
   source: string
@@ -64,6 +65,13 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get('startDate') || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const endDate = searchParams.get('endDate') || new Date().toISOString()
+
+    // Check cache first
+    const cacheKey = `${CACHE_KEYS.ANALYTICS}:${startDate}:${endDate}`
+    const cached = await getCache(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached)
+    }
 
     // Leads by source
     const { data: leadsBySourceData } = await supabase
@@ -173,7 +181,7 @@ export async function GET(request: NextRequest) {
       return diffMinutes > 5
     }).length || 0
 
-    return NextResponse.json({
+    const result = {
       leadsBySource: sourceCounts,
       leadsByStatus: statusCounts,
       conversionRate: Math.round(conversionRate * 100) / 100,
@@ -184,7 +192,12 @@ export async function GET(request: NextRequest) {
         startDate,
         endDate,
       },
-    })
+    }
+
+    // Cache result for 60 seconds (analytics data changes frequently)
+    await setCache(cacheKey, result, CACHE_TTL.MEDIUM)
+
+    return NextResponse.json(result)
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch analytics' },

@@ -3,6 +3,7 @@ import { requirePermission } from '@/backend/middleware/auth'
 import { getLeadById, updateLead, deleteLead } from '@/backend/services/lead.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
+import { invalidateLeadCaches } from '@/lib/cache-invalidation'
 
 const updateLeadSchema = z.object({
   name: z.string().min(1).optional(),
@@ -103,6 +104,9 @@ export async function PUT(
 
     const lead = await updateLead(id, updates as any)
 
+    // Invalidate related caches
+    await invalidateLeadCaches(id)
+
     return NextResponse.json({ lead })
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -134,6 +138,10 @@ export async function DELETE(
     }
 
     await deleteLead(id)
+    
+    // Invalidate related caches
+    await invalidateLeadCaches(id)
+
     return NextResponse.json({ message: 'Lead deleted successfully' })
   } catch (error) {
     return NextResponse.json(
