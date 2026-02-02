@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
-import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut } from 'lucide-react'
+import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2 } from 'lucide-react'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
@@ -121,6 +121,7 @@ interface LeadStats {
   untouched: number
   hotLeads: number
   conversions: number
+  discarded: number
 }
 
 // Grid View Component
@@ -492,7 +493,9 @@ function KanbanBoard({
 
   function getColumnValue(lead: Lead, column: string): any {
     switch (column) {
+      case 'date': return lead.created_at
       case 'name': return lead.name
+      case 'car_model': return getVehicleName(lead)
       case 'interest': return getProductInterest(lead)
       case 'phone': return lead.phone
       case 'email': return lead.email
@@ -787,7 +790,9 @@ export default function LeadsPage() {
   const [userRoleState, setUserRoleState] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [teleCallers, setTeleCallers] = useState<TeleCaller[]>([])
-  const [stats, setStats] = useState<LeadStats>({ untouched: 0, hotLeads: 0, conversions: 0 })
+  const [stats, setStats] = useState<LeadStats>({ untouched: 0, hotLeads: 0, conversions: 0, discarded: 0 })
+  type QuickFilter = null | 'untouched' | 'contacted' | 'qualified' | 'hot' | 'conversions' | 'discarded'
+  const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilter>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'grid'>('table')
   const [groupBy, setGroupBy] = useState<string>('status')
@@ -803,7 +808,7 @@ export default function LeadsPage() {
     logic?: 'AND' | 'OR'
   }
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
-  const [sortColumn, setSortColumn] = useState<string>('created_at')
+  const [sortColumn, setSortColumn] = useState<string>('date')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false)
@@ -832,15 +837,16 @@ export default function LeadsPage() {
   }
 
   const defaultColumns: ColumnConfig[] = [
-    { key: 'name', label: 'Name/Vehicle', visible: true, width: 200 },
-    { key: 'interest', label: 'Interest', visible: true, width: 180 },
+    { key: 'date', label: 'Date', visible: true, width: 120 },
+    { key: 'name', label: 'Name', visible: true, width: 160 },
+    { key: 'car_model', label: 'Car model', visible: true, width: 140 },
+    { key: 'interest', label: 'Interested product', visible: true, width: 160 },
     { key: 'status', label: 'Lead stage', visible: true, width: 150 },
-    { key: 'interest_level', label: 'Lead Type', visible: true, width: 120 },
-    { key: 'source', label: 'Source', visible: true, width: 150 },
-    { key: 'assigned_to', label: 'Assigned To', visible: true, width: 180 },
-    { key: 'last_contacted', label: 'Last Contacted', visible: true, width: 150 },
-    { key: 'phone', label: 'Mobile', visible: true, width: 150 },
-    { key: 'email', label: 'Email', visible: true, width: 200 },
+    { key: 'interest_level', label: 'Lead type', visible: true, width: 120 },
+    { key: 'source', label: 'Source', visible: true, width: 130 },
+    { key: 'assigned_to', label: 'Assigned to', visible: true, width: 180 },
+    { key: 'last_contacted', label: 'Last contacted', visible: true, width: 140 },
+    { key: 'phone', label: 'Mobile number', visible: true, width: 140 },
   ]
 
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
@@ -892,10 +898,24 @@ export default function LeadsPage() {
     }
   })
 
+  // Redirect when not authenticated; rely on AuthProvider so account switch updates without refresh.
   useEffect(() => {
-    checkAuth()
+    if (authLoading) return
+    if (!userId) {
+      router.push('/login')
+      return
+    }
+    setUserRoleState(role?.name ?? null)
+    if (role?.name === 'admin' || role?.name === 'super_admin') {
+      fetchTeleCallers()
+    }
+  }, [authLoading, userId, role?.name, router])
+
+  // Fetch leads when user is ready (and when userId changes, e.g. after switching account).
+  useEffect(() => {
+    if (authLoading || !userId) return
     fetchLeads()
-  }, [])
+  }, [authLoading, userId])
 
   // Save container styles to localStorage whenever they change
   useEffect(() => {
@@ -922,7 +942,7 @@ export default function LeadsPage() {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [filterConditions, sortColumn, sortDirection])
+  }, [filterConditions, sortColumn, sortDirection, activeQuickFilter])
 
   // Save column preferences to localStorage
   useEffect(() => {
@@ -977,7 +997,8 @@ export default function LeadsPage() {
       setStats({
         untouched,
         hotLeads,
-        conversions: conversionRate
+        conversions: conversionRate,
+        discarded
       })
       
       // Store detailed stats for potential future use
@@ -989,6 +1010,30 @@ export default function LeadsPage() {
   useEffect(() => {
     let filtered = [...allLeads]
     
+    // Apply quick filter from summary card click
+    if (activeQuickFilter === 'untouched') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.NEW && !lead.first_contact_at
+      )
+    } else if (activeQuickFilter === 'contacted') {
+      filtered = filtered.filter(lead => lead.status === LEAD_STATUS.CONTACTED)
+    } else if (activeQuickFilter === 'qualified') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.QUALIFIED || lead.interest_level === 'hot'
+      )
+    } else if (activeQuickFilter === 'hot') {
+      filtered = filtered.filter(lead => lead.interest_level === 'hot')
+    } else if (activeQuickFilter === 'conversions') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.CONVERTED || lead.status === LEAD_STATUS.DEAL_WON
+      )
+    } else if (activeQuickFilter === 'discarded') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.LOST || lead.status === LEAD_STATUS.DISCARDED
+      )
+    }
+    // activeQuickFilter === null -> show all
+
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
@@ -1050,7 +1095,7 @@ export default function LeadsPage() {
       if (bValue === null || bValue === undefined) return sortDirection === 'asc' ? 1 : -1
       
       // Handle dates
-      if (sortColumn.includes('_at') || sortColumn === 'created_at' || sortColumn === 'updated_at' || sortColumn === 'first_contact_at' || sortColumn === 'converted_at') {
+      if (sortColumn === 'date' || sortColumn.includes('_at') || sortColumn === 'created_at' || sortColumn === 'updated_at' || sortColumn === 'first_contact_at' || sortColumn === 'converted_at') {
         const aDate = new Date(aValue as string).getTime()
         const bDate = new Date(bValue as string).getTime()
         return sortDirection === 'asc' ? aDate - bDate : bDate - aDate
@@ -1082,12 +1127,14 @@ export default function LeadsPage() {
       // For Kanban and Grid views, show all filtered leads
       setLeads(filtered)
     }
-  }, [allLeads, searchQuery, filterConditions, sortColumn, sortDirection, currentPage, itemsPerPage, viewMode])
+  }, [allLeads, searchQuery, filterConditions, sortColumn, sortDirection, currentPage, itemsPerPage, viewMode, activeQuickFilter])
   
   // Helper function to get column value
   function getColumnValue(lead: Lead, column: string): any {
     switch (column) {
+      case 'date': return lead.created_at
       case 'name': return lead.name
+      case 'car_model': return getVehicleName(lead)
       case 'interest': return getProductInterest(lead)
       case 'phone': return lead.phone
       case 'email': return lead.email
@@ -1099,6 +1146,7 @@ export default function LeadsPage() {
       case 'created_at': return lead.created_at
       case 'updated_at': return lead.updated_at
       case 'first_contact_at': return lead.first_contact_at
+      case 'last_contacted': return getLastContactedTime(lead)
       case 'lead_id': return lead.lead_id
       case 'budget_range': return lead.meta_data?.budget_range || null
       case 'timeline': return lead.meta_data?.timeline || null
@@ -1152,6 +1200,29 @@ export default function LeadsPage() {
   function getFilteredLeadsForExport(): Lead[] {
     let filtered = [...allLeads]
 
+    // Apply quick filter
+    if (activeQuickFilter === 'untouched') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.NEW && !lead.first_contact_at
+      )
+    } else if (activeQuickFilter === 'contacted') {
+      filtered = filtered.filter(lead => lead.status === LEAD_STATUS.CONTACTED)
+    } else if (activeQuickFilter === 'qualified') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.QUALIFIED || lead.interest_level === 'hot'
+      )
+    } else if (activeQuickFilter === 'hot') {
+      filtered = filtered.filter(lead => lead.interest_level === 'hot')
+    } else if (activeQuickFilter === 'conversions') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.CONVERTED || lead.status === LEAD_STATUS.DEAL_WON
+      )
+    } else if (activeQuickFilter === 'discarded') {
+      filtered = filtered.filter(lead =>
+        lead.status === LEAD_STATUS.LOST || lead.status === LEAD_STATUS.DISCARDED
+      )
+    }
+
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
@@ -1203,6 +1274,7 @@ export default function LeadsPage() {
       if (bValue === null || bValue === undefined) return sortDirection === 'asc' ? 1 : -1
 
       if (
+        sortColumn === 'date' ||
         sortColumn.includes('_at') ||
         sortColumn === 'created_at' ||
         sortColumn === 'updated_at' ||
@@ -1318,7 +1390,7 @@ export default function LeadsPage() {
   
   // Get available operators for a column
   function getOperatorsForColumn(column: string): Array<{ key: string; label: string }> {
-    const dateColumns = ['created_at', 'updated_at', 'first_contact_at', 'converted_at']
+    const dateColumns = ['date', 'created_at', 'updated_at', 'first_contact_at', 'converted_at']
     const numberColumns = ['payment_amount', 'advance_amount']
     
     if (dateColumns.includes(column)) {
@@ -1357,34 +1429,6 @@ export default function LeadsPage() {
     ]
   }
 
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      router.push('/login')
-      return
-    }
-
-    // Get user role
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role_id, roles!users_role_id_fkey(name)')
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      const typedUserData = userData as { role_id: string; roles: { name: string } | null }
-      const roleName = typedUserData.roles?.name || null
-      setUserRoleState(roleName)
-
-      // If admin or super_admin, fetch tele_callers for reassignment
-      if (roleName === 'admin' || roleName === 'super_admin') {
-        fetchTeleCallers()
-      }
-    }
-  }
-
   async function fetchTeleCallers() {
     try {
       const response = await fetch('/api/users/tele-callers')
@@ -1411,7 +1455,39 @@ export default function LeadsPage() {
     }
   }
 
-  // Get car model from lead meta_data
+  // Get raw product/interest string (requirement or meta) — may contain "| Car Model: X"
+  function getRawProductInterest(lead: Lead): string {
+    if (lead.requirement) {
+      return lead.requirement.replace(/_/g, ' ')
+    }
+    if (lead.meta_data) {
+      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] ||
+                             lead.meta_data['what_services_are_you_looking_for'] ||
+                             lead.meta_data['What services are you looking for?'] ||
+                             lead.meta_data['product_interest'] ||
+                             lead.meta_data['service'] ||
+                             null
+      if (productInterest) {
+        return String(productInterest).replace(/_/g, ' ')
+      }
+    }
+    return ''
+  }
+
+  // Extract "Car Model: X" from a string (e.g. "paint protection film | Car Model: creta" -> "creta")
+  function extractCarModelFromString(s: string): string {
+    if (!s || typeof s !== 'string') return ''
+    const match = s.match(/\|\s*Car Model:\s*([^|]+)/i) || s.match(/Car Model:\s*([^|]+)/i)
+    return match ? match[1].trim() : ''
+  }
+
+  // Strip "| Car Model: X" from product string so only the product part is shown
+  function stripCarModelFromProductString(s: string): string {
+    if (!s || typeof s !== 'string') return ''
+    return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
+  }
+
+  // Get car model: from meta_data first, else from product string (e.g. "| Car Model: creta")
   function getVehicleName(lead: Lead): string {
     if (lead.meta_data) {
       const carModel = lead.meta_data['car_model'] ||
@@ -1425,26 +1501,14 @@ export default function LeadsPage() {
         return String(carModel).replace(/_/g, ' ')
       }
     }
-    return ''
+    const fromProduct = extractCarModelFromString(getRawProductInterest(lead))
+    return fromProduct || ''
   }
 
-  // Get product/service interest from lead
+  // Get product/service interest only — car model is shown in Car model column
   function getProductInterest(lead: Lead): string {
-    if (lead.requirement) {
-      return lead.requirement.replace(/_/g, ' ')
-    }
-    if (lead.meta_data) {
-      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] || 
-                             lead.meta_data['what_services_are_you_looking_for'] ||
-                             lead.meta_data['What services are you looking for?'] ||
-                             lead.meta_data['product_interest'] ||
-                             lead.meta_data['service'] ||
-                             null
-      if (productInterest) {
-        return String(productInterest).replace(/_/g, ' ')
-      }
-    }
-    return ''
+    const raw = getRawProductInterest(lead)
+    return stripCarModelFromProductString(raw)
   }
 
 
@@ -1706,6 +1770,7 @@ export default function LeadsPage() {
   const contactedLeads = allLeads.filter(lead => lead.status === 'contacted' || lead.first_contact_at).length
   const qualifiedLeads = allLeads.filter(lead => lead.status === 'qualified' || lead.interest_level === 'hot').length
   const convertedLeads = allLeads.filter(lead => lead.status === 'converted' || lead.status === 'deal_won').length
+  const discardedLeads = allLeads.filter(lead => lead.status === LEAD_STATUS.LOST || lead.status === LEAD_STATUS.DISCARDED).length
   const conversionRate = allLeads.length > 0 ? Math.round((convertedLeads / allLeads.length) * 100) : 0
 
   // Filter menu items based on user role and permissions (same logic as Sidebar)
@@ -1842,106 +1907,82 @@ export default function LeadsPage() {
           </>
         )}
 
-        {/* Stats Cards - 2x2 Grid */}
+        {/* Stats Cards - 2x2 Grid, tap to filter */}
         <div className="grid grid-cols-2 gap-3 p-4 pt-[81px]">
           {/* Untouched Card */}
-          <div className="bg-white border border-[#eaecee] rounded-xl p-4 relative h-[125px]">
+          <button
+            type="button"
+            onClick={() => setActiveQuickFilter(prev => prev === 'untouched' ? null : 'untouched')}
+            className={`rounded-xl p-4 relative h-[125px] text-left w-full border transition-all ${
+              activeQuickFilter === 'untouched' ? 'bg-red-50 border-red-300 ring-2 ring-red-400' : 'bg-white border-[#eaecee]'
+            }`}
+          >
             <p className="text-2xl font-semibold text-[#242d35] mb-1">{untouchedLeads}</p>
             <p className="text-sm font-semibold text-[#373f47] mb-2">Untouched</p>
             <p className="text-[6px] text-[#717d8a] leading-tight mb-2">New leads pending first call</p>
             <div className="absolute bottom-2 right-2 flex items-center justify-center">
               <div className="relative w-[58px] h-[58px]">
                 <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
-                  <circle
-                    cx="29"
-                    cy="29"
-                    r="26"
-                    fill="none"
-                    stroke="#f3f4f6"
-                    strokeWidth="4"
-                  />
-                  <circle
-                    cx="29"
-                    cy="29"
-                    r="26"
-                    fill="none"
-                    stroke="#FF513A"
-                    strokeWidth="4"
-                    strokeDasharray={`${Math.min(100, (untouchedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`}
-                    strokeLinecap="round"
-                  />
+                  <circle cx="29" cy="29" r="26" fill="none" stroke="#f3f4f6" strokeWidth="4" />
+                  <circle cx="29" cy="29" r="26" fill="none" stroke="#FF513A" strokeWidth="4" strokeDasharray={`${Math.min(100, (untouchedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`} strokeLinecap="round" />
                 </svg>
                 <TrendingDown size={14} className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#FF513A]" />
               </div>
             </div>
-          </div>
+          </button>
 
           {/* Contacted Card */}
-          <div className="bg-white border border-[#eaecee] rounded-xl p-4 relative h-[125px]">
+          <button
+            type="button"
+            onClick={() => setActiveQuickFilter(prev => prev === 'contacted' ? null : 'contacted')}
+            className={`rounded-xl p-4 relative h-[125px] text-left w-full border transition-all ${
+              activeQuickFilter === 'contacted' ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400' : 'bg-white border-[#eaecee]'
+            }`}
+          >
             <p className="text-2xl font-semibold text-[#242d35] mb-1">{contactedLeads}</p>
             <p className="text-sm font-semibold text-[#373f47] mb-2">Contacted</p>
             <p className="text-[6px] text-[#717d8a] leading-tight mb-2">Leads in follow-up</p>
             <div className="absolute bottom-2 right-2 flex items-center justify-center">
               <div className="relative w-[58px] h-[58px]">
                 <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
-                  <circle
-                    cx="29"
-                    cy="29"
-                    r="26"
-                    fill="none"
-                    stroke="#f3f4f6"
-                    strokeWidth="4"
-                  />
-                  <circle
-                    cx="29"
-                    cy="29"
-                    r="26"
-                    fill="none"
-                    stroke="#FFC168"
-                    strokeWidth="4"
-                    strokeDasharray={`${Math.min(100, (contactedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`}
-                    strokeLinecap="round"
-                  />
+                  <circle cx="29" cy="29" r="26" fill="none" stroke="#f3f4f6" strokeWidth="4" />
+                  <circle cx="29" cy="29" r="26" fill="none" stroke="#FFC168" strokeWidth="4" strokeDasharray={`${Math.min(100, (contactedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`} strokeLinecap="round" />
                 </svg>
                 <TrendingDown size={14} className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#FFC168]" />
               </div>
             </div>
-          </div>
+          </button>
 
           {/* Qualified Card */}
-          <div className="bg-white border border-[#eaecee] rounded-xl p-4 relative h-[125px]">
+          <button
+            type="button"
+            onClick={() => setActiveQuickFilter(prev => prev === 'qualified' ? null : 'qualified')}
+            className={`rounded-xl p-4 relative h-[125px] text-left w-full border transition-all ${
+              activeQuickFilter === 'qualified' ? 'bg-green-50 border-green-300 ring-2 ring-green-400' : 'bg-white border-[#eaecee]'
+            }`}
+          >
             <p className="text-2xl font-semibold text-[#242d35] mb-1">{qualifiedLeads}</p>
             <p className="text-sm font-semibold text-[#373f47] mb-2">Qualified</p>
             <p className="text-[6px] text-[#717d8a] leading-tight mb-2">Interested leads ({allLeads.filter(l => l.interest_level === 'hot').length} Hot)</p>
             <div className="absolute bottom-2 right-2 flex items-center justify-center">
               <div className="relative w-[58px] h-[58px]">
                 <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
-                  <circle
-                    cx="29"
-                    cy="29"
-                    r="26"
-                    fill="none"
-                    stroke="#f3f4f6"
-                    strokeWidth="4"
-                  />
-                  <circle
-                    cx="29"
-                    cy="29"
-                    r="26"
-                    fill="none"
-                    stroke="#2BA52E"
-                    strokeWidth="4"
-                    strokeDasharray={`${Math.min(100, (qualifiedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`}
-                    strokeLinecap="round"
-                  />
+                  <circle cx="29" cy="29" r="26" fill="none" stroke="#f3f4f6" strokeWidth="4" />
+                  <circle cx="29" cy="29" r="26" fill="none" stroke="#2BA52E" strokeWidth="4" strokeDasharray={`${Math.min(100, (qualifiedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`} strokeLinecap="round" />
                 </svg>
                 <TrendingUp size={14} className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#2BA52E]" />
               </div>
             </div>
-          </div>
+          </button>
 
           {/* Conversions Card */}
-          <div className="bg-white border border-[#eaecee] rounded-xl p-4 relative h-[125px]">
+          <button
+            type="button"
+            onClick={() => setActiveQuickFilter(prev => prev === 'conversions' ? null : 'conversions')}
+            className={`rounded-xl p-4 relative h-[125px] text-left w-full border transition-all ${
+              activeQuickFilter === 'conversions' ? 'bg-green-50 border-green-300 ring-2 ring-green-400' : 'bg-white border-[#eaecee]'
+            }`}
+          >
             <p className="text-2xl font-semibold text-[#242d35] mb-1">{conversionRate}%</p>
             <p className="text-sm font-semibold text-[#373f47] mb-2">Conversions</p>
             <p className="text-[6px] text-[#717d8a] leading-tight mb-2">{convertedLeads} deals won</p>
@@ -1970,7 +2011,38 @@ export default function LeadsPage() {
                 <TrendingDown size={14} className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#FF513A]" />
               </div>
             </div>
-          </div>
+          </button>
+
+          {/* Discarded leads */}
+          <button
+            type="button"
+            onClick={() => setActiveQuickFilter(prev => prev === 'discarded' ? null : 'discarded')}
+            className={`rounded-xl p-4 relative h-[125px] text-left w-full border transition-all ${
+              activeQuickFilter === 'discarded' ? 'bg-gray-100 border-gray-400 ring-2 ring-gray-400' : 'bg-white border-[#eaecee]'
+            }`}
+          >
+            <p className="text-2xl font-semibold text-[#242d35] mb-1">{discardedLeads}</p>
+            <p className="text-sm font-semibold text-[#373f47] mb-2">Discarded leads</p>
+            <p className="text-[6px] text-[#717d8a] leading-tight mb-2">Lost or discarded</p>
+            <div className="absolute bottom-2 right-2 flex items-center justify-center">
+              <div className="relative w-[58px] h-[58px]">
+                <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
+                  <circle cx="29" cy="29" r="26" fill="none" stroke="#f3f4f6" strokeWidth="4" />
+                  <circle
+                    cx="29"
+                    cy="29"
+                    r="26"
+                    fill="none"
+                    stroke="#6b7280"
+                    strokeWidth="4"
+                    strokeDasharray={`${Math.min(100, (discardedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <Trash2 size={14} className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-gray-500" />
+              </div>
+            </div>
+          </button>
         </div>
 
         {/* Search Bar and Filter */}
@@ -2173,106 +2245,123 @@ export default function LeadsPage() {
             </div>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {/* Summary Cards - click to filter list */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             {/* Total Leads Card */}
-            <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveQuickFilter(null)}
+              className={`rounded-lg shadow-sm p-6 flex items-center justify-between text-left transition-all ${
+                activeQuickFilter === null ? 'bg-blue-50 ring-2 ring-blue-400' : 'bg-white hover:bg-gray-50'
+              }`}
+            >
               <div>
                 <p className="text-base text-gray-500 mb-1">Total Leads</p>
                 <p className="text-4xl font-bold text-gray-900">{allLeads.length}</p>
               </div>
               <div className="relative w-16 h-16">
                 <svg className="w-16 h-16 transform -rotate-90">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="#f3f4f6" strokeWidth="6" />
                   <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    fill="none"
-                    stroke="#f3f4f6"
-                    strokeWidth="6"
-                  />
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    fill="none"
-                    stroke="#3b82f6"
-                    strokeWidth="6"
+                    cx="32" cy="32" r="28"
+                    fill="none" stroke="#3b82f6" strokeWidth="6"
                     strokeDasharray={`${(allLeads.length > 0 ? 100 : 0) * 175.9 / 100} 175.9`}
                     strokeLinecap="round"
                   />
                 </svg>
                 <TrendingUp className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#3b82f6]" size={20} />
               </div>
-            </div>
+            </button>
 
             {/* Untouched Card */}
-            <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveQuickFilter(prev => prev === 'untouched' ? null : 'untouched')}
+              className={`rounded-lg shadow-sm p-6 flex items-center justify-between text-left transition-all ${
+                activeQuickFilter === 'untouched' ? 'bg-red-50 ring-2 ring-red-400' : 'bg-white hover:bg-gray-50'
+              }`}
+            >
               <div>
                 <p className="text-base text-gray-500 mb-1">Untouched</p>
                 <p className="text-4xl font-bold text-gray-900">{stats.untouched}</p>
               </div>
               <div className="relative w-16 h-16">
                 <svg className="w-16 h-16 transform -rotate-90">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="#f3f4f6" strokeWidth="6" />
                   <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    fill="none"
-                    stroke="#f3f4f6"
-                    strokeWidth="6"
-                  />
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    fill="none"
-                    stroke="#ed1b24"
-                    strokeWidth="6"
-                    strokeDasharray={`${(stats.untouched / allLeads.length) * 175.9} 175.9`}
+                    cx="32" cy="32" r="28"
+                    fill="none" stroke="#ed1b24" strokeWidth="6"
+                    strokeDasharray={`${(stats.untouched / Math.max(allLeads.length, 1)) * 175.9} 175.9`}
                     strokeLinecap="round"
                   />
                 </svg>
                 <TrendingDown className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#ed1b24]" size={20} />
               </div>
-            </div>
+            </button>
 
             {/* Hot Leads Card */}
-            <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveQuickFilter(prev => prev === 'hot' ? null : 'hot')}
+              className={`rounded-lg shadow-sm p-6 flex items-center justify-between text-left transition-all ${
+                activeQuickFilter === 'hot' ? 'bg-green-50 ring-2 ring-green-400' : 'bg-white hover:bg-gray-50'
+              }`}
+            >
               <div>
                 <p className="text-base text-gray-500 mb-1">Hot Leads</p>
                 <p className="text-4xl font-bold text-gray-900">{stats.hotLeads}</p>
               </div>
               <div className="relative w-16 h-16">
                 <svg className="w-16 h-16 transform -rotate-90">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="#f3f4f6" strokeWidth="6" />
                   <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    fill="none"
-                    stroke="#f3f4f6"
-                    strokeWidth="6"
-                  />
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="28"
-                    fill="none"
-                    stroke="#10b981"
-                    strokeWidth="6"
-                    strokeDasharray={`${(stats.hotLeads / allLeads.length) * 175.9} 175.9`}
+                    cx="32" cy="32" r="28"
+                    fill="none" stroke="#10b981" strokeWidth="6"
+                    strokeDasharray={`${(stats.hotLeads / Math.max(allLeads.length, 1)) * 175.9} 175.9`}
                     strokeLinecap="round"
                   />
                 </svg>
                 <TrendingUp className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#10b981]" size={20} />
               </div>
-        </div>
+            </button>
 
             {/* Conversions Card */}
-            <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveQuickFilter(prev => prev === 'conversions' ? null : 'conversions')}
+              className={`rounded-lg shadow-sm p-6 flex items-center justify-between text-left transition-all ${
+                activeQuickFilter === 'conversions' ? 'bg-green-50 ring-2 ring-green-400' : 'bg-white hover:bg-gray-50'
+              }`}
+            >
               <div>
                 <p className="text-base text-gray-500 mb-1">Conversions</p>
                 <p className="text-4xl font-bold text-gray-900">{stats.conversions}%</p>
+              </div>
+              <div className="relative w-16 h-16">
+                <svg className="w-16 h-16 transform -rotate-90">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="#f3f4f6" strokeWidth="6" />
+                  <circle
+                    cx="32" cy="32" r="28"
+                    fill="none" stroke="#10b981" strokeWidth="6"
+                    strokeDasharray={`${(stats.conversions / 100) * 175.9} 175.9`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <TrendingUp className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#10b981]" size={20} />
+              </div>
+            </button>
+
+            {/* Discarded Leads Card */}
+            <button
+              type="button"
+              onClick={() => setActiveQuickFilter(prev => prev === 'discarded' ? null : 'discarded')}
+              className={`rounded-lg shadow-sm p-6 flex items-center justify-between text-left transition-all ${
+                activeQuickFilter === 'discarded' ? 'bg-gray-100 ring-2 ring-gray-400' : 'bg-white hover:bg-gray-50'
+              }`}
+            >
+              <div>
+                <p className="text-base text-gray-500 mb-1">Discarded leads</p>
+                <p className="text-4xl font-bold text-gray-900">{stats.discarded}</p>
               </div>
               <div className="relative w-16 h-16">
                 <svg className="w-16 h-16 transform -rotate-90">
@@ -2289,15 +2378,15 @@ export default function LeadsPage() {
                     cy="32"
                     r="28"
                     fill="none"
-                    stroke="#10b981"
+                    stroke="#6b7280"
                     strokeWidth="6"
-                    strokeDasharray={`${(stats.conversions / 100) * 175.9} 175.9`}
+                    strokeDasharray={`${allLeads.length > 0 ? (stats.discarded / allLeads.length) * 175.9 : 0} 175.9`}
                     strokeLinecap="round"
                   />
                 </svg>
-                <TrendingUp className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[#10b981]" size={20} />
+                <Trash2 className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-gray-500" size={20} />
               </div>
-            </div>
+            </button>
           </div>
 
           {/* Filter and Search Bar */}
@@ -2386,7 +2475,7 @@ export default function LeadsPage() {
                                   let defaultOperator = 'contains'
                                   if (newColumn === 'interest_level' || newColumn === 'status' || newColumn === 'source') {
                                     defaultOperator = 'equals'
-                                  } else if (['payment_amount', 'advance_amount', 'created_at', 'updated_at', 'first_contact_at'].includes(newColumn)) {
+                                  } else if (['date', 'payment_amount', 'advance_amount', 'created_at', 'updated_at', 'first_contact_at'].includes(newColumn)) {
                                     defaultOperator = 'greater_than'
                                   }
                                   updateFilterCondition(condition.id, { column: newColumn, operator: defaultOperator })
@@ -2429,8 +2518,8 @@ export default function LeadsPage() {
                               
                               {(condition.operator !== 'is_empty' && condition.operator !== 'is_not_empty') && (
                                 <input
-                                  type={['payment_amount', 'advance_amount', 'created_at', 'updated_at', 'first_contact_at'].includes(condition.column) 
-                                    ? (condition.column.includes('_at') ? 'date' : 'number')
+                                  type={['date', 'payment_amount', 'advance_amount', 'created_at', 'updated_at', 'first_contact_at'].includes(condition.column) 
+                                    ? (condition.column === 'date' || condition.column.includes('_at') ? 'date' : 'number')
                                     : 'text'}
                                   value={condition.value}
                                   onChange={(e) => updateFilterCondition(condition.id, { value: e.target.value })}
@@ -2728,7 +2817,7 @@ export default function LeadsPage() {
                   >
                     <div className="flex items-center">
                       {column.label}
-                      {(column.key === 'status' || column.key === 'last_contacted' || column.key === 'phone' || column.key === 'email') && (
+                      {(column.key === 'date' || column.key === 'status' || column.key === 'last_contacted' || column.key === 'phone' || column.key === 'car_model') && (
                         <ChevronDown size={16} className="inline ml-1" />
                       )}
                     </div>
@@ -2769,15 +2858,22 @@ export default function LeadsPage() {
                   
                   function renderCell(column: ColumnConfig) {
                     switch (column.key) {
+                      case 'date':
+                        return (
+                          <span className="text-base text-gray-700">
+                            {lead.created_at ? new Date(lead.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
+                          </span>
+                        )
                       case 'name':
                         return (
                           <div className="text-base font-medium text-gray-900">
                             {lead.name}
-                            {vehicleName && (
-                              <span className="text-gray-500 block text-sm mt-0.5">
-                                {vehicleName}
-                              </span>
-                            )}
+                          </div>
+                        )
+                      case 'car_model':
+                        return (
+                          <div className="text-base text-gray-900">
+                            {vehicleName || '-'}
                           </div>
                         )
                       case 'interest':

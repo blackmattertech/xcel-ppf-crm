@@ -1,86 +1,96 @@
 /**
- * Script to sync permissions from sidebar configuration
- * This ensures that when new features are added to the sidebar,
- * corresponding permissions are automatically created in the database
- * 
+ * Script to sync ALL sidebar options to the permissions table.
+ * Every sidebar resource gets .read and .manage so you can give/revoke access per role in Roles & Permissions.
+ *
  * Run with: npx tsx scripts/sync-permissions-from-sidebar.ts
  */
 
 import { createServiceClient } from '@/lib/supabase/service'
-import { SIDEBAR_MENU_ITEMS, generatePermissionsForResource, getResourcesRequiringPermissions } from '@/shared/constants/sidebar'
+import {
+  SIDEBAR_MENU_ITEMS,
+  generatePermissionsForResource,
+  getResourcesRequiringPermissions,
+} from '@/shared/constants/sidebar'
 
 async function syncPermissions() {
-  console.log('🔄 Starting permission sync from sidebar configuration...\n')
-  
+  console.log('🔄 Syncing ALL sidebar options to permissions table...\n')
+
   const supabase = createServiceClient()
-  
-  // Get all resources that require permissions
-  const resources = getResourcesRequiringPermissions()
-  console.log(`📋 Found ${resources.length} resources requiring permissions:`, resources.join(', '))
-  
+
+  // All unique resources from sidebar (every item is permission-gated)
+  const allResources = Array.from(
+    new Set(SIDEBAR_MENU_ITEMS.map((item) => item.resource))
+  )
+  const crudResources = getResourcesRequiringPermissions()
+
+  console.log(`📋 Sidebar resources (all): ${allResources.join(', ')}`)
+  console.log(`📋 Resources with full CRUD: ${crudResources.join(', ')}\n`)
+
   let createdCount = 0
   let existingCount = 0
   let errorCount = 0
-  
-  // Generate and insert permissions for each resource
-  for (const resource of resources) {
-    const permissions = generatePermissionsForResource(resource)
-    
-    console.log(`\n📦 Processing resource: ${resource}`)
-    
+
+  for (const resource of allResources) {
+    const useFullCrud = crudResources.includes(resource)
+    const permissions = useFullCrud
+      ? generatePermissionsForResource(resource)
+      : [
+          { name: `${resource}.read`, resource, action: 'read' as const, description: `View ${resource}` },
+          { name: `${resource}.manage`, resource, action: 'manage' as const, description: `Full ${resource} access` },
+        ]
+
+    console.log(`📦 Processing resource: ${resource} (${useFullCrud ? 'full CRUD' : 'read/manage'})`)
+
     for (const permission of permissions) {
       try {
-        // Check if permission already exists
         const { data: existing } = await supabase
           .from('permissions')
           .select('id, name')
           .eq('name', permission.name)
           .single()
-        
+
         if (existing) {
-          console.log(`   ✓ Permission already exists: ${permission.name}`)
+          console.log(`   ✓ Already exists: ${permission.name}`)
           existingCount++
         } else {
-          // Insert new permission
-          const { data, error } = await supabase
+          const { error } = await supabase
             .from('permissions')
-            // @ts-ignore - Supabase type inference issue with dynamic inserts in script
+            // @ts-expect-error - dynamic insert in script
             .insert({
               name: permission.name,
               resource: permission.resource,
               action: permission.action,
-              description: permission.description,
+              description: permission.description ?? undefined,
             })
             .select()
             .single()
-          
+
           if (error) {
-            console.error(`   ✗ Error creating permission ${permission.name}:`, error.message)
+            console.error(`   ✗ Error creating ${permission.name}:`, error.message)
             errorCount++
           } else {
-            console.log(`   ✓ Created permission: ${permission.name}`)
+            console.log(`   ✓ Created: ${permission.name}`)
             createdCount++
           }
         }
-      } catch (error) {
-        console.error(`   ✗ Unexpected error for ${permission.name}:`, error)
+      } catch (err) {
+        console.error(`   ✗ Unexpected error for ${permission.name}:`, err)
         errorCount++
       }
     }
   }
-  
-  // Summary
+
   console.log('\n' + '='.repeat(50))
   console.log('📊 Sync Summary:')
-  console.log(`   ✓ Created: ${createdCount} permissions`)
-  console.log(`   ⊙ Existing: ${existingCount} permissions`)
-  console.log(`   ✗ Errors: ${errorCount} permissions`)
+  console.log(`   ✓ Created: ${createdCount}`)
+  console.log(`   ⊙ Existing: ${existingCount}`)
+  console.log(`   ✗ Errors: ${errorCount}`)
   console.log('='.repeat(50))
-  
+
   if (errorCount === 0) {
-    console.log('\n✅ Permission sync completed successfully!')
+    console.log('\n✅ Sidebar permissions synced. Manage access in Admin > Roles & Permissions.')
   } else {
-    console.log('\n⚠️  Permission sync completed with errors. Please review the output above.')
+    console.log('\n⚠️  Sync finished with errors. Check output above.')
   }
 }
 
