@@ -1262,18 +1262,65 @@ export default function LeadDetailPage() {
   const availableStatuses = getAvailableStatuses()
   const canUpdateStatus = userRole === 'tele_caller' || userRole === 'admin' || userRole === 'super_admin'
 
-  // Get vehicle name from requirement or meta_data
-  function getVehicleName() {
-    if (lead?.requirement) return lead.requirement
+  // Raw product/interest string (requirement or meta) — may contain "| Car Model: X"
+  function getRawProductInterest(): string {
+    if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
     if (lead?.meta_data) {
-      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] || 
-                     lead.meta_data['what_services_are_you_looking_for'] ||
-                     lead.meta_data['vehicle'] ||
-                     lead.meta_data['car_model'] ||
-                     null
-      if (vehicle) {
-        return String(vehicle).replace(/_/g, ' ')
-      }
+      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] ||
+                             lead.meta_data['what_services_are_you_looking_for'] ||
+                             lead.meta_data['What services are you looking for?'] ||
+                             lead.meta_data['product_interest'] ||
+                             lead.meta_data['service'] ||
+                             null
+      if (productInterest) return String(productInterest).replace(/_/g, ' ')
+    }
+    return ''
+  }
+
+  // Extract "Car Model: X" from string (e.g. "paint protection film | Car Model: nexon" -> "nexon")
+  function extractCarModelFromString(s: string): string {
+    if (!s || typeof s !== 'string') return ''
+    const match = s.match(/\|\s*Car Model:\s*([^|]+)/i) || s.match(/Car Model:\s*([^|]+)/i)
+    return match ? match[1].trim() : ''
+  }
+
+  // Strip "| Car Model: X" from product string
+  function stripCarModelFromProductString(s: string): string {
+    if (!s || typeof s !== 'string') return ''
+    return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
+  }
+
+  // Car model: from meta_data first, else from product string
+  function getLeadCarModel(): string {
+    if (lead?.meta_data) {
+      const carModel = lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
+                       lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
+                       lead.meta_data['vehicle'] || lead.meta_data['Vehicle'] || null
+      if (carModel) return String(carModel).replace(/_/g, ' ')
+    }
+    return extractCarModelFromString(getRawProductInterest())
+  }
+
+  // Interested product only (car model shown separately)
+  function getLeadProductInterest(): string {
+    return stripCarModelFromProductString(getRawProductInterest())
+  }
+
+  // Get vehicle name from requirement or meta_data (for header: show car model when present)
+  function getVehicleName() {
+    const fromMeta = lead?.meta_data && (
+      lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
+      lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
+      lead.meta_data['vehicle'] || lead.meta_data['Vehicle']
+    )
+    if (fromMeta) return String(fromMeta).replace(/_/g, ' ')
+    const fromProduct = extractCarModelFromString(getRawProductInterest())
+    if (fromProduct) return fromProduct
+    if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
+    if (lead?.meta_data) {
+      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] ||
+                     lead.meta_data['what_services_are_you_looking_for'] || null
+      if (vehicle) return String(vehicle).replace(/_/g, ' ')
     }
     return null
   }
@@ -1745,13 +1792,20 @@ export default function LeadDetailPage() {
                 </div>
               )}
 
-              {/* Notes */}
-              {(lead?.meta_data?.notes || lead?.requirement) && (
+              {/* Information - Car model & Interested product */}
+              {lead && (
                 <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                  <h2 className="text-base font-semibold text-gray-900 mb-4">Notes</h2>
-                  <p className="text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
-                    {lead.meta_data?.notes || lead.requirement || '-'}
-                  </p>
+                  <h2 className="text-base font-semibold text-gray-900 mb-4">Information</h2>
+                  <div className="space-y-3 text-sm">
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <span className="font-medium text-gray-600 block mb-1">Car model</span>
+                      <span className="text-gray-900">{getLeadCarModel() || '-'}</span>
+                    </div>
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <span className="font-medium text-gray-600 block mb-1">Interested product</span>
+                      <span className="text-gray-900">{getLeadProductInterest() || '-'}</span>
+                    </div>
+                  </div>
                 </div>
               )}
 
