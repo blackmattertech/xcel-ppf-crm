@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     // Get active Facebook Business connection
     const { data: fbSettings, error: settingsError } = await supabase
       .from('facebook_business_settings')
-      .select('access_token, ad_account_id')
+      .select('id, access_token, ad_account_id, expires_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
       .maybeSingle()
@@ -36,22 +36,19 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Check if token is expired
-    const { data: fullSettings } = await supabase
-      .from('facebook_business_settings')
-      .select('expires_at')
-      .eq('id', fbSettings.id)
-      .single()
+    // Type assertion needed because TypeScript can't infer the type from maybeSingle()
+    const settings = fbSettings as { id: string; access_token: string; ad_account_id: string | null; expires_at: string | null }
 
-    if (fullSettings?.expires_at && new Date(fullSettings.expires_at) < new Date()) {
+    // Check if token is expired
+    if (settings.expires_at && new Date(settings.expires_at) < new Date()) {
       return NextResponse.json(
         { error: 'Facebook access token has expired. Please reconnect your account.' },
         { status: 401 }
       )
     }
 
-    const accessToken = fbSettings.access_token
-    const accountId = adAccountId || fbSettings.ad_account_id
+    const accessToken = settings.access_token
+    const accountId = adAccountId || settings.ad_account_id
 
     if (!accountId) {
       return NextResponse.json(

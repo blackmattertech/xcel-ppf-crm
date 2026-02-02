@@ -146,31 +146,20 @@ export default function LoginPage() {
         />
       </div>
 
-      {/* Typing Animation - Responsive positioning */}
-      {/* <div className="hidden sm:block absolute left-4 md:left-8 lg:left-[700px] top-1/3 md:top-[200px] lg:top-[200px] z-30 max-w-[90%] md:max-w-none">
-        <h1 className="text-white text-1xl md:text-4xl lg:text-2xl xl:text-2xl font-bold leading-tight md:leading-tight lg:leading-tight font-poppins">
-          <TypingAnimation
-            texts={[
-              'Protecting Performance.\nPreserving Perfection.',
-              'Engineered Paint Protection\nFor Elite Cars.',
-              'Where Luxury Meets\nUltimate Protection.',
-            ]}
-          />
-        </h1>
-      </div> */}
-
-      {/* Login Card - Vertically centered and responsive */}
-      <div className="absolute right-4 md:right-8 lg:right-[80px] top-1/2 -translate-y-1/2 z-20 w-[calc(100%-2rem)] md:w-[500px] lg:w-[546px] max-h-[90vh] lg:h-[740px] overflow-y-auto">
-        <div className="relative w-full min-h-[600px] lg:h-full bg-[rgba(255,255,255,0.1)] backdrop-blur-sm rounded-2xl md:rounded-[34px] shadow-[0px_4px_200px_0px_rgba(46,99,234,0.1)]">
-          <div className="flex flex-col px-4 md:px-8 lg:px-[60px] pt-8 md:pt-12 lg:pt-[90px] pb-8 md:pb-12 lg:pb-[80px] h-full">
-            {/* Logo - Positioned on the left inside the dialog */}
-            <div className="mb-6 md:mb-8 lg:mb-[40px] self-start">
+      {/* Content Layer - centers card and logo, avoids inner scrollbars */}
+      <div className="relative z-20 flex min-h-screen items-center justify-center md:justify-end px-4 md:px-8 lg:px-20">
+        <div className="w-full max-w-[546px]">
+          <div className="flex flex-col px-4 md:px-8 lg:px-[60px] pt-8 md:pt-12 lg:pt-[90px] pb-8 md:pb-12 lg:pb-[80px]">
+            {/* Logo - Centered inside the dialog */}
+            <div className="mb-2 md:mb-3 lg:mb-4 self-center flex justify-center">
               <Image
-                src="/xcel-logo.png"
+                src="/image.png"
                 alt="XCEL Logo"
-                width={136}
-                height={65}
-                className="scale-y-[-1] w-24 h-auto md:w-32 lg:w-[136px]"
+                width={320}
+                height={197}
+                className="w-48 h-auto sm:w-56 md:w-64 lg:w-[320px]"
+                style={{ width: 'auto', height: 'auto' }}
+                priority
               />
             </div>
 

@@ -139,12 +139,14 @@ export async function GET(request: NextRequest) {
     const supabase = createServiceClient()
 
     // Check if connection already exists
-    const { data: existing } = await supabase
+    const { data: existingData } = await supabase
       .from('facebook_business_settings')
       .select('id')
       .eq('created_by', user.id)
       .eq('is_active', true)
       .maybeSingle()
+    
+    const existing = existingData as { id: string } | null
 
     const settingsData = {
       access_token: accessToken,
@@ -164,6 +166,7 @@ export async function GET(request: NextRequest) {
       // Update existing connection
       const { error: updateError } = await supabase
         .from('facebook_business_settings')
+        // @ts-ignore - Supabase type inference issue
         .update(settingsData)
         .eq('id', existing.id)
 
