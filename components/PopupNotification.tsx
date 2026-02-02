@@ -1,53 +1,55 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { useAuthContext } from './AuthProvider'
-import { useFollowupNotifications } from './FollowupNotificationsProvider'
+import { useAuth } from '@/contexts/AuthContext'
+import { useFollowUpNotifications } from '@/hooks/useFollowUpNotifications'
 
 export default function PopupNotification() {
-  const { role } = useAuthContext()
-  const { data: notifications } = useFollowupNotifications()
+  const { user } = useAuth()
   const [showPopup, setShowPopup] = useState(false)
   const [lastNotificationTime, setLastNotificationTime] = useState<number>(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Decide when to surface the popup based on shared notifications data.
+  const userRole = user?.role || null
+  const isTeleCaller = userRole === 'tele_caller'
+  
+  // Use shared hook - React Query will handle caching and deduplication
+  const { data: notifications } = useFollowUpNotifications(isTeleCaller)
+
+  // Show popup when overdue follow-ups are detected
   useEffect(() => {
-    const userRole = role?.name ?? null
-    if (userRole !== 'tele_caller' || !notifications) return
-
-    const hasOverdue = (notifications.overdue?.length || 0) > 0
-    if (!hasOverdue) return
-
-    const currentTime = Date.now()
-    if (currentTime - lastNotificationTime > 10 * 60 * 1000) {
-      setShowPopup(true)
-      setLastNotificationTime(currentTime)
-
-      // Request browser notification permission
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission()
-      }
-
-      // Show browser notification if permission granted
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Overdue Follow-ups', {
-          body: `You have ${notifications.overdue.length} overdue follow-up${notifications.overdue.length > 1 ? 's' : ''} that need attention.`,
-          icon: '/favicon.ico',
-          tag: 'followup-notification',
-        })
+    if (notifications && notifications.overdue.length > 0) {
+      const hasOverdue = notifications.overdue.length > 0
+      const currentTime = Date.now()
+      
+      // Show popup if there are overdue follow-ups and we haven't shown one in the last 10 minutes
+      if (hasOverdue && (currentTime - lastNotificationTime > 10 * 60 * 1000)) {
+        setShowPopup(true)
+        setLastNotificationTime(currentTime)
+        
+        // Request browser notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission()
+        }
+        
+        // Show browser notification if permission granted
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Overdue Follow-ups', {
+            body: `You have ${notifications.overdue.length} overdue follow-up${notifications.overdue.length > 1 ? 's' : ''} that need attention.`,
+            icon: '/favicon.ico',
+            tag: 'followup-notification',
+          })
+        }
       }
     }
-  }, [role, notifications, lastNotificationTime])
+  }, [notifications, lastNotificationTime])
 
   // Play notification sound when popup shows
   useEffect(() => {
     if (showPopup && notifications && notifications.overdue.length > 0) {
       try {
         // Create audio element with your custom notification sound
-        // Place your audio file in the public folder (e.g., public/notification.wav)
-        // Supported formats: .mp3, .wav, .ogg
         audioRef.current = new Audio('/notification.wav')
         audioRef.current.loop = true // Loop continuously
         audioRef.current.volume = 0.7 // Set volume (0.0 to 1.0)
@@ -76,7 +78,7 @@ export default function PopupNotification() {
   const userRole = role?.name ?? null
 
   // Only show for tele-callers with overdue follow-ups
-  if (userRole !== 'tele_caller' || !showPopup || !notifications || notifications.overdue.length === 0) {
+  if (!isTeleCaller || !showPopup || !notifications || notifications.overdue.length === 0) {
     return null
   }
 

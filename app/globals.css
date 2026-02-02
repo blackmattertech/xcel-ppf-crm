@@ -96,6 +96,19 @@ body {
   animation: blink-alert 2s ease-in-out infinite;
 }
 
+@keyframes float {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(0px);
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
 .animate-blink-badge {
   animation: blink-badge 1.5s ease-in-out infinite;
 }

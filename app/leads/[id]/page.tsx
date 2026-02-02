@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
@@ -587,6 +588,8 @@ export default function LeadDetailPage() {
     }
   }
 
+  const queryClient = useQueryClient()
+
   async function handleStatusUpdate() {
     if (!newStatus || newStatus === lead?.status) {
       return
@@ -609,6 +612,10 @@ export default function LeadDetailPage() {
         const data = await response.json()
         setLead(data.lead)
         setStatusNotes('')
+        // Invalidate leads query to refresh all pages (list, kanban, grid)
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
+        // Also refetch the current lead to ensure consistency
+        await fetchLead()
         alert('Status updated successfully')
       } else {
         const errorData = await response.json()
@@ -686,7 +693,7 @@ export default function LeadDetailPage() {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            status: LEAD_STATUS.LOST,
+            status: LEAD_STATUS.DISCARDED,
             notes: 'Wrong number - Lead discarded',
           }),
         })
@@ -695,11 +702,13 @@ export default function LeadDetailPage() {
           console.error('Failed to update status after wrong number call')
         }
 
+        // Invalidate leads query to refresh all pages (list, kanban, grid)
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
         // Refresh and close
         await fetchLead()
         setShowCallModal(false)
         resetCallForm()
-        alert('Call recorded - Lead status updated to Lost (Wrong Number)')
+        alert('Call recorded - Lead status updated to Discarded (Wrong Number)')
         return
       }
 
@@ -713,7 +722,12 @@ export default function LeadDetailPage() {
               interest_level: callInterestLevel,
             }),
           })
-          if (!updateResponse.ok) {
+          if (updateResponse.ok) {
+            // Invalidate leads query to refresh all pages
+            queryClient.invalidateQueries({ queryKey: ['leads'] })
+            // Refresh current lead
+            await fetchLead()
+          } else {
             console.error('Failed to update interest level')
           }
         } catch (error) {
@@ -765,6 +779,8 @@ export default function LeadDetailPage() {
         }
       }
 
+      // Invalidate leads query to refresh all pages (list, kanban, grid)
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
       // Refresh lead data
       await fetchLead()
       setShowCallModal(false)
@@ -978,6 +994,9 @@ export default function LeadDetailPage() {
           }),
         })
 
+        // Invalidate leads query to refresh all pages (list, kanban, grid)
+        queryClient.invalidateQueries({ queryKey: ['leads'] })
+        // Refresh current lead
         await fetchLead()
         setShowQualifyModal(false)
         setInterestLevel('')
@@ -1095,9 +1114,13 @@ export default function LeadDetailPage() {
               notes: `Payment status updated: ${paymentStatus}`,
             }),
           })
+          // Invalidate leads query to refresh all pages
+          queryClient.invalidateQueries({ queryKey: ['leads'] })
         }
 
         if (paymentStatus !== 'fully_paid' && paymentStatus !== 'advance_received' && paymentStatus !== 'pending') {
+          // Invalidate leads query to refresh all pages
+          queryClient.invalidateQueries({ queryKey: ['leads'] })
           await fetchLead()
           setShowPaymentModal(false)
           setPaymentStatus('')
@@ -1105,6 +1128,8 @@ export default function LeadDetailPage() {
           setAdvanceAmount('')
           alert('Payment status updated successfully')
         } else if (paymentStatus === 'fully_paid') {
+          // Invalidate before redirect
+          queryClient.invalidateQueries({ queryKey: ['leads'] })
           // Already handled above with redirect
         }
         // For advance_received and pending, follow-up modal is shown
@@ -1558,6 +1583,110 @@ export default function LeadDetailPage() {
                 )}
                 </div>
               </div>
+
+          {/* Full Metadata */}
+          {lead?.meta_data && Object.keys(lead.meta_data).length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Full Metadata</h2>
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(lead.meta_data)
+                    .filter(([key]) => {
+                      // Exclude already displayed fields
+                      return key !== 'notes' && 
+                             key !== 'platform' && 
+                             key !== 'Platform' &&
+                             key !== 'customer_id'
+                    })
+                    .map(([key, value]) => {
+                      const displayKey = key.replace(/_/g, ' ').replace(/\?/g, '').replace(/^\w/, c => c.toUpperCase())
+                      let displayValue: string
+                      
+                      if (value === null || value === undefined) {
+                        displayValue = '-'
+                      } else if (typeof value === 'object') {
+                        displayValue = JSON.stringify(value, null, 2)
+                      } else {
+                        displayValue = String(value)
+                      }
+                      
+                      return (
+                        <div key={key} className="border-b border-gray-200 pb-3 last:border-0">
+                          <div className="text-sm font-medium text-gray-700 mb-1">{displayKey}</div>
+                          <div className="text-sm text-gray-900 break-words whitespace-pre-wrap">
+                            {displayValue}
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+                {Object.keys(lead.meta_data).length === 0 && (
+                  <p className="text-sm text-gray-500">No metadata available</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Lead Score & SLA */}
+          {(leadScore !== null || slaViolation || winProbability !== null) && (
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Intelligence</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {leadScore !== null && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">Lead Score</div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-bold text-indigo-600">{leadScore.toFixed(1)}</span>
+                      <span className="text-sm text-gray-500">/100</span>
+                    </div>
+                    <Link
+                      href={`/leads/${leadId}/insights`}
+                      className="text-xs text-indigo-600 hover:underline mt-1 block"
+                    >
+                      View detailed breakdown →
+                    </Link>
+                  </div>
+                )}
+                {winProbability !== null && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">Win Probability</div>
+                    <div className="flex items-baseline gap-2">
+                      <span className={`text-2xl font-bold ${
+                        winProbability >= 70 ? 'text-green-600' :
+                        winProbability >= 50 ? 'text-yellow-600' :
+                        'text-red-600'
+                      }`}>
+                        {winProbability.toFixed(0)}%
+                      </span>
+                    </div>
+                    <Link
+                      href={`/leads/${leadId}/insights`}
+                      className="text-xs text-indigo-600 hover:underline mt-1 block"
+                    >
+                      View detailed insights →
+                    </Link>
+                  </div>
+                )}
+                {slaViolation && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">SLA Status</div>
+                    <div className="text-red-600 font-semibold">
+                      {slaViolation.violation_type.replace('_', ' ')} Violation
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {Math.round(slaViolation.violation_duration_minutes)} min overdue
+                    </div>
+                    <Link
+                      href="/sla"
+                      className="text-xs text-red-600 hover:underline mt-1 block"
+                    >
+                      View SLA details →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Lead Details */}
               <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">

@@ -58,6 +58,18 @@ export const PERMISSIONS = {
   FOLLOWUPS_UPDATE: 'followups.update',
   FOLLOWUPS_DELETE: 'followups.delete',
   FOLLOWUPS_MANAGE: 'followups.manage',
+  
+  // SLA
+  SLA_READ: 'sla.read',
+  SLA_UPDATE: 'sla.update',
+  SLA_MANAGE: 'sla.manage',
+  
+  // Nurture Campaigns
+  NURTURE_CREATE: 'nurture.create',
+  NURTURE_READ: 'nurture.read',
+  NURTURE_UPDATE: 'nurture.update',
+  NURTURE_DELETE: 'nurture.delete',
+  NURTURE_MANAGE: 'nurture.manage',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]

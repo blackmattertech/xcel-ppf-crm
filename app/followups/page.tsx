@@ -1,118 +1,61 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { useAuthContext } from '@/components/AuthProvider'
 import Link from 'next/link'
+import { useAuth } from '@/contexts/AuthContext'
+import { useFollowUps } from '@/hooks/useFollowUps'
+import { useLeads } from '@/hooks/useLeads'
 import Layout from '@/components/Layout'
-
-interface FollowUp {
-  id: string
-  scheduled_at: string
-  completed_at: string | null
-  status: string
-  notes: string | null
-  lead: {
-    id: string
-    name: string
-    phone: string
-    status: string
-  } | null
-}
 
 export default function FollowUpsPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuthContext()
-  const [followUps, setFollowUps] = useState<FollowUp[]>([])
-  const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState<string | null>(null)
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth()
+  const { data: allFollowUps = [], isLoading: followUpsLoading } = useFollowUps()
+  const { data: allLeads = [] } = useLeads()
   const [filter, setFilter] = useState<'all' | 'overdue' | 'upcoming' | 'pending'>('all')
-  const [totalLeads, setTotalLeads] = useState(0)
 
+  // Redirect if not authenticated
   useEffect(() => {
-    // Redirect unauthenticated users to login, mirroring previous behaviour.
-    if (!isAuthenticated) {
+    if (!authLoading && !isAuthenticated) {
       router.push('/login')
-      return
     }
-    checkAuth()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated])
+  }, [authLoading, isAuthenticated, router])
 
-  useEffect(() => {
-    if (!isAuthenticated) return
-    fetchFollowUps()
-  }, [filter, isAuthenticated])
-
-  useEffect(() => {
-    if (!isAuthenticated) return
-    fetchTotalLeads()
-  }, [isAuthenticated])
-
-  async function fetchTotalLeads() {
-    try {
-      const response = await fetch('/api/leads/count')
-      if (response.ok) {
-        const data = await response.json()
-        setTotalLeads(data.count || 0)
-      }
-    } catch (error) {
-      console.error('Failed to fetch total leads:', error)
-    }
+  if (!authLoading && !isAuthenticated) {
+    return null
   }
 
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      router.push('/login')
-      return
+  // Filter follow-ups based on selected filter
+  const followUps = useMemo(() => {
+    const now = new Date()
+    let filtered = [...allFollowUps]
+
+    if (filter === 'overdue') {
+      filtered = filtered.filter(
+        (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) < now
+      )
+    } else if (filter === 'upcoming') {
+      const tomorrow = new Date()
+      tomorrow.setHours(tomorrow.getHours() + 24)
+      filtered = filtered.filter(
+        (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) >= now && new Date(fu.scheduled_at) <= tomorrow
+      )
+    } else if (filter === 'pending') {
+      filtered = filtered.filter((fu) => fu.status === 'pending')
     }
 
-    // Get user role
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role_id, roles!users_role_id_fkey(name)')
-      .eq('id', user.id)
-      .single()
+    return filtered
+  }, [allFollowUps, filter])
 
-    if (userData) {
-      const userDataTyped = userData as any
-      const roleName = Array.isArray(userDataTyped.roles) 
-        ? userDataTyped.roles[0]?.name 
-        : userDataTyped.roles?.name
-      setUserRole(roleName)
-    }
-  }
-
-  async function fetchFollowUps() {
-    try {
-      const now = new Date().toISOString()
-      let url = '/api/followups?'
-      
-      if (filter === 'overdue') {
-        url += `status=pending&scheduledBefore=${now}`
-      } else if (filter === 'upcoming') {
-        const tomorrow = new Date()
-        tomorrow.setHours(tomorrow.getHours() + 24)
-        url += `status=pending&scheduledAfter=${now}&scheduledBefore=${tomorrow.toISOString()}`
-      } else if (filter === 'pending') {
-        url += 'status=pending'
-      }
-
-      const response = await fetch(url)
-      if (response.ok) {
-        const data = await response.json()
-        setFollowUps(data.followUps || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch follow-ups:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const now = new Date()
+  const overdueFollowUps = allFollowUps.filter(
+    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) < now
+  )
+  const upcomingFollowUps = allFollowUps.filter(
+    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) >= now
+  )
+  const pendingFollowUps = allFollowUps.filter((fu) => fu.status === 'pending')
 
   async function handleCompleteFollowUp(followUpId: string) {
     try {
@@ -125,8 +68,8 @@ export default function FollowUpsPage() {
       })
 
       if (response.ok) {
-        await fetchFollowUps()
-        alert('Follow-up marked as completed')
+        // Invalidate and refetch follow-ups
+        window.location.reload() // Simple refresh for now
       } else {
         const errorData = await response.json()
         alert(errorData.error || 'Failed to complete follow-up')
@@ -137,24 +80,7 @@ export default function FollowUpsPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-lg">Loading...</div>
-        </div>
-      </Layout>
-    )
-  }
-
-  const now = new Date()
-  const overdueFollowUps = followUps.filter(
-    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) < now
-  )
-  const upcomingFollowUps = followUps.filter(
-    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) >= now
-  )
-  const completedFollowUps = followUps.filter((fu) => fu.status === 'done')
+  const loading = followUpsLoading
 
   return (
     <Layout>
@@ -162,21 +88,32 @@ export default function FollowUpsPage() {
         <div className="max-w-7xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">Follow-ups</h1>
 
-          {/* Stats Cards */}
+          {/* Stats Cards - Show skeleton while loading */}
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {[1, 2].map((i) => (
+                <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                  <div className="h-8 bg-gray-200 rounded w-16"></div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
               <p className="text-2xl font-bold text-gray-900 mt-2">
-                {totalLeads}
+                {allLeads.length}
               </p>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500">Total Follow-ups</h3>
               <p className="text-2xl font-bold text-gray-900 mt-2">
-                {followUps.length}
+                {allFollowUps.length}
               </p>
             </div>
           </div>
+          )}
 
           {/* Filter Tabs */}
           <div className="bg-white rounded-lg shadow mb-6 p-4">
@@ -189,7 +126,7 @@ export default function FollowUpsPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                All ({followUps.length})
+                All ({allFollowUps.length})
               </button>
               <button
                 onClick={() => setFilter('overdue')}
@@ -219,12 +156,21 @@ export default function FollowUpsPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                Pending ({followUps.filter((fu) => fu.status === 'pending').length})
+                Pending ({pendingFollowUps.length})
               </button>
             </div>
           </div>
 
-          {/* Follow-ups List */}
+          {/* Follow-ups List - Show skeleton while loading */}
+          {loading ? (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="animate-pulse p-6 space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-24 bg-gray-200 rounded"></div>
+                ))}
+              </div>
+            </div>
+          ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             {followUps.length === 0 ? (
               <div className="px-6 py-8 text-center text-sm text-gray-500">
@@ -232,7 +178,7 @@ export default function FollowUpsPage() {
               </div>
             ) : (
               <div className="divide-y divide-gray-200">
-                {followUps.map((followUp) => {
+                {followUps.map((followUp: any) => {
                   const scheduledDate = new Date(followUp.scheduled_at)
                   const isOverdue = followUp.status === 'pending' && scheduledDate < now
                   const isUpcoming = followUp.status === 'pending' && scheduledDate >= now
@@ -316,6 +262,7 @@ export default function FollowUpsPage() {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     </Layout>

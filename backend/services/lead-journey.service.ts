@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { Database } from '@/shared/types/database'
 import { LEAD_STATUS, LEAD_STATUS_FLOW } from '@/shared/constants/lead-status'
+import { resolveSLAViolation } from './sla.service'
 
 type LeadStatus = typeof LEAD_STATUS[keyof typeof LEAD_STATUS]
 
@@ -27,8 +28,11 @@ export async function updateLeadStatus(
   const oldStatus = currentLeadData.status as LeadStatus
 
   // Validate status transition
+  // Allow transition to DISCARDED from any status (for wrong numbers, etc.)
   const allowedStatuses = LEAD_STATUS_FLOW[oldStatus] || []
-  if (!allowedStatuses.includes(newStatus) && oldStatus !== newStatus) {
+  if (newStatus === LEAD_STATUS.DISCARDED || allowedStatuses.includes(newStatus) || oldStatus === newStatus) {
+    // Allow the transition
+  } else {
     throw new Error(
       `Invalid status transition from ${oldStatus} to ${newStatus}. Allowed: ${allowedStatuses.join(', ')}`
     )
@@ -65,6 +69,16 @@ export async function updateLeadStatus(
     changed_by: changedBy,
     notes: notes || null,
   } as any)
+
+  // Resolve qualification SLA violation if lead is being qualified
+  if (newStatus === LEAD_STATUS.QUALIFIED && oldStatus === LEAD_STATUS.NEW) {
+    try {
+      await resolveSLAViolation(leadId, 'qualification', changedBy)
+    } catch (slaError) {
+      // Log but don't fail the status update if SLA resolution fails
+      console.error('Failed to resolve qualification SLA violation:', slaError)
+    }
+  }
 
   return updatedLead
 }

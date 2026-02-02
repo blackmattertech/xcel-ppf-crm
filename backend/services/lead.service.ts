@@ -2,6 +2,10 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { Database } from '@/shared/types/database'
 import { assignLeadRoundRobin } from './assignment.service'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
+import { applySLARuleToLead, resolveSLAViolation } from './sla.service'
+import { checkForDuplicatesBeforeCreate } from './duplicate-detection.service'
+import { cleanLeadData } from './enrichment.service'
+import { calculateLeadScore } from './scoring.service'
 
 type Lead = Database['public']['Tables']['leads']['Row']
 type LeadInsert = Database['public']['Tables']['leads']['Insert']
@@ -14,8 +18,17 @@ export async function getAllLeads(filters?: {
   offset?: number
   userId?: string // Current user ID for role-based filtering
   userRole?: string // Current user role for role-based filtering
+  includeConverted?: boolean // Include converted leads (for conversion rate calculation)
 }) {
   const supabase = createServiceClient()
+
+  // First, get all lead_ids that have been converted to customers
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('lead_id')
+    .not('lead_id', 'is', null)
+  
+  const convertedLeadIds = customers?.map((c: any) => c.lead_id).filter(Boolean) || []
 
   let query = supabase
     .from('leads')
@@ -30,8 +43,20 @@ export async function getAllLeads(filters?: {
     `)
     .order('created_at', { ascending: false })
 
-  // Exclude leads with FULLY_PAID status
-  query = query.neq('status', LEAD_STATUS.FULLY_PAID)
+  // Exclude leads that have been converted to customers
+  // Use a more efficient approach: filter in the query result instead of complex NOT IN
+  // We'll filter them out after fetching
+
+  // Exclude leads with FULLY_PAID status unless includeConverted is true
+  // Also exclude DISCARDED leads unless specifically filtered
+  if (!filters?.includeConverted) {
+    query = query.neq('status', LEAD_STATUS.FULLY_PAID)
+  }
+  
+  // Exclude discarded leads unless status filter explicitly requests them
+  if (!filters?.status || filters.status !== LEAD_STATUS.DISCARDED) {
+    query = query.neq('status', LEAD_STATUS.DISCARDED)
+  }
 
   // Role-based filtering: tele_callers can only see their assigned leads
   if (filters?.userRole === 'tele_caller' && filters?.userId) {
@@ -58,13 +83,67 @@ export async function getAllLeads(filters?: {
     query = query.range(filters.offset, filters.offset + (filters.limit || 50) - 1)
   }
 
-  const { data, error } = await query
+  const { data: leads, error } = await query
 
   if (error) {
     throw new Error(`Failed to fetch leads: ${error.message}`)
   }
 
-  return data || []
+  if (!leads || leads.length === 0) {
+    return []
+  }
+
+  // Filter out leads that have been converted to customers
+  // Converted leads should not appear in the leads list
+  const convertedLeadIdsSet = new Set(convertedLeadIds)
+  const activeLeads = leads.filter((lead: any) => !convertedLeadIdsSet.has(lead.id))
+
+  // For tele-callers calculating conversion rate, we need to fetch ALL their leads (including converted)
+  // separately to calculate accurate conversion rate, but we don't return converted leads in the main list
+  if (filters?.userRole === 'tele_caller' && filters?.includeConverted && filters?.userId) {
+    // Fetch ALL leads assigned to this tele-caller (including converted ones) for conversion rate calculation
+    const { data: allTeleCallerLeads } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('assigned_to', filters.userId)
+    
+    if (allTeleCallerLeads && allTeleCallerLeads.length > 0) {
+      const allLeadIds = allTeleCallerLeads.map((l: any) => l.id)
+      
+      // Fetch customers for ALL their leads (including converted)
+      const { data: customers } = await supabase
+        .from('customers')
+        .select('id, lead_id')
+        .in('lead_id', allLeadIds)
+      
+      // Create a map of lead_id to customer for quick lookup
+      const customerMap = new Map()
+      if (customers) {
+        customers.forEach((customer: any) => {
+          if (customer.lead_id) {
+            customerMap.set(customer.lead_id, customer)
+          }
+        })
+      }
+      
+      // Add customer information to non-converted leads (converted leads are already excluded from activeLeads)
+      // Also include total leads count and converted count for conversion rate calculation
+      const totalLeadsCount = allTeleCallerLeads.length
+      const convertedLeadsCount = customers?.length || 0
+      
+      const leadsWithCustomer = activeLeads.map((lead: any) => ({
+        ...lead,
+        customer: customerMap.get(lead.id) || null,
+        // Include conversion metadata for frontend calculation
+        _totalLeadsCount: totalLeadsCount,
+        _convertedLeadsCount: convertedLeadsCount,
+      }))
+      
+      return leadsWithCustomer
+    }
+  }
+
+  return activeLeads || []
 }
 
 export async function getLeadById(id: string, userId?: string, userRole?: string) {
@@ -148,18 +227,45 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
   }
 
   // Auto-assign if enabled
-  if (autoAssign && leadData.source && !leadData.assigned_to) {
-    const assignedUserId = await assignLeadRoundRobin(leadData.source as 'meta' | 'manual' | 'form')
+  if (autoAssign && enrichedLeadData.source && !enrichedLeadData.assigned_to) {
+    // Calculate score first to determine priority
+    let leadScore = 0
+    try {
+      const tempLead = { ...enrichedLeadData, id: 'temp' } as any
+      // Quick score estimation before full calculation
+      if (enrichedLeadData.interest_level === 'hot') {
+        leadScore = 85
+      } else if (enrichedLeadData.interest_level === 'warm') {
+        leadScore = 60
+      } else if (enrichedLeadData.interest_level === 'cold') {
+        leadScore = 30
+      } else {
+        leadScore = 50 // Default
+      }
+    } catch (e) {
+      // Ignore
+    }
+
+    // Note: leadId will be available after insert, but we can't use it here
+    // Skill-based routing will happen on lead update if territory/industry/language is added
+    const assignedUserId = await assignLeadRoundRobin(
+      enrichedLeadData.source as 'meta' | 'manual' | 'form',
+      {
+        leadScore,
+        priority: leadScore >= 80 ? 'high' : leadScore >= 60 ? 'normal' : 'low',
+        interestLevel: enrichedLeadData.interest_level as 'hot' | 'warm' | 'cold' | undefined,
+      }
+    )
     if (assignedUserId) {
-      leadData.assigned_to = assignedUserId
+      enrichedLeadData.assigned_to = assignedUserId
     }
   }
 
   const { data, error } = await supabase
     .from('leads')
     .insert({
-      ...leadData,
-      status: leadData.status || LEAD_STATUS.NEW,
+      ...enrichedLeadData,
+      status: enrichedLeadData.status || LEAD_STATUS.NEW,
     } as any)
     .select(`
       *,
@@ -193,6 +299,22 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
       // Log but don't fail the lead creation if status history fails
       console.error('Failed to create status history:', historyError)
     }
+  }
+
+  // Apply SLA rule to the new lead
+  try {
+    await applySLARuleToLead(createdLead.id)
+  } catch (slaError) {
+    // Log but don't fail the lead creation if SLA application fails
+    console.error('Failed to apply SLA rule:', slaError)
+  }
+
+  // Calculate initial lead score
+  try {
+    await calculateLeadScore(createdLead.id)
+  } catch (scoreError) {
+    // Log but don't fail the lead creation if scoring fails
+    console.error('Failed to calculate lead score:', scoreError)
   }
 
   return data
@@ -366,9 +488,14 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
   // Get current lead to check status change
   const { data: currentLead } = await supabase
     .from('leads')
-    .select('status, assigned_to')
+    .select('status, assigned_to, source, interest_level')
     .eq('id', id)
     .single()
+
+  // Check if source or interest_level changed (affects SLA rule)
+  const shouldReapplySLA = 
+    (updates.source && updates.source !== currentLead?.source) ||
+    (updates.interest_level !== undefined && updates.interest_level !== currentLead?.interest_level)
 
   const { data, error } = await supabase
     .from('leads')
@@ -403,6 +530,16 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
       new_status: updates.status,
       changed_by: currentLeadData.assigned_to || id,
     } as any)
+    }
+  }
+
+  // Re-apply SLA rule if source or interest level changed
+  if (shouldReapplySLA) {
+    try {
+      await applySLARuleToLead(id)
+    } catch (slaError) {
+      // Log but don't fail the update if SLA re-application fails
+      console.error('Failed to re-apply SLA rule:', slaError)
     }
   }
 

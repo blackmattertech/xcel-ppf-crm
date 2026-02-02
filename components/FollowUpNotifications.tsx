@@ -9,6 +9,14 @@ export default function FollowUpNotifications() {
   const { role } = useAuthContext()
   const { loading, data: notifications } = useFollowupNotifications()
   const [showNotifications, setShowNotifications] = useState(true)
+  
+  const userRole = user?.role || null
+  const isTeleCaller = userRole === 'tele_caller'
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin'
+  
+  // Only fetch if user is tele_caller or admin
+  const shouldFetch = isTeleCaller || isAdmin
+  const { data: notifications, isLoading } = useFollowUpNotifications(shouldFetch)
 
   // Show for tele-callers and admins
   if (loading || !notifications) {
