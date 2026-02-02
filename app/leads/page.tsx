@@ -898,10 +898,24 @@ export default function LeadsPage() {
     }
   })
 
+  // Redirect when not authenticated; rely on AuthProvider so account switch updates without refresh.
   useEffect(() => {
-    checkAuth()
+    if (authLoading) return
+    if (!userId) {
+      router.push('/login')
+      return
+    }
+    setUserRoleState(role?.name ?? null)
+    if (role?.name === 'admin' || role?.name === 'super_admin') {
+      fetchTeleCallers()
+    }
+  }, [authLoading, userId, role?.name, router])
+
+  // Fetch leads when user is ready (and when userId changes, e.g. after switching account).
+  useEffect(() => {
+    if (authLoading || !userId) return
     fetchLeads()
-  }, [])
+  }, [authLoading, userId])
 
   // Save container styles to localStorage whenever they change
   useEffect(() => {
@@ -1413,34 +1427,6 @@ export default function LeadsPage() {
       { key: 'is_empty', label: 'Is Empty' },
       { key: 'is_not_empty', label: 'Is Not Empty' },
     ]
-  }
-
-  async function checkAuth() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      router.push('/login')
-      return
-    }
-
-    // Get user role
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role_id, roles!users_role_id_fkey(name)')
-      .eq('id', user.id)
-      .single()
-
-    if (userData) {
-      const typedUserData = userData as { role_id: string; roles: { name: string } | null }
-      const roleName = typedUserData.roles?.name || null
-      setUserRoleState(roleName)
-
-      // If admin or super_admin, fetch tele_callers for reassignment
-      if (roleName === 'admin' || roleName === 'super_admin') {
-        fetchTeleCallers()
-      }
-    }
   }
 
   async function fetchTeleCallers() {
