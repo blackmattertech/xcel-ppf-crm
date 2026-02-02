@@ -459,7 +459,7 @@ export default function TeamsPage() {
         .eq('assigned_to', userId)
         .in('status', ['converted', 'deal_won', 'fully_paid'])
       
-      const convertedLeadIds = convertedLeadsData?.map(l => l.id) || []
+      const convertedLeadIds = (convertedLeadsData as { id: string }[] | null)?.map(l => l.id) || []
       
       // Get orders for these leads with product prices (only if there are converted leads)
       let totalSales = 0
