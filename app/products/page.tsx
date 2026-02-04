@@ -387,8 +387,8 @@ export default function ProductsPage() {
 
   return (
     <Layout>
-      <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
+      <div className="p-4 md:p-6 lg:p-8 w-full">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Products</h1>
           {canCreate && (
             <button

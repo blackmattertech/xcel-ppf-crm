@@ -535,7 +535,7 @@ export default function UserDetailPage() {
 
   return (
     <Layout>
-      <div className="p-6 bg-gray-50 min-h-screen w-full" style={{ fontFamily: 'Poppins, sans-serif' }}>
+      <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen w-full" style={{ fontFamily: 'Poppins, sans-serif' }}>
         <div className="w-full">
           <button
             onClick={() => router.push('/teams')}

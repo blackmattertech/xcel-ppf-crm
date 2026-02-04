@@ -1549,7 +1549,7 @@ export default function LeadDetailPage() {
       {/* Blurred Background - Leads Page Content */}
       <div className="fixed inset-0 overflow-y-auto pointer-events-none">
     <Layout>
-          <div className="p-6">
+          <div className="p-4 md:p-6 lg:p-8 w-full">
             {/* Simplified Leads Page Background - Mimics actual leads page structure */}
             <div className="w-full">
               {/* Header Section */}
