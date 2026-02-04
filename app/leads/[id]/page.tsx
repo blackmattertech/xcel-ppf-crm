@@ -42,7 +42,8 @@ import {
   ShoppingCart,
   Eye,
   Share2,
-  CheckCircle
+  CheckCircle,
+  Pencil
 } from 'lucide-react'
 
 // Interactive Time Picker Component
@@ -518,12 +519,26 @@ export default function LeadDetailPage() {
   const [submittingQuotation, setSubmittingQuotation] = useState(false)
   const [createdQuotationId, setCreatedQuotationId] = useState<string | null>(null)
   const [showQuotationSuccessModal, setShowQuotationSuccessModal] = useState(false)
+  const [leadQuotations, setLeadQuotations] = useState<Array<{ id: string; quote_number: string; version: number }>>([])
+  const [markingQuotationShared, setMarkingQuotationShared] = useState(false)
+  // Quotation shared / negotiation: call outcome (accepted | not_accepted | negotiation)
+  const [quotationCallOutcome, setQuotationCallOutcome] = useState<'accepted' | 'not_accepted' | 'negotiation' | ''>('')
+  // Order created after "Accepted" → used to update order payment when user submits payment modal
+  const [lastCreatedOrderId, setLastCreatedOrderId] = useState<string | null>(null)
 
   useEffect(() => {
     checkAuth()
     fetchLead()
     fetchProducts()
   }, [leadId])
+
+  useEffect(() => {
+    if (leadId && (lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED)) {
+      fetchLeadQuotations()
+    } else {
+      setLeadQuotations([])
+    }
+  }, [leadId, lead?.status])
 
   async function fetchProducts() {
     try {
@@ -560,6 +575,20 @@ export default function LeadDetailPage() {
         : userDataTyped.roles?.name
       setUserRole(roleName)
       setUserId(user.id)
+    }
+  }
+
+  async function fetchLeadQuotations() {
+    try {
+      const response = await fetch(`/api/quotations?leadId=${leadId}`)
+      if (response.ok) {
+        const data = await response.json()
+        const list = data.quotations || []
+        setLeadQuotations(list.map((q: { id: string; quote_number: string; version: number }) => ({ id: q.id, quote_number: q.quote_number, version: q.version })))
+      }
+    } catch (err) {
+      console.error('Failed to fetch lead quotations:', err)
+      setLeadQuotations([])
     }
   }
 
@@ -792,6 +821,85 @@ export default function LeadDetailPage() {
     setInterestedBudget('')
     setInterestedPurchaseTimeline('')
     setInterestedNotes('')
+    setQuotationCallOutcome('')
+  }
+
+  // When lead is Quotation Shared or Negotiation: handle Accepted / Not Accepted / Negotiation
+  const isQuotationCallFlow = lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION
+
+  async function handleQuotationCallOutcomeSubmit() {
+    if (!quotationCallOutcome) {
+      alert('Please select an outcome')
+      return
+    }
+    setSubmittingCall(true)
+    try {
+      if (quotationCallOutcome === 'not_accepted') {
+        await fetch(`/api/leads/${leadId}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: LEAD_STATUS.LOST,
+            notes: 'Quotation not accepted - Lead discarded',
+          }),
+        })
+        await fetchLead()
+        setShowCallModal(false)
+        resetCallForm()
+        alert('Lead discarded (Quotation not accepted)')
+        return
+      }
+
+      if (quotationCallOutcome === 'negotiation') {
+        await fetch(`/api/leads/${leadId}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: LEAD_STATUS.NEGOTIATION,
+            notes: 'Customer in negotiation - Update quotation and then mark Accepted or Not Accepted',
+          }),
+        })
+        await fetchLead()
+        setShowCallModal(false)
+        resetCallForm()
+        alert('Status set to Negotiation. Update the quotation, then use Make Call again to mark Accepted or Not Accepted.')
+        return
+      }
+
+      // accepted: mark deal won, convert to customer, create job card (order), then show payment modal
+      await fetch(`/api/leads/${leadId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: LEAD_STATUS.DEAL_WON,
+          notes: 'Quotation accepted - Deal won',
+        }),
+      })
+
+      const convertRes = await fetch(`/api/leads/${leadId}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (!convertRes.ok) {
+        const err = await convertRes.json()
+        throw new Error(err.error || 'Failed to convert lead and create job card')
+      }
+      const convertData = await convertRes.json()
+      const orderId = convertData.order?.id
+      if (orderId) setLastCreatedOrderId(orderId)
+
+      await fetchLead()
+      setShowCallModal(false)
+      resetCallForm()
+      setShowPaymentModal(true)
+      alert('Deal won! Customer and job card created. Please record payment details.')
+    } catch (e) {
+      console.error(e)
+      alert(e instanceof Error ? e.message : 'Failed to process outcome')
+    } finally {
+      setSubmittingCall(false)
+    }
   }
 
   // LEAD JOURNEY: Handle Connected sub-option selection
@@ -1022,53 +1130,85 @@ export default function LeadDetailPage() {
       })
 
       if (response.ok) {
+        const hadOrderFromAccepted = !!lastCreatedOrderId
+        // Sync job card (order) payment status when we just created it from Accepted flow
+        if (lastCreatedOrderId) {
+          const orderPaymentStatus = paymentStatus === 'fully_paid' ? 'fully_paid' : paymentStatus === 'advance_received' ? 'advance_received' : 'pending'
+          try {
+            await fetch(`/api/orders/${lastCreatedOrderId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ payment_status: orderPaymentStatus }),
+            })
+          } catch (e) {
+            console.error('Failed to update order payment status:', e)
+          }
+          setLastCreatedOrderId(null)
+        }
+
         // Update lead status based on payment
         let statusUpdate = ''
         if (paymentStatus === 'fully_paid') {
           statusUpdate = LEAD_STATUS.FULLY_PAID
-          
-          // Convert lead to customer and create order
-          try {
-            // Convert to customer and create order (this will handle status internally)
-            const convertResponse = await fetch(`/api/leads/${leadId}/convert`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({}),
-            })
+          const alreadyConverted = hadOrderFromAccepted
 
-            if (!convertResponse.ok) {
-              const errorData = await convertResponse.json()
-              throw new Error(errorData.error || 'Failed to convert lead to customer')
-            }
-
-            // Now update status to FULLY_PAID (only if not already FULLY_PAID)
-            const currentLead = await fetch(`/api/leads/${leadId}`).then(r => r.json())
-            if (currentLead.status !== LEAD_STATUS.FULLY_PAID) {
-              await fetch(`/api/leads/${leadId}/status`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  status: LEAD_STATUS.FULLY_PAID,
-                  notes: `Payment status updated: ${paymentStatus}. Lead converted to customer.`,
-                }),
-              })
-            }
-
-            alert('Payment status updated. Lead converted to customer and order created successfully!')
-            // Redirect to customers page or orders page
-            window.location.href = '/customers'
-          } catch (convertError) {
-            console.error('Failed to convert lead:', convertError)
-            // Still update status even if conversion fails
+          if (alreadyConverted) {
+            // We just created job card from Accepted flow - only update status
             await fetch(`/api/leads/${leadId}/status`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 status: LEAD_STATUS.FULLY_PAID,
-                notes: `Payment status updated: ${paymentStatus}`,
+                notes: `Payment status: Fully paid. Job card already created.`,
               }),
             })
-            throw convertError
+            setShowPaymentModal(false)
+            setPaymentStatus('')
+            setPaymentAmount('')
+            setAdvanceAmount('')
+            alert('Payment recorded. Lead converted to customer and job card created.')
+            window.location.href = '/customers'
+          } else {
+            // Convert lead to customer and create order (e.g. when opening payment from Deal Won)
+            try {
+              const convertResponse = await fetch(`/api/leads/${leadId}/convert`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+              })
+
+              if (!convertResponse.ok) {
+                const errorData = await convertResponse.json()
+                throw new Error(errorData.error || 'Failed to convert lead to customer')
+              }
+
+              const resLead = await fetch(`/api/leads/${leadId}`).then(r => r.json())
+              const currentStatus = resLead.lead?.status ?? resLead.status
+              if (currentStatus !== LEAD_STATUS.FULLY_PAID) {
+                await fetch(`/api/leads/${leadId}/status`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    status: LEAD_STATUS.FULLY_PAID,
+                    notes: `Payment status updated: ${paymentStatus}. Lead converted to customer.`,
+                  }),
+                })
+              }
+
+              alert('Payment status updated. Lead converted to customer and order created successfully!')
+              window.location.href = '/customers'
+            } catch (convertError) {
+              console.error('Failed to convert lead:', convertError)
+              await fetch(`/api/leads/${leadId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  status: LEAD_STATUS.FULLY_PAID,
+                  notes: `Payment status updated: ${paymentStatus}`,
+                }),
+              })
+              throw convertError
+            }
           }
         } else if (paymentStatus === 'advance_received') {
           statusUpdate = LEAD_STATUS.ADVANCE_RECEIVED
@@ -1794,14 +1934,80 @@ export default function LeadDetailPage() {
             <Phone size={18} />
             Make Call
           </button>
+          {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
+            <>
+              <Link
+                href={`/quotations/${leadQuotations[0].id}`}
+                className="flex-1 bg-blue-600 text-white px-6 py-3.5 rounded-xl hover:bg-blue-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
+              >
+                <Eye size={18} />
+                View Quotation
+              </Link>
+              <Link
+                href={`/quotations/${leadQuotations[0].id}`}
+                className="flex-1 bg-indigo-600 text-white px-6 py-3.5 rounded-xl hover:bg-indigo-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
+              >
+                <Pencil size={18} />
+                Update Quotation
+              </Link>
+            </>
+          )}
+          {(lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
+            <button
+              type="button"
+              onClick={() => {
+                setFollowUpNotes('Follow-up for quotation / negotiation')
+                setShowFollowUpModal(true)
+              }}
+              className="flex-1 bg-sky-600 text-white px-6 py-3.5 rounded-xl hover:bg-sky-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
+            >
+              <Calendar size={18} />
+              Schedule Follow-up
+            </button>
+          )}
           {lead?.status === LEAD_STATUS.QUALIFIED && (
-          <button
-              onClick={() => setShowQuotationModal(true)}
-              className="flex-1 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
-          >
-              <FilePlus size={18} />
-              Create Quotation
-          </button>
+            <>
+              {leadQuotations.length > 0 && (
+                <button
+                  onClick={async () => {
+                    setMarkingQuotationShared(true)
+                    try {
+                      const res = await fetch(`/api/leads/${leadId}/status`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          status: LEAD_STATUS.QUOTATION_SHARED,
+                          notes: 'Quotation shared with lead'
+                        })
+                      })
+                      if (res.ok) {
+                        await fetchLead()
+                      } else {
+                        const err = await res.json()
+                        alert(err.error || 'Failed to update status')
+                      }
+                    } catch (e) {
+                      console.error(e)
+                      alert('Failed to update status')
+                    } finally {
+                      setMarkingQuotationShared(false)
+                    }
+                  }}
+                  disabled={markingQuotationShared}
+                  className="flex-1 bg-amber-600 text-white px-6 py-3.5 rounded-xl hover:bg-amber-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                >
+                  <Share2 size={18} />
+                  {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
+                </button>
+              )}
+              <button
+                onClick={() => setShowQuotationModal(true)}
+                className="flex-1 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
+              >
+                <FilePlus size={18} />
+                {leadQuotations.length > 0 ? 'Create Another Quotation' : 'Create Quotation'}
+              </button>
+            </>
           )}
           <button
             onClick={() => router.push(`/leads/${leadId}/history`)}
@@ -1839,6 +2045,84 @@ export default function LeadDetailPage() {
         </div>
 
             <div className="p-6">
+              {/* Quotation Shared / Negotiation: only Accepted, Not Accepted, Negotiation */}
+              {isQuotationCallFlow ? (
+                <>
+                  <h4 className="text-base font-medium text-gray-900 mb-4">Quotation response?</h4>
+                  <div className="space-y-3 mb-6">
+                    <button
+                      type="button"
+                      onClick={() => setQuotationCallOutcome('accepted')}
+                      className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
+                        quotationCallOutcome === 'accepted' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${quotationCallOutcome === 'accepted' ? 'bg-green-500' : 'bg-gray-100'}`}>
+                          <CheckCircle size={24} className={quotationCallOutcome === 'accepted' ? 'text-white' : 'text-gray-400'} />
+                        </div>
+                        <div className="flex-1">
+                          <p className={`font-semibold mb-1 ${quotationCallOutcome === 'accepted' ? 'text-green-700' : 'text-gray-900'}`}>Accepted</p>
+                          <p className="text-sm text-gray-600">Mark as deal won, convert to customer & generate job card.</p>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuotationCallOutcome('not_accepted')}
+                      className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
+                        quotationCallOutcome === 'not_accepted' ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-red-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${quotationCallOutcome === 'not_accepted' ? 'bg-red-500' : 'bg-gray-100'}`}>
+                          <ThumbsDown size={24} className={quotationCallOutcome === 'not_accepted' ? 'text-white' : 'text-gray-400'} />
+                        </div>
+                        <div className="flex-1">
+                          <p className={`font-semibold mb-1 ${quotationCallOutcome === 'not_accepted' ? 'text-red-700' : 'text-gray-900'}`}>Not Accepted</p>
+                          <p className="text-sm text-gray-600">Discard lead.</p>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuotationCallOutcome('negotiation')}
+                      className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
+                        quotationCallOutcome === 'negotiation' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 hover:border-amber-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${quotationCallOutcome === 'negotiation' ? 'bg-amber-500' : 'bg-gray-100'}`}>
+                          <Pencil size={24} className={quotationCallOutcome === 'negotiation' ? 'text-white' : 'text-gray-400'} />
+                        </div>
+                        <div className="flex-1">
+                          <p className={`font-semibold mb-1 ${quotationCallOutcome === 'negotiation' ? 'text-amber-700' : 'text-gray-900'}`}>Negotiation</p>
+                          <p className="text-sm text-gray-600">Update quotation, then mark Accepted or Not Accepted later.</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4 border-t">
+                    <button
+                      type="button"
+                      onClick={() => { setShowCallModal(false); resetCallForm(); }}
+                      className="px-6 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                      disabled={submittingCall}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleQuotationCallOutcomeSubmit}
+                      disabled={submittingCall || !quotationCallOutcome}
+                      className="px-6 py-2 text-white bg-[#de0510] rounded-lg hover:bg-[#c0040e] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                    >
+                      {submittingCall ? 'Processing...' : 'Confirm'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
               {/* Question */}
               <h4 className="text-base font-medium text-gray-900 mb-4">What was the call outcome?</h4>
               
@@ -2378,6 +2662,8 @@ export default function LeadDetailPage() {
                       )}
                     </div>
                   )}
+                </>
+              )}
             </div>
               </div>
             </div>
@@ -2528,9 +2814,9 @@ export default function LeadDetailPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       <option value="">Select status...</option>
-                      <option value="pending">Payment Pending - Remind</option>
-                      <option value="advance_received">Advance Received - Track Balance</option>
-                      <option value="fully_paid">✔ Fully Paid - Complete</option>
+                      <option value="pending">Not paid</option>
+                      <option value="advance_received">Advance paid</option>
+                      <option value="fully_paid">Fully paid</option>
                     </select>
                   </div>
                   <div>
@@ -3027,6 +3313,7 @@ export default function LeadDetailPage() {
                         setDiscount(0)
                         setValidityDays(30)
                         fetchLead() // Refresh lead data
+                        fetchLeadQuotations()
                       } else {
                         const error = await response.json()
                         alert(error.error || 'Failed to create quotation')

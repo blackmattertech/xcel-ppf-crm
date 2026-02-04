@@ -1,12 +1,28 @@
 import type { NextConfig } from "next";
 import withPWA from "next-pwa";
 
+// Next.js Image requires exact hostname for remotePatterns (wildcard *.supabase.co often doesn't match).
+// Derive from env so Supabase Storage URLs work for product images and profile images.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseHostname = supabaseUrl ? new URL(supabaseUrl).hostname : null;
+
 const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
   images: {
     remotePatterns: [
+      // Explicit Supabase project host (required for Next Image to allow the host)
+      ...(supabaseHostname
+        ? [
+            {
+              protocol: 'https' as const,
+              hostname: supabaseHostname,
+              pathname: '/storage/v1/object/public/**',
+            },
+          ]
+        : []),
+      // Fallback for builds without env (e.g. some CI)
       {
         protocol: 'https',
         hostname: '*.supabase.co',

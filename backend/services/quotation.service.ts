@@ -66,14 +66,13 @@ export async function createQuotation(
       *,
       lead:leads (
         id,
-        first_name,
-        last_name,
+        name,
         phone,
         email
       ),
-      created_by_user:profiles!quotations_created_by_fkey (
+      created_by_user:users!quotations_created_by_fkey (
         id,
-        full_name,
+        name,
         email
       )
     `)
@@ -114,14 +113,13 @@ export async function getQuotations(filters?: {
       *,
       lead:leads (
         id,
-        first_name,
-        last_name,
+        name,
         phone,
         email
       ),
-      created_by_user:profiles!quotations_created_by_fkey (
+      created_by_user:users!quotations_created_by_fkey (
         id,
-        full_name,
+        name,
         email
       )
     `)
@@ -157,14 +155,13 @@ export async function getQuotationById(id: string) {
       *,
       lead:leads (
         id,
-        first_name,
-        last_name,
+        name,
         phone,
         email
       ),
-      created_by_user:profiles!quotations_created_by_fkey (
+      created_by_user:users!quotations_created_by_fkey (
         id,
-        full_name,
+        name,
         email
       )
     `)
