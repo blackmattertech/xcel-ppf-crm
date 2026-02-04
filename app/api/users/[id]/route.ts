@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, requirePermission } from '@/backend/middleware/auth'
 import { getUserById, updateUser, deleteUser } from '@/backend/services/user.service'
+import { redistributeNewLeadsAmongTeleCallers } from '@/backend/services/assignment.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
@@ -87,10 +88,10 @@ export async function PUT(
     }
 
     const user = await updateUser(
-      id, 
-      name, 
-      phone || null, 
-      roleId, 
+      id,
+      name,
+      phone || null,
+      roleId,
       branchId || null,
       profileImageUrl || null,
       address || null,
@@ -98,6 +99,19 @@ export async function PUT(
       doj || null,
       languagesKnown || null
     )
+
+    // When a user's role is updated to tele_caller, redistribute existing "new" leads in round-robin
+    const roleName = (user as any).role?.name ?? (Array.isArray((user as any).role) ? (user as any).role?.[0]?.name : null)
+    if (roleName === 'tele_caller' && !('error' in authResult) && authResult.user?.id) {
+      try {
+        const count = await redistributeNewLeadsAmongTeleCallers(authResult.user.id)
+        if (count > 0) {
+          (user as any)._redistributedLeads = count
+        }
+      } catch (err) {
+        console.error('Failed to redistribute new leads after updating user to tele_caller:', err)
+      }
+    }
 
     return NextResponse.json({ user })
   } catch (error) {

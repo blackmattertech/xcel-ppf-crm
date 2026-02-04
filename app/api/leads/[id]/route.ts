@@ -34,6 +34,9 @@ const updateLeadSchema = z.object({
   timeline: z.string().nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
   branch_id: z.string().uuid().nullable().optional(),
+  payment_status: z.enum(['pending', 'advance_received', 'fully_paid']).nullable().optional(),
+  payment_amount: z.number().nonnegative().nullable().optional(),
+  advance_amount: z.number().nonnegative().nullable().optional(),
 })
 
 export async function GET(

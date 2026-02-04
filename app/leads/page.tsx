@@ -124,6 +124,7 @@ interface LeadStats {
   hotLeads: number
   conversions: number
   discarded: number
+  activeLeads: number
 }
 
 // Grid View Component
@@ -836,7 +837,7 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true)
   const [userRoleState, setUserRoleState] = useState<string | null>(null)
   const [teleCallers, setTeleCallers] = useState<TeleCaller[]>([])
-  const [stats, setStats] = useState<LeadStats>({ untouched: 0, hotLeads: 0, conversions: 0, discarded: 0 })
+  const [stats, setStats] = useState<LeadStats>({ untouched: 0, hotLeads: 0, conversions: 0, discarded: 0, activeLeads: 0 })
   type QuickFilter = null | 'untouched' | 'contacted' | 'qualified' | 'hot' | 'conversions' | 'discarded'
   const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilter>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -1198,6 +1199,14 @@ export default function LeadsPage() {
         lead.interest_level === 'hot'
       ).length
       
+      // Active leads: exclude lost/discarded and conversion statuses (deal_won, converted, payment_*)
+      const CONVERSION_STATUSES = [LEAD_STATUS.DEAL_WON, LEAD_STATUS.CONVERTED, LEAD_STATUS.PAYMENT_PENDING, LEAD_STATUS.ADVANCE_RECEIVED, LEAD_STATUS.FULLY_PAID]
+      const activeLeads = allLeads.filter(lead =>
+        lead.status !== LEAD_STATUS.LOST &&
+        lead.status !== LEAD_STATUS.DISCARDED &&
+        !CONVERSION_STATUSES.includes(lead.status as typeof LEAD_STATUS.DEAL_WON)
+      ).length
+      
       // Conversion Rate: Won / Total Leads
       const conversionRate = allLeads.length > 0 
         ? Math.round((won / allLeads.length) * 100) 
@@ -1207,11 +1216,14 @@ export default function LeadsPage() {
         untouched,
         hotLeads,
         conversions: conversionRate,
-        discarded
+        discarded,
+        activeLeads
       })
       
       // Store detailed stats for potential future use
       // Note: stats interface may need to be extended to include all buckets
+    } else {
+      setStats({ untouched: 0, hotLeads: 0, conversions: 0, discarded: 0, activeLeads: 0 })
     }
   }, [allLeads])
 
@@ -1234,50 +1246,38 @@ export default function LeadsPage() {
       filtered = filtered.filter(lead => lead.interest_level === 'hot')
     } else if (activeQuickFilter === 'conversions') {
       filtered = filtered.filter(lead =>
-        lead.status === LEAD_STATUS.CONVERTED || lead.status === LEAD_STATUS.DEAL_WON
+        lead.status === LEAD_STATUS.CONVERTED ||
+        lead.status === LEAD_STATUS.DEAL_WON ||
+        lead.status === LEAD_STATUS.PAYMENT_PENDING ||
+        lead.status === LEAD_STATUS.ADVANCE_RECEIVED ||
+        lead.status === LEAD_STATUS.FULLY_PAID
       )
     } else if (activeQuickFilter === 'discarded') {
       filtered = filtered.filter(lead =>
         lead.status === LEAD_STATUS.LOST || lead.status === LEAD_STATUS.DISCARDED
       )
     }
-    // activeQuickFilter === null -> show all
+    // When not viewing "discarded", hide "lost" leads — they are only shown in the discarded filter
+    if (activeQuickFilter !== 'discarded') {
+      filtered = filtered.filter(lead => lead.status !== LEAD_STATUS.LOST)
+    }
+    // When not viewing "conversions", hide deal_won and other conversion statuses — they are only shown in the conversions filter
+    const CONVERSION_STATUSES = [LEAD_STATUS.DEAL_WON, LEAD_STATUS.CONVERTED, LEAD_STATUS.PAYMENT_PENDING, LEAD_STATUS.ADVANCE_RECEIVED, LEAD_STATUS.FULLY_PAID]
+    if (activeQuickFilter !== 'conversions') {
+      filtered = filtered.filter(lead => !CONVERSION_STATUSES.includes(lead.status as typeof LEAD_STATUS.DEAL_WON))
+    }
 
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(lead => {
-        try {
-          const vehicleName = (getVehicleName(lead) || '').toLowerCase()
-          const productInterest = (getProductInterest(lead) || '').toLowerCase()
-          const name = (lead.name || '').toLowerCase()
-          const phone = (lead.phone || '').toString()
-          const email = (lead.email || '').toLowerCase()
-          const requirement = (lead.requirement || '').toLowerCase()
-          
-          return (
-            name.includes(query) ||
-            phone.includes(query) ||
-            email.includes(query) ||
-            requirement.includes(query) ||
-            vehicleName.includes(query) ||
-            productInterest.includes(query)
-          )
-        } catch (error) {
-          // Fallback if helper functions fail
-          const name = (lead.name || '').toLowerCase()
-          const phone = (lead.phone || '').toString()
-          const email = (lead.email || '').toLowerCase()
-          const requirement = (lead.requirement || '').toLowerCase()
-          
-          return (
-            name.includes(query) ||
-            phone.includes(query) ||
-            email.includes(query) ||
-            requirement.includes(query)
-          )
-        }
-      })
+      filtered = filtered.filter(lead =>
+        lead.name.toLowerCase().includes(query) ||
+        lead.phone.includes(query) ||
+        lead.email?.toLowerCase().includes(query) ||
+        lead.requirement?.toLowerCase().includes(query) ||
+        getVehicleName(lead).toLowerCase().includes(query) ||
+        getProductInterest(lead).toLowerCase().includes(query)
+      )
     }
     
     // Apply multiple filter conditions (only if they have values, except for is_empty/is_not_empty operators)
@@ -1448,12 +1448,25 @@ export default function LeadsPage() {
       filtered = filtered.filter(lead => lead.interest_level === 'hot')
     } else if (activeQuickFilter === 'conversions') {
       filtered = filtered.filter(lead =>
-        lead.status === LEAD_STATUS.CONVERTED || lead.status === LEAD_STATUS.DEAL_WON
+        lead.status === LEAD_STATUS.CONVERTED ||
+        lead.status === LEAD_STATUS.DEAL_WON ||
+        lead.status === LEAD_STATUS.PAYMENT_PENDING ||
+        lead.status === LEAD_STATUS.ADVANCE_RECEIVED ||
+        lead.status === LEAD_STATUS.FULLY_PAID
       )
     } else if (activeQuickFilter === 'discarded') {
       filtered = filtered.filter(lead =>
         lead.status === LEAD_STATUS.LOST || lead.status === LEAD_STATUS.DISCARDED
       )
+    }
+    // When not viewing "discarded", hide "lost" leads — they are only shown in the discarded filter
+    if (activeQuickFilter !== 'discarded') {
+      filtered = filtered.filter(lead => lead.status !== LEAD_STATUS.LOST)
+    }
+    // When not viewing "conversions", hide deal_won and other conversion statuses — they are only shown in the conversions filter
+    const CONVERSION_STATUSES_EXPORT = [LEAD_STATUS.DEAL_WON, LEAD_STATUS.CONVERTED, LEAD_STATUS.PAYMENT_PENDING, LEAD_STATUS.ADVANCE_RECEIVED, LEAD_STATUS.FULLY_PAID]
+    if (activeQuickFilter !== 'conversions') {
+      filtered = filtered.filter(lead => !CONVERSION_STATUSES_EXPORT.includes(lead.status as typeof LEAD_STATUS.DEAL_WON))
     }
 
     // Apply search filter
@@ -2702,7 +2715,7 @@ export default function LeadsPage() {
 
           {/* Summary Cards - click to filter list */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-            {/* Total Leads Card */}
+            {/* Active Leads Card */}
             <button
               type="button"
               onClick={() => setActiveQuickFilter(null)}
@@ -2711,8 +2724,8 @@ export default function LeadsPage() {
               }`}
             >
               <div>
-                <p className="text-base text-gray-500 mb-1">Total Leads</p>
-                <p className="text-4xl font-bold text-gray-900">{allLeads.length}</p>
+                <p className="text-base text-gray-500 mb-1">Active Leads</p>
+                <p className="text-4xl font-bold text-gray-900">{stats.activeLeads}</p>
               </div>
               <div className="relative w-16 h-16">
                 <svg className="w-16 h-16 transform -rotate-90">
@@ -2720,7 +2733,7 @@ export default function LeadsPage() {
                   <circle
                     cx="32" cy="32" r="28"
                     fill="none" stroke="#3b82f6" strokeWidth="6"
-                    strokeDasharray={`${(allLeads.length > 0 ? 100 : 0) * 175.9 / 100} 175.9`}
+                    strokeDasharray={`${(allLeads.length > 0 ? (stats.activeLeads / allLeads.length) * 100 : 0) * 175.9 / 100} 175.9`}
                     strokeLinecap="round"
                   />
                 </svg>

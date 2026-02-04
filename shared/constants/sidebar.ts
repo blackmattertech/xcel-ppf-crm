@@ -49,7 +49,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
   },
   {
     name: 'Sales Pipeline',
-    href: '/sales-pipeline',
+    href: '/orders',
     icon: '📈',
     iconPath: '/assets/sidebar/sales-pipeline.svg',
     resource: 'sales',
