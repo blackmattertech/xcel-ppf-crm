@@ -68,7 +68,7 @@ export default function LeadsInterestedByProductPie({
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number) => [value, countLabel]}
+              formatter={(value: number | undefined) => [value ?? 0, countLabel]}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',

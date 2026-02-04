@@ -77,9 +77,9 @@ export default function RepPerformanceBar({ data, hideTitle }: RepPerformanceBar
                 border: '1px solid rgb(226 232 240)',
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
               }}
-              formatter={(value: number, name: string) => [
-                value,
-                name === 'leads' ? 'Total leads' : name === 'converted' ? 'Converted' : 'Rate',
+              formatter={(value: number | undefined, name: string | undefined) => [
+                value ?? 0,
+                (name === 'leads' ? 'Total leads' : name === 'converted' ? 'Converted' : 'Rate'),
               ]}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName}
             />

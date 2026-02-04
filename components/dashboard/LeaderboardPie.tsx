@@ -75,7 +75,7 @@ export default function LeaderboardPie({ data, maxItems = 8, hideTitle }: Leader
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number) => [value, 'Converted']}
+              formatter={(value: number | undefined) => [value ?? 0, 'Converted']}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',

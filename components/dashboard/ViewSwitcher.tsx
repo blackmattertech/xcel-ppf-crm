@@ -5,7 +5,7 @@ import { LineChart, Table2, PieChart, BarChart3, LayoutGrid } from 'lucide-react
 
 export type ViewMode = 'line' | 'table' | 'chart' | 'bar' | 'pie' | 'heatmap'
 
-interface ViewOption {
+export interface ViewOption {
   id: ViewMode
   label: string
   icon: React.ReactNode
