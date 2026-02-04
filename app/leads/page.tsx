@@ -5,12 +5,14 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
-import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2 } from 'lucide-react'
+import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2, Check, MessageCircle, FileText } from 'lucide-react'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
 import { useAuthContext } from '@/components/AuthProvider'
+import MobileHeader from '@/components/MobileHeader'
+import MobileBottomNav from '@/components/MobileBottomNav'
 
 // New lead modal is quite heavy; load it only when the user actually opens it
 // so the main Leads list and filters become interactive faster.
@@ -209,176 +211,212 @@ function GridView({
     return getTimeAgo(lastContact)
   }
 
+  // Get checklist items from meta_data
+  function getChecklistItems(lead: Lead) {
+    const priceShared = lead.meta_data?.price_shared || lead.meta_data?.PriceShared || false
+    const budgetConfirmed = lead.meta_data?.budget_confirmed || lead.meta_data?.BudgetConfirmed || false
+    return { priceShared, budgetConfirmed }
+  }
+
+  // Get platform icon (Instagram, Facebook, etc.)
+  function getPlatformIcon(lead: Lead) {
+    const platform = lead.meta_data?.platform || lead.meta_data?.Platform
+    if (!platform) return null
+    
+    const platformLower = String(platform).toLowerCase()
+    if (platformLower.includes('instagram') || platformLower === 'ig') {
+      return <span className="text-sm">📷</span>
+    } else if (platformLower.includes('facebook') || platformLower === 'fb') {
+      return <span className="text-sm">📘</span>
+    } else if (platformLower.includes('whatsapp') || platformLower === 'wa') {
+      return <span className="text-sm">💬</span>
+    }
+    return null
+  }
+
+  // Get notes count (placeholder - you may need to fetch this from API)
+  function getNotesCount(lead: Lead): number {
+    return lead.meta_data?.notes_count || 0
+  }
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" style={{ fontFamily: 'General Sans, Poppins, sans-serif' }}>
       {leads.map((lead) => {
         const vehicleName = getVehicleName(lead)
         const isHot = lead.interest_level === 'hot'
-        const budget = getBudget(lead)
-        const company = getCompany(lead)
-        const location = getLocation(lead)
         const lastContact = formatLastContact(lead)
+        const checklist = getChecklistItems(lead)
+        const platformIcon = getPlatformIcon(lead)
+        const platform = lead.meta_data?.platform || lead.meta_data?.Platform
+        const notesCount = getNotesCount(lead)
         
         return (
           <div
             key={lead.id}
-            onClick={() => router.push(`/leads/${lead.id}`)}
-            className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border border-[#eaecee] overflow-hidden"
+            className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all border border-[#eaecee] overflow-hidden"
           >
             {/* CARD HEADER */}
-            <div className="px-4 py-3 bg-gradient-to-r from-[#fafafa] to-white border-b border-[#eaecee]">
+            <div className="px-4 py-3 border-b border-[#eaecee]">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1 min-w-0 pr-2">
                   <h3 
-                    className="text-sm font-bold text-[#242d35] truncate hover:text-[#de0510] transition-colors cursor-pointer"
-                    style={{ fontSize: '14px' }}
+                    className="text-sm font-semibold text-[#242d35] truncate"
+                    style={{ fontSize: '14px', fontWeight: 600 }}
                   >
                     {lead.name}
                   </h3>
                   {vehicleName && (
                     <p 
-                      className="text-[11px] font-medium text-[#717d8a] truncate mt-0.5"
-                      style={{ fontSize: '11px' }}
+                      className="text-xs text-[#717d8a] truncate mt-0.5"
+                      style={{ fontSize: '12px' }}
                     >
                       {vehicleName}
                     </p>
                   )}
                 </div>
-                {/* Status Icon */}
-                <div className={`p-1.5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  isHot ? 'bg-[#FF513A] animate-pulse' : 'bg-[#64B5F6]'
-                }`}>
-                  {isHot ? (
-                    <TrendingUp className="w-3.5 h-3.5 text-white" />
-                  ) : (
-                    <Snowflake className="w-3.5 h-3.5 text-white" />
-                  )}
-                </div>
+                {/* Red wavy line icon for hot leads */}
+                {isHot && (
+                  <div className="flex-shrink-0">
+                    <TrendingUp className="w-4 h-4 text-[#ed1b24]" />
+                  </div>
+                )}
               </div>
               
               {/* Stage & Priority Badges */}
               <div className="flex items-center gap-1.5 mt-2">
-                <span className={`px-2 py-0.5 rounded-full text-[10px] ${getStageBadgeClass(lead.status)}`}>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${getStageBadgeClass(lead.status)}`}>
                   {formatStageName(lead.status)}
                 </span>
-                {getPriorityBadge(lead)}
+                {isHot && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#FFF4E6] text-[#FF9500]">
+                    Hot
+                  </span>
+                )}
               </div>
             </div>
 
-            {/* CARD BODY - 2 Column Grid */}
-            <div className="px-4 py-3 grid grid-cols-2 gap-x-3 gap-y-2">
-              {/* Value (top-left) */}
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-[#E8F5E9] flex items-center justify-center flex-shrink-0">
-                  <DollarSign className="w-3 h-3 text-[#4CAF50]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">VALUE</p>
-                  <p className="text-[11px] font-bold text-[#242d35] truncate">{budget}</p>
-                </div>
-              </div>
-
-              {/* Last Contact (top-right) */}
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-[#E3F2FD] flex items-center justify-center flex-shrink-0">
-                  <Calendar className="w-3 h-3 text-[#2196F3]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">CONTACT</p>
-                  <p className="text-[11px] font-medium text-[#242d35] truncate">{lastContact}</p>
-                </div>
-              </div>
-
-              {/* Phone (middle-left) */}
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-[#FFF4E6] flex items-center justify-center flex-shrink-0">
-                  <Phone className="w-3 h-3 text-[#FF9500]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">PHONE</p>
-                  <p className="text-[11px] font-medium text-[#242d35] truncate break-all">{lead.phone || '-'}</p>
-                </div>
-              </div>
-
-              {/* Company (middle-right) */}
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-[#F3E5F5] flex items-center justify-center flex-shrink-0">
-                  <Building2 className="w-3 h-3 text-[#9C27B0]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">COMPANY</p>
-                  <p className="text-[11px] font-medium text-[#242d35] truncate">{company || '-'}</p>
-                </div>
-              </div>
-
-              {/* Location (spans 2 columns) */}
-              {location && (
-                <div className="flex items-center gap-2 col-span-2">
-                  <div className="w-6 h-6 rounded-full bg-[#E0E0E0] flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-3 h-3 text-[#616161]" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] text-[#717d8a] uppercase tracking-wide">LOCATION</p>
-                    <p className="text-[11px] font-medium text-[#242d35] truncate">{location}</p>
-                  </div>
+            {/* CARD BODY - Contact Information */}
+            <div className="px-4 py-3 space-y-2">
+              {/* Platform/Instagram */}
+              {platform && (
+                <div className="flex items-center gap-2 text-xs text-[#717d8a]">
+                  {platformIcon}
+                  <span className="uppercase">{String(platform).toUpperCase()}</span>
                 </div>
               )}
+
+              {/* Last Contacted */}
+              <div className="flex items-center gap-2 text-xs text-[#717d8a]">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Last contacted {lastContact === 'Never' ? 'never' : lastContact}</span>
+              </div>
+
+              {/* Phone */}
+              {lead.phone && (
+                <div className="flex items-center gap-2 text-xs text-[#717d8a]">
+                  <Phone className="w-3.5 h-3.5" />
+                  <span className="break-all">{lead.phone}</span>
+                </div>
+              )}
+
+              {/* Checklist Items */}
+              <div className="pt-2 space-y-1.5 border-t border-[#eaecee]">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-medium text-[#242d35]">Price Shared?</span>
+                  {checklist.priceShared ? (
+                    <div className="flex items-center gap-1 text-[#4CAF50]">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Yes</span>
+                </div>
+                  ) : (
+                    <div className="flex items-center gap-1 text-[#F44336]">
+                      <X className="w-3.5 h-3.5" />
+                      <span>No</span>
+                </div>
+                  )}
+              </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-medium text-[#242d35]">Budget Confirmed?</span>
+                  {checklist.budgetConfirmed ? (
+                    <div className="flex items-center gap-1 text-[#4CAF50]">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Yes</span>
+                  </div>
+                  ) : (
+                    <div className="flex items-center gap-1 text-[#F44336]">
+                      <X className="w-3.5 h-3.5" />
+                      <span>No</span>
+                </div>
+              )}
+                </div>
             </div>
 
-            {/* CARD FOOTER */}
-            <div className="px-4 py-3 bg-[#fafafa] border-t border-[#eaecee]">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {lead.assigned_user ? (
-                    <>
-                      <div className="flex-shrink-0">
+              {/* Assigned Executive */}
+              {lead.assigned_user && (
+                <div className="flex items-center gap-2 pt-2">
                         {lead.assigned_user.profile_image_url ? (
                           <Image
                             src={lead.assigned_user.profile_image_url}
                             alt={lead.assigned_user.name}
-                            width={32}
-                            height={32}
-                            className="w-8 h-8 rounded-full object-cover"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement
-                              target.style.display = 'none'
-                              const parent = target.parentElement
-                              if (parent && !parent.querySelector('.avatar-fallback') && lead.assigned_user) {
-                                const fallback = document.createElement('div')
-                                fallback.className = 'avatar-fallback w-8 h-8 rounded-full bg-[#de0510] flex items-center justify-center text-white text-xs font-medium'
-                                fallback.textContent = lead.assigned_user.name.charAt(0).toUpperCase()
-                                parent.appendChild(fallback)
-                              }
-                            }}
+                      width={24}
+                      height={24}
+                      className="w-6 h-6 rounded-full object-cover"
                           />
                         ) : (
-                          <div className="w-8 h-8 rounded-full bg-[#de0510] flex items-center justify-center text-white text-xs font-medium">
+                    <div className="w-6 h-6 rounded-full bg-[#de0510] flex items-center justify-center text-white text-[10px] font-medium">
                             {lead.assigned_user.name.charAt(0).toUpperCase()}
                           </div>
                         )}
+                  <div>
+                    <p className="text-xs font-medium text-[#242d35]">{lead.assigned_user.name}</p>
+                    <p className="text-[10px] text-[#717d8a]">Sales Executive</p>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-medium text-[#242d35] truncate">{lead.assigned_user.name}</p>
-                        <p className="text-[9px] text-[#717d8a]">Sales Executive</p>
                       </div>
-                    </>
-                  ) : (
-                    <p className="text-[11px] text-[#717d8a]">Unassigned</p>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <div className="w-8 h-8 flex items-center justify-center">
-                    <SourceIcon 
-                      platform={lead.meta_data?.platform || lead.meta_data?.Platform} 
-                      source={lead.source} 
-                    />
-                  </div>
-                  {(lead.meta_data?.platform || lead.meta_data?.Platform) && (
-                    <span className="text-[10px] text-[#717d8a] font-medium capitalize">
-                      {String(lead.meta_data?.platform || lead.meta_data?.Platform).toUpperCase()}
-                    </span>
-                  )}
-                </div>
+
+            {/* CARD FOOTER - Action Buttons */}
+            <div className="px-4 py-3 bg-[#fafafa] border-t border-[#eaecee]">
+              <div className="grid grid-cols-4 gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    window.location.href = `tel:${lead.phone}`
+                  }}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#2196F3] text-white rounded-md text-[10px] font-medium hover:bg-[#1976D2] transition-colors"
+                >
+                  <Phone className="w-3 h-3" />
+                  <span>Call</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const whatsappUrl = `https://wa.me/${lead.phone.replace(/\D/g, '')}`
+                    window.open(whatsappUrl, '_blank')
+                  }}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#25D366] text-white rounded-md text-[10px] font-medium hover:bg-[#20BA5A] transition-colors"
+                >
+                  <MessageCircle className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    router.push(`/leads/${lead.id}`)
+                  }}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#ed1b24] text-white rounded-md text-[10px] font-medium hover:bg-[#c0040e] transition-colors"
+                >
+                  <span>View Details</span>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    router.push(`/leads/${lead.id}`)
+                  }}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-[#eaecee] text-[#717d8a] rounded-md text-[10px] font-medium hover:bg-[#f5f5f5] transition-colors"
+                >
+                  <FileText className="w-3 h-3" />
+                  <span>{notesCount} Notes</span>
+                </button>
               </div>
             </div>
           </div>
@@ -624,24 +662,41 @@ function KanbanBoard({
   // Get priority badge (High/Medium based on interest_level)
   function getPriorityBadge(lead: Lead) {
     const isHot = lead.interest_level === 'hot'
-    return (
-      <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
-        isHot ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-      }`}>
-        {isHot ? 'High' : 'Medium'}
-      </span>
-    )
+    const isWarm = lead.interest_level === 'warm'
+    
+    if (isHot) {
+      return <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-[#E6FBD9] text-[#2BA52E]">High</span>
+    } else if (isWarm) {
+      return <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-[#FFF4E6] text-[#FF9500]">Medium</span>
+    } else {
+      return <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-[#E0E0E0] text-[#757575]">Low</span>
+    }
   }
 
   // Get budget/amount from meta_data
   function getBudget(lead: Lead): string {
-    if (lead.meta_data?.budget_range) {
-      return String(lead.meta_data.budget_range)
-    }
     if (lead.meta_data?.payment_amount) {
       return `$${Number(lead.meta_data.payment_amount).toLocaleString()}`
     }
+    if (lead.meta_data?.budget_range) {
+      return String(lead.meta_data.budget_range)
+    }
     return ''
+  }
+
+  // Get column header color based on stage
+  function getColumnHeaderColor(groupKey: string): string {
+    const keyLower = groupKey.toLowerCase()
+    if (keyLower === 'new') {
+      return 'bg-[#E3F2FD] text-[#2196F3]'
+    } else if (keyLower.includes('review')) {
+      return 'bg-[#FFF4E6] text-[#FF9500]'
+    } else if (keyLower.includes('negotiation')) {
+      return 'bg-[#FFE8D7] text-[#FF513A]'
+    } else if (keyLower.includes('qualified')) {
+      return 'bg-[#E6FBD9] text-[#2BA52E]'
+    }
+    return 'bg-gray-100 text-gray-700'
   }
 
   const groupedLeads = groupLeads()
@@ -657,24 +712,29 @@ function KanbanBoard({
         {groupKeys.map((groupKey) => {
           const groupLeadsList = groupedLeads[groupKey]
           const isDraggedOver = draggedOverColumn === groupKey
+          const headerColor = getColumnHeaderColor(groupKey)
           
           return (
             <div
               key={groupKey}
-              className={`flex-shrink-0 w-80 bg-gray-50 rounded-lg p-4 ${
+              className={`flex-shrink-0 w-[280px] bg-gray-50 rounded-lg ${
                 isDraggedOver ? 'bg-blue-50 border-2 border-blue-300' : ''
               }`}
               onDragOver={(e) => handleDragOver(e, groupKey)}
               onDrop={(e) => handleDrop(e, groupKey)}
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-semibold text-gray-900">{groupKey}</h3>
-                <span className="text-sm text-gray-500 bg-white px-2 py-1 rounded-full">
+              {/* Column Header */}
+              <div className={`px-4 py-3 rounded-t-lg ${headerColor}`}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">{groupKey}</h3>
+                  <span className="text-xs font-medium bg-white/50 px-2 py-0.5 rounded-full">
                   {groupLeadsList?.length || 0}
                 </span>
+                </div>
               </div>
               
-              <div className="space-y-3 min-h-[100px]">
+              {/* Cards Container */}
+              <div className="p-3 space-y-3 min-h-[100px]">
                 {!groupLeadsList || groupLeadsList.length === 0 ? (
                   <div className="text-center py-8 text-gray-400 text-sm">
                     No leads in this group
@@ -686,6 +746,7 @@ function KanbanBoard({
                   const vehicleName = getVehicleName(lead)
                   const isHot = lead.interest_level === 'hot'
                   const budget = getBudget(lead)
+                  const lastContact = getTimeAgo(lead.first_contact_at || lead.updated_at)
                   
                   return (
                     <div
@@ -694,75 +755,61 @@ function KanbanBoard({
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
                       onClick={() => router.push(`/leads/${lead.id}`)}
-                      className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-200"
+                      className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-[#eaecee]"
                     >
-                      <div className="mb-3 relative">
-                        <div className="flex-1 min-w-0 pr-12">
-                          <h4 className="text-base font-bold text-gray-900 truncate">{lead.name}</h4>
+                      {/* Name and Product */}
+                      <div className="mb-2">
+                        <h4 className="text-sm font-semibold text-[#242d35] truncate mb-0.5">{lead.name}</h4>
                           {vehicleName && (
-                            <p className="text-sm text-gray-600 truncate">{vehicleName}</p>
-                          )}
-                        </div>
-                        {/* Source logo in top right corner */}
-                        <div className="absolute top-0 right-0 flex items-center gap-1">
-                          <SourceIcon 
-                            platform={lead.meta_data?.platform || lead.meta_data?.Platform} 
-                            source={lead.source} 
-                          />
-                          {(lead.meta_data?.platform || lead.meta_data?.Platform) && (
-                            <span className="text-xs text-gray-900 font-medium capitalize">
-                              {String(lead.meta_data?.platform || lead.meta_data?.Platform).toUpperCase()}
-                            </span>
-                          )}
-                        </div>
+                          <p className="text-xs text-[#717d8a] truncate">{vehicleName}</p>
+                        )}
                       </div>
                       
-                      {budget && (
+                      {/* Price */}
+                      {budget && budget !== '' && (
                         <div className="mb-2">
-                          <span className="text-base font-semibold text-gray-900">{budget}</span>
+                          <span className="text-sm font-semibold text-[#242d35]">{budget}</span>
                         </div>
                       )}
                       
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-gray-500">
-                          Last contact: {getTimeAgo(lead.first_contact_at || lead.updated_at)}
-                        </span>
+                      {/* Last Contact */}
+                      <div className="mb-2 flex items-center gap-1.5 text-xs text-[#717d8a]">
+                        <Calendar className="w-3 h-3" />
+                        <span>Last contact: {lastContact}</span>
                       </div>
                       
-                      {/* Contact Information */}
-                      <div className="space-y-1 mb-2">
-                        {lead.phone && (
-                          <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                            <Phone size={12} className="text-gray-500" />
-                            <span className="break-all">{lead.phone}</span>
-                          </div>
-                        )}
-                        {lead.email && (
-                          <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                            <Mail size={12} className="text-gray-500" />
-                            <span className="break-all">{lead.email}</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
+                      {/* Assigned Agent and Priority */}
+                      <div className="flex items-center justify-between pt-2 border-t border-[#eaecee]">
                         <div className="flex items-center gap-2">
-                          {lead.assigned_user && (
-                            <div className="flex items-center gap-2">
-                              <UserAvatar 
-                                profileImageUrl={lead.assigned_user.profile_image_url}
-                                name={lead.assigned_user.name}
-                              />
-                              <span className="text-xs font-medium text-gray-900">{lead.assigned_user.name}</span>
+                          {lead.assigned_user ? (
+                            <>
+                              {lead.assigned_user.profile_image_url ? (
+                                <Image
+                                  src={lead.assigned_user.profile_image_url}
+                                  alt={lead.assigned_user.name}
+                                  width={20}
+                                  height={20}
+                                  className="w-5 h-5 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-[#de0510] flex items-center justify-center text-white text-[10px] font-medium">
+                                  {lead.assigned_user.name.charAt(0).toUpperCase()}
                             </div>
+                              )}
+                              <span className="text-xs text-[#242d35] font-medium truncate max-w-[100px]">
+                                {lead.assigned_user.name}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-xs text-[#717d8a]">Unassigned</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           {getPriorityBadge(lead)}
                           {isHot ? (
-                            <TrendingUp size={14} className="text-[#ed1b24]" />
+                            <TrendingUp className="w-3.5 h-3.5 text-[#ed1b24]" />
                           ) : (
-                            <span className="text-sm">❄️</span>
+                            <Snowflake className="w-3.5 h-3.5 text-[#64B5F6]" />
                           )}
                         </div>
                       </div>
@@ -788,7 +835,6 @@ export default function LeadsPage() {
   const [allLeads, setAllLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [userRoleState, setUserRoleState] = useState<string | null>(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [teleCallers, setTeleCallers] = useState<TeleCaller[]>([])
   const [stats, setStats] = useState<LeadStats>({ untouched: 0, hotLeads: 0, conversions: 0, discarded: 0 })
   type QuickFilter = null | 'untouched' | 'contacted' | 'qualified' | 'hot' | 'conversions' | 'discarded'
@@ -812,6 +858,19 @@ export default function LeadsPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false)
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false)
+  
+  // Mobile modals state
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
+  const [mobileSortOpen, setMobileSortOpen] = useState(false)
+  const [showFollowupsModal, setShowFollowupsModal] = useState(false)
+  const [selectedLeadForFollowups, setSelectedLeadForFollowups] = useState<Lead | null>(null)
+  const [leadFollowups, setLeadFollowups] = useState<any[]>([])
+  const [loadingFollowups, setLoadingFollowups] = useState(false)
+  const [leadFollowupsCounts, setLeadFollowupsCounts] = useState<Record<string, number>>({})
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [selectedLeadForEmail, setSelectedLeadForEmail] = useState<Lead | null>(null)
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
   
   // Reassign state
   const [reassigningLeadId, setReassigningLeadId] = useState<string | null>(null)
@@ -837,16 +896,16 @@ export default function LeadsPage() {
   }
 
   const defaultColumns: ColumnConfig[] = [
-    { key: 'date', label: 'Date', visible: true, width: 120 },
-    { key: 'name', label: 'Name', visible: true, width: 160 },
-    { key: 'car_model', label: 'Car model', visible: true, width: 140 },
-    { key: 'interest', label: 'Interested product', visible: true, width: 160 },
-    { key: 'status', label: 'Lead stage', visible: true, width: 150 },
+    { key: 'date', label: 'Date', visible: true, width: 110 },
+    { key: 'name', label: 'Name', visible: true, width: 180 },
+    { key: 'car_model', label: 'Car model', visible: true, width: 130 },
+    { key: 'interest', label: 'Interested product', visible: true, width: 170 },
+    { key: 'status', label: 'Lead stage', visible: true, width: 130 },
     { key: 'interest_level', label: 'Lead type', visible: true, width: 120 },
-    { key: 'source', label: 'Source', visible: true, width: 130 },
+    { key: 'source', label: 'Source', visible: true, width: 120 },
     { key: 'assigned_to', label: 'Assigned to', visible: true, width: 180 },
     { key: 'last_contacted', label: 'Last contacted', visible: true, width: 140 },
-    { key: 'phone', label: 'Mobile number', visible: true, width: 140 },
+    { key: 'phone', label: 'Mobile number', visible: true, width: 160 },
   ]
 
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
@@ -854,7 +913,26 @@ export default function LeadsPage() {
       const saved = localStorage.getItem('leads-table-columns')
       if (saved) {
         try {
-          return JSON.parse(saved)
+          const savedColumns = JSON.parse(saved)
+          // Filter to only include columns that are in defaultColumns
+          const validColumnKeys = new Set(defaultColumns.map(col => col.key))
+          const filteredColumns = savedColumns.filter((col: ColumnConfig) => validColumnKeys.has(col.key))
+          
+          // Merge with defaultColumns to ensure all default columns are present with correct properties
+          const mergedColumns = defaultColumns.map(defaultCol => {
+            const savedCol = filteredColumns.find((col: ColumnConfig) => col.key === defaultCol.key)
+            if (savedCol) {
+              // Use saved column but ensure it has all required properties
+              return {
+                ...defaultCol,
+                visible: savedCol.visible !== undefined ? savedCol.visible : defaultCol.visible,
+                width: savedCol.width || defaultCol.width
+              }
+            }
+            return defaultCol
+          })
+          
+          return mergedColumns
         } catch (e) {
           return defaultColumns
         }
@@ -898,6 +976,41 @@ export default function LeadsPage() {
     }
   })
 
+  // Function to fetch followups for a specific lead
+  async function fetchLeadFollowups(leadId: string) {
+    setLoadingFollowups(true)
+    try {
+      const response = await fetch(`/api/followups?leadId=${leadId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setLeadFollowups(data.followUps || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch followups:', error)
+    } finally {
+      setLoadingFollowups(false)
+    }
+  }
+
+  // Function to handle email send
+  async function handleSendEmail() {
+    if (!selectedLeadForEmail || !selectedLeadForEmail.email) {
+      alert('No email address available for this lead')
+      return
+    }
+
+    // Create mailto link with subject and body
+    const subject = encodeURIComponent(emailSubject || '')
+    const body = encodeURIComponent(emailBody || '')
+    const mailtoLink = `mailto:${selectedLeadForEmail.email}?subject=${subject}&body=${body}`
+    
+    window.location.href = mailtoLink
+    setShowEmailModal(false)
+    setEmailSubject('')
+    setEmailBody('')
+    setSelectedLeadForEmail(null)
+  }
+
   // Redirect when not authenticated; rely on AuthProvider so account switch updates without refresh.
   useEffect(() => {
     if (authLoading) return
@@ -916,6 +1029,72 @@ export default function LeadsPage() {
     if (authLoading || !userId) return
     fetchLeads()
   }, [authLoading, userId])
+
+  // Handle scroll to hide stats cards and stick toolbar
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    const handleScroll = () => {
+      const scrollY = window.scrollY
+      const statsCards = document.getElementById('stats-cards')
+      const searchToolbar = document.getElementById('search-toolbar')
+      
+      if (statsCards && searchToolbar) {
+        if (scrollY > 100) {
+          statsCards.style.transform = 'translateY(-100%)'
+          statsCards.style.opacity = '0'
+          statsCards.style.position = 'absolute'
+          statsCards.style.pointerEvents = 'none'
+        } else {
+          statsCards.style.transform = 'translateY(0)'
+          statsCards.style.opacity = '1'
+          statsCards.style.position = 'relative'
+          statsCards.style.pointerEvents = 'auto'
+        }
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Fetch followups counts for visible leads only (optimized)
+  useEffect(() => {
+    if (leads.length === 0) return
+    
+    async function fetchVisibleFollowupsCounts() {
+      try {
+        const counts: Record<string, number> = {}
+        const leadIds = leads.map(lead => lead.id)
+        
+        // Fetch followups for visible leads only
+        const promises = leadIds.map(async (leadId) => {
+          try {
+            const response = await fetch(`/api/followups?leadId=${leadId}`)
+            if (response.ok) {
+              const data = await response.json()
+              return { leadId, count: data.followUps?.length || 0 }
+            }
+            return { leadId, count: 0 }
+          } catch (error) {
+            return { leadId, count: 0 }
+          }
+        })
+        
+        const results = await Promise.all(promises)
+        const newCounts: Record<string, number> = {}
+        results.forEach(({ leadId, count }) => {
+          newCounts[leadId] = count
+        })
+        
+        setLeadFollowupsCounts(prev => ({ ...prev, ...newCounts }))
+      } catch (error) {
+        console.error('Failed to fetch followups counts:', error)
+      }
+    }
+    
+    fetchVisibleFollowupsCounts()
+  }, [leads])
 
   // Save container styles to localStorage whenever they change
   useEffect(() => {
@@ -944,11 +1123,41 @@ export default function LeadsPage() {
     setCurrentPage(1)
   }, [filterConditions, sortColumn, sortDirection, activeQuickFilter])
 
+  // Clean up columns on mount to ensure only valid columns are shown
+  useEffect(() => {
+    const validColumnKeys = new Set(defaultColumns.map(col => col.key))
+    const hasInvalidColumns = columns.some(col => !validColumnKeys.has(col.key))
+    const hasMissingColumns = defaultColumns.some(defaultCol => !columns.find(col => col.key === defaultCol.key))
+    
+    if (hasInvalidColumns || hasMissingColumns) {
+      // Filter to only include valid columns and merge with defaults
+      const validColumns = defaultColumns.map(defaultCol => {
+        const existingCol = columns.find(col => col.key === defaultCol.key)
+        if (existingCol) {
+          return {
+            ...defaultCol,
+            visible: existingCol.visible !== undefined ? existingCol.visible : defaultCol.visible,
+            width: existingCol.width || defaultCol.width
+          }
+        }
+        return defaultCol
+      })
+      setColumns(validColumns)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run on mount
+
   // Save column preferences to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('leads-table-columns', JSON.stringify(columns))
+      // Only save valid columns
+      const validColumnKeys = new Set(defaultColumns.map(col => col.key))
+      const validColumns = columns.filter(col => validColumnKeys.has(col.key))
+      if (validColumns.length === defaultColumns.length) {
+        localStorage.setItem('leads-table-columns', JSON.stringify(validColumns))
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns])
 
   // LEAD JOURNEY: Calculate stats from leads with new buckets
@@ -1037,14 +1246,38 @@ export default function LeadsPage() {
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(lead => 
-        lead.name.toLowerCase().includes(query) ||
-        lead.phone.includes(query) ||
-        lead.email?.toLowerCase().includes(query) ||
-        lead.requirement?.toLowerCase().includes(query) ||
-        getVehicleName(lead).toLowerCase().includes(query) ||
-        getProductInterest(lead).toLowerCase().includes(query)
-      )
+      filtered = filtered.filter(lead => {
+        try {
+          const vehicleName = (getVehicleName(lead) || '').toLowerCase()
+          const productInterest = (getProductInterest(lead) || '').toLowerCase()
+          const name = (lead.name || '').toLowerCase()
+          const phone = (lead.phone || '').toString()
+          const email = (lead.email || '').toLowerCase()
+          const requirement = (lead.requirement || '').toLowerCase()
+          
+          return (
+            name.includes(query) ||
+            phone.includes(query) ||
+            email.includes(query) ||
+            requirement.includes(query) ||
+            vehicleName.includes(query) ||
+            productInterest.includes(query)
+          )
+        } catch (error) {
+          // Fallback if helper functions fail
+          const name = (lead.name || '').toLowerCase()
+          const phone = (lead.phone || '').toString()
+          const email = (lead.email || '').toLowerCase()
+          const requirement = (lead.requirement || '').toLowerCase()
+          
+          return (
+            name.includes(query) ||
+            phone.includes(query) ||
+            email.includes(query) ||
+            requirement.includes(query)
+          )
+        }
+      })
     }
     
     // Apply multiple filter conditions (only if they have values, except for is_empty/is_not_empty operators)
@@ -1745,13 +1978,48 @@ export default function LeadsPage() {
   }
 
   const isAdmin = (userRole || userRoleState) === 'admin' || (userRole || userRoleState) === 'super_admin'
+  
+  // Helper function for search (safe version)
+  const searchLeads = (leads: Lead[], query: string): Lead[] => {
+    if (!query.trim()) return leads
+    const q = query.toLowerCase()
+    return leads.filter(lead => {
+      try {
+        const vehicleName = (getVehicleName(lead) || '').toLowerCase()
+        const productInterest = (getProductInterest(lead) || '').toLowerCase()
+        const name = (lead.name || '').toLowerCase()
+        const phone = (lead.phone || '').toString()
+        const email = (lead.email || '').toLowerCase()
+        const requirement = (lead.requirement || '').toLowerCase()
+        
+        return (
+          name.includes(q) ||
+          phone.includes(q) ||
+          email.includes(q) ||
+          requirement.includes(q) ||
+          vehicleName.includes(q) ||
+          productInterest.includes(q)
+        )
+      } catch (error) {
+        // Fallback if helper functions fail
+        const name = (lead.name || '').toLowerCase()
+        const phone = (lead.phone || '').toString()
+        const email = (lead.email || '').toLowerCase()
+        const requirement = (lead.requirement || '').toLowerCase()
+        
+        return (
+          name.includes(q) ||
+          phone.includes(q) ||
+          email.includes(q) ||
+          requirement.includes(q)
+        )
+      }
+    })
+  }
+  
   const totalPages = Math.ceil(
     (searchQuery.trim() 
-      ? allLeads.filter(lead => 
-          lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lead.phone.includes(searchQuery) ||
-          lead.email?.toLowerCase().includes(searchQuery.toLowerCase())
-        ).length
+      ? searchLeads(allLeads, searchQuery).length
       : allLeads.length) / itemsPerPage
   )
 
@@ -1801,114 +2069,14 @@ export default function LeadsPage() {
     <>
       {/* Mobile View - shown only on small screens, without Layout sidebar */}
       <div className="md:hidden bg-[#f5f5f5] min-h-screen pb-20 relative">
-        {/* Mobile Header */}
-        <div className="bg-black border-b border-[#272727] h-[65px] flex items-center justify-between px-5 fixed top-0 left-0 right-0 z-40">
-          <button 
-            onClick={() => setMobileMenuOpen(true)}
-            className="p-2"
-          >
-            <svg width="19" height="19" viewBox="0 0 19 19" fill="none">
-              <path d="M2.375 4.75H16.625M2.375 9.5H16.625M2.375 14.25H16.625" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
-          <h1 className="text-white text-base font-medium tracking-[0.3px]">My Leads</h1>
-          <div className="flex items-center gap-2">
-            {isAdmin && (
-              <button 
-                onClick={() => setNewLeadModalOpen(true)}
-                className="w-8 h-8 rounded-full bg-[#ed1b24] flex items-center justify-center"
-              >
-                <Plus size={16} className="text-white" />
-              </button>
-            )}
-            <button className="p-2">
-              <Bell size={18} className="text-white" />
-            </button>
-            {profile?.profileImageUrl ? (
-              <Image
-                src={profile.profileImageUrl}
-                alt={profile.name || 'User'}
-                width={33}
-                height={33}
-                className="w-[33px] h-[33px] rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-[33px] h-[33px] rounded-full bg-gray-600 flex items-center justify-center text-white text-xs font-medium">
-                {profile?.name?.charAt(0).toUpperCase() || 'U'}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Hamburger Menu Drawer */}
-        {mobileMenuOpen && (
-          <>
-            {/* Backdrop */}
-            <div 
-              className="fixed inset-0 bg-black/50 z-50"
-              onClick={() => setMobileMenuOpen(false)}
-            />
-            {/* Drawer */}
-            <div className="fixed top-0 left-0 h-full w-80 bg-black z-50 overflow-y-auto">
-              <div className="p-4 border-b border-[#272727] flex items-center justify-between">
-                <h2 className="text-white text-lg font-semibold">Menu</h2>
-                <button 
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="p-2 text-white"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-              <nav className="p-2">
-                {filteredMenuItems.map((item) => {
-                  const isActive = pathname === item.href
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-lg mb-1 transition-colors ${
-                        isActive 
-                          ? 'bg-[#ed1b24] text-white' 
-                          : 'text-gray-300 hover:bg-gray-800'
-                      }`}
-                    >
-                      {item.iconPath ? (
-                        <Image
-                          src={item.iconPath}
-                          alt={item.name}
-                          width={24}
-                          height={24}
-                          className="w-6 h-6"
-                        />
-                      ) : (
-                        <span className="text-xl">{item.icon}</span>
-                      )}
-                      <span className="text-base font-medium">{item.name}</span>
-                    </Link>
-                  )
-                })}
-              </nav>
-              {/* Logout Button */}
-              <div className="p-4 border-t border-[#272727] mt-auto">
-                <button
-                  onClick={async () => {
-                    const supabase = createClient()
-                    await supabase.auth.signOut()
-                    router.push('/login')
-                  }}
-                  className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 w-full transition-colors"
-                >
-                  <LogOut size={24} />
-                  <span className="text-base font-medium">Logout</span>
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+        <MobileHeader 
+          title="My Leads"
+          showAddButton={isAdmin}
+          onAddClick={() => setNewLeadModalOpen(true)}
+        />
 
         {/* Stats Cards - 2x2 Grid, tap to filter */}
-        <div className="grid grid-cols-2 gap-3 p-4 pt-[81px]">
+        <div className="grid grid-cols-2 gap-3 p-4 pt-[81px] transition-transform duration-300" id="stats-cards">
           {/* Untouched Card */}
           <button
             type="button"
@@ -2012,43 +2180,13 @@ export default function LeadsPage() {
               </div>
             </div>
           </button>
-
-          {/* Discarded leads */}
-          <button
-            type="button"
-            onClick={() => setActiveQuickFilter(prev => prev === 'discarded' ? null : 'discarded')}
-            className={`rounded-xl p-4 relative h-[125px] text-left w-full border transition-all ${
-              activeQuickFilter === 'discarded' ? 'bg-gray-100 border-gray-400 ring-2 ring-gray-400' : 'bg-white border-[#eaecee]'
-            }`}
-          >
-            <p className="text-2xl font-semibold text-[#242d35] mb-1">{discardedLeads}</p>
-            <p className="text-sm font-semibold text-[#373f47] mb-2">Discarded leads</p>
-            <p className="text-[6px] text-[#717d8a] leading-tight mb-2">Lost or discarded</p>
-            <div className="absolute bottom-2 right-2 flex items-center justify-center">
-              <div className="relative w-[58px] h-[58px]">
-                <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
-                  <circle cx="29" cy="29" r="26" fill="none" stroke="#f3f4f6" strokeWidth="4" />
-                  <circle
-                    cx="29"
-                    cy="29"
-                    r="26"
-                    fill="none"
-                    stroke="#6b7280"
-                    strokeWidth="4"
-                    strokeDasharray={`${Math.min(100, (discardedLeads / Math.max(allLeads.length, 1)) * 100) * 163.36 / 100} 163.36`}
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <Trash2 size={14} className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-gray-500" />
-              </div>
-            </div>
-          </button>
         </div>
 
-        {/* Search Bar and Filter */}
-        <div className="px-4 mb-3">
-          <div className="bg-black border border-[#eaecee] rounded-xl h-[42px] flex items-center px-3 gap-2">
-            <div className="bg-white border border-[#313131] rounded-full h-[30px] flex-1 flex items-center px-5 gap-2">
+        {/* Search Bar and Filter - Sticky when scrolled */}
+        <div className="sticky top-[65px] z-30 px-4 mb-3 bg-[#f5f5f5] pt-2 transition-all duration-300" id="search-toolbar">
+          <div className="bg-black border border-[#eaecee] rounded-xl h-[49px] flex items-center px-3 gap-2">
+            <div className="bg-white border border-[#313131] rounded-full h-[36px] flex-1 flex items-center pl-5 pr-3 gap-2">
+              <Search size={16} className="text-[#717d8a]" />
               <input
                 type="text"
                 placeholder="Search leads..."
@@ -2057,9 +2195,33 @@ export default function LeadsPage() {
                 className="flex-1 bg-transparent text-[12px] text-[#717d8a] focus:outline-none"
               />
             </div>
-            <button className="bg-[#222] border border-[#313131] rounded-full h-[29px] w-[85px] flex items-center justify-center gap-1 relative">
-              <div className="absolute left-[4px] w-[35px] h-[23px] bg-[#ed1b24] rounded-full"></div>
-              <Search size={14} className="text-white absolute right-[10px] z-10" />
+            {/* Filter Button */}
+            <button 
+              onClick={() => setMobileFilterOpen(true)}
+              className={`bg-[#222] border border-[#313131] rounded-full h-[33px] w-[33px] flex items-center justify-center ${filterConditions.length > 0 ? 'bg-[#ed1b24] border-[#ed1b24]' : ''}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13 1H1L6 7.5V12L8 13V7.5L13 1Z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            {/* Sort Button */}
+            <button 
+              onClick={() => setMobileSortOpen(true)}
+              className="bg-[#222] border border-[#313131] rounded-full h-[33px] w-[33px] flex items-center justify-center"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 2V12M4 2L1 5M4 2L7 5M10 2V12M10 12L13 9M10 12L7 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            {/* Bin/Trash Button for Discarded Filter */}
+            <button 
+              onClick={(e) => {
+                e.stopPropagation()
+                setActiveQuickFilter(prev => prev === 'discarded' ? null : 'discarded')
+              }}
+              className={`bg-[#222] border border-[#313131] rounded-full h-[33px] w-[33px] flex items-center justify-center transition-colors ${activeQuickFilter === 'discarded' ? 'bg-[#ed1b24] border-[#ed1b24]' : ''}`}
+            >
+              <Trash2 size={14} className="text-white" />
             </button>
           </div>
         </div>
@@ -2071,39 +2233,52 @@ export default function LeadsPage() {
             const isHot = lead.interest_level === 'hot'
             const statusColor = lead.status.toLowerCase().includes('negotiation') 
               ? 'bg-[#fce4e0] text-[#dd3f3c]' 
+              : lead.status.toLowerCase().includes('lost') || lead.status.toLowerCase().includes('discarded')
+              ? 'bg-gray-100 text-gray-800'
               : 'bg-gray-100 text-gray-800'
             const interestColor = isHot 
               ? 'bg-[#fbf4d9] text-[#604927]' 
               : 'bg-gray-100 text-gray-800'
+            const createdDate = lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }).replace(',', '') : ''
+            const platform = lead.meta_data?.platform || lead.meta_data?.Platform
 
             return (
               <div
                 key={lead.id}
-                onClick={() => router.push(`/leads/${lead.id}`)}
-                className="bg-white border border-[#eaecee] rounded-xl p-4 cursor-pointer"
+                className="bg-white border border-[#eaecee] rounded-xl p-4"
               >
-                {/* Header with name, vehicle, and trending icon */}
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1">
-                    <h3 className="text-sm font-bold text-black mb-0.5">{lead.name}</h3>
+                {/* Header with name, vehicle, date, and icons */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0 pr-2">
+                    <h3 className="text-base font-bold text-black mb-1 leading-tight">{lead.name}</h3>
                     {vehicleName && (
-                      <p className="text-xs text-gray-600">{vehicleName}</p>
+                      <p className="text-sm text-[#717d8a] leading-tight">{vehicleName}</p>
                     )}
                   </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {createdDate && (
+                      <p className="text-xs text-[#393941] whitespace-nowrap">Date: {createdDate}</p>
+                    )}
+                    {platform && (
+                      <div className="w-6 h-6 flex-shrink-0">
+                        <SourceIcon platform={platform} source={lead.source} />
+                      </div>
+                    )}
                   {isHot && (
-                    <TrendingUp size={20} className="text-[#de0510]" />
+                      <TrendingUp size={22} className="text-[#de0510] flex-shrink-0" />
                   )}
+                  </div>
                 </div>
 
                 {/* Status and Interest Badges */}
                 <div className="flex items-center gap-2 mb-3">
-                  <span className={`px-2 py-1 rounded text-[10px] font-medium ${statusColor}`}>
+                  <span className={`px-3 py-1.5 rounded-[3px] text-xs font-medium ${statusColor}`}>
                     {formatStageName(lead.status)}
                   </span>
-                  <span className={`px-2 py-1 rounded text-[10px] font-medium flex items-center gap-1 ${interestColor}`}>
+                  <span className={`px-3 py-1.5 rounded-[3px] text-xs font-medium flex items-center gap-1.5 ${interestColor}`}>
                     {isHot ? (
                       <>
-                        <TrendingUp size={12} className="text-[#de0510]" />
+                        <TrendingUp size={14} className="text-[#de0510]" />
                         High
                       </>
                     ) : (
@@ -2113,15 +2288,15 @@ export default function LeadsPage() {
                 </div>
 
                 {/* Contact Info */}
-                <div className="flex items-center gap-4 mb-3">
-                  <div className="flex items-center gap-1.5">
-                    <Phone size={12} className="text-[#393941]" />
-                    <p className="text-[10px] text-[#393941]">{lead.phone}</p>
+                <div className="flex items-center gap-4 mb-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Phone size={14} className="text-[#393941] flex-shrink-0" />
+                    <p className="text-sm text-[#393941]">{lead.phone}</p>
                   </div>
                   {lead.email && (
-                    <div className="flex items-center gap-1.5">
-                      <Mail size={12} className="text-[#393941]" />
-                      <p className="text-[10px] text-[#393941]">{lead.email}</p>
+                    <div className="flex items-center gap-2">
+                      <Mail size={14} className="text-[#393941] flex-shrink-0" />
+                      <p className="text-sm text-[#393941] break-all">{lead.email}</p>
                     </div>
                   )}
                 </div>
@@ -2130,33 +2305,76 @@ export default function LeadsPage() {
                 <div className="h-[0.5px] bg-[#eaecee] mb-3"></div>
 
                 {/* Assigned User and Time */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
                     {lead.assigned_user ? (
                       <>
-                        <div className="w-7 h-7 rounded-full bg-[#ed1b24] flex items-center justify-center text-white text-[10px] font-medium flex-shrink-0">
+                        <div className="relative flex-shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-[#ed1b24] flex items-center justify-center text-white text-xs font-medium">
                           {lead.assigned_user.profile_image_url ? (
                             <Image
                               src={lead.assigned_user.profile_image_url}
                               alt={lead.assigned_user.name}
-                              width={28}
-                              height={28}
-                              className="w-7 h-7 rounded-full object-cover"
+                                width={36}
+                                height={36}
+                                className="w-9 h-9 rounded-full object-cover"
                             />
                           ) : (
                             lead.assigned_user.name.charAt(0).toUpperCase()
                           )}
+                          </div>
+                          <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>
                         </div>
                         <div>
-                          <p className="text-[8px] font-bold text-black">{lead.assigned_user.name}</p>
-                          <p className="text-[8px] text-gray-600">Sales Executive</p>
+                          <p className="text-xs font-bold text-black leading-tight">{lead.assigned_user.name}</p>
+                          <p className="text-xs text-[#717d8a] leading-tight">Sales Executive</p>
                         </div>
                       </>
                     ) : (
-                      <p className="text-[10px] text-[#717d8a]">Unassigned</p>
+                      <p className="text-sm text-[#717d8a]">Unassigned</p>
                     )}
                   </div>
-                  <p className="text-[9px] text-[#393941]">{getTimeAgo(lead.first_contact_at || lead.updated_at)}</p>
+                  <p className="text-xs text-[#393941] whitespace-nowrap">{getTimeAgo(lead.first_contact_at || lead.updated_at)}</p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2.5">
+                  {/* Followups Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedLeadForFollowups(lead)
+                      setShowFollowupsModal(true)
+                      fetchLeadFollowups(lead.id)
+                    }}
+                    className="bg-[#fbf4d9] text-[#604927] px-4 py-2 rounded-[20px] text-xs font-medium flex items-center gap-2"
+                  >
+                    <Check size={14} />
+                    <span>{leadFollowupsCounts[lead.id] || 0} Followup{leadFollowupsCounts[lead.id] !== 1 ? 's' : ''}</span>
+                  </button>
+                  {/* Call Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      window.location.href = `tel:${lead.phone}`
+                    }}
+                    className="bg-[#ed1b24] text-white rounded-full w-10 h-10 flex items-center justify-center flex-shrink-0"
+                  >
+                    <Phone size={16} />
+                  </button>
+                  {/* Email Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedLeadForEmail(lead)
+                      setEmailSubject('')
+                      setEmailBody('')
+                      setShowEmailModal(true)
+                    }}
+                    className="bg-black text-white rounded-full w-10 h-10 flex items-center justify-center flex-shrink-0"
+                  >
+                    <Mail size={16} />
+                  </button>
                 </div>
               </div>
             )
@@ -2164,50 +2382,287 @@ export default function LeadsPage() {
         </div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-[2px] border-t border-[#eaecee] px-4 py-3 z-30">
-          <div className="flex items-center justify-around mb-2">
-            <button className="flex flex-col items-center gap-1">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path d="M9 1L11.5 6.5L17 9L11.5 11.5L9 17L6.5 11.5L1 9L6.5 6.5L9 1Z" stroke="#717d8a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span className="text-[10px] text-black">Dashboard</span>
+        <MobileBottomNav />
+
+        {/* Mobile Filter Modal */}
+        {mobileFilterOpen && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+            <div className="bg-white rounded-t-2xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Filter Leads</h3>
+                <button onClick={() => setMobileFilterOpen(false)} className="p-2">
+                  <X size={20} />
             </button>
-            <button className="flex flex-col items-center gap-1">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M2 4H14M2 8H14M2 12H14" stroke="#717d8a" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              <span className="text-[10px] text-black">Tasks</span>
-            </button>
-            <div className="flex flex-col items-center gap-1 relative">
-              <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 w-[30px] h-[3px] bg-[#ed1b24] rounded-full"></div>
-              <div className="w-[38px] h-[38px] flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M10 2L3 7V18C3 18.5304 3.21071 19.0391 3.58579 19.4142C3.96086 19.7893 4.46957 20 5 20H15C15.5304 20 16.0391 19.7893 16.4142 19.4142C16.7893 19.0391 17 18.5304 17 18V7L10 2Z" stroke="#ed1b24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
               </div>
-              <span className="text-[10px] text-black">Leads</span>
-            </div>
-            <button className="flex flex-col items-center gap-1">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M16 18V16C16 14.9391 15.5786 13.9217 14.8284 13.1716C14.0783 12.4214 13.0609 12 12 12H8C6.93913 12 5.92172 12.4214 5.17157 13.1716C4.42143 13.9217 4 14.9391 4 16V18M12 6C12 7.06087 11.5786 8.07828 10.8284 8.82843C10.0783 9.57857 9.06087 10 8 10C6.93913 10 5.92172 9.57857 5.17157 8.82843C4.42143 8.07828 4 7.06087 4 6C4 4.93913 4.42143 3.92172 5.17157 3.17157C5.92172 2.42143 6.93913 2 8 2C9.06087 2 10.0783 2.42143 10.8284 3.17157C11.5786 3.92172 12 4.93913 12 6Z" stroke="#717d8a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span className="text-[10px] text-black">Customers</span>
+              <div className="p-4">
+                {/* Use the same filter UI as desktop */}
+                <div className="space-y-4">
+                  {filterConditions.map((condition, index) => (
+                    <div key={condition.id} className="flex gap-2 items-end">
+                      <select
+                        value={condition.column}
+                        onChange={(e) => {
+                          const updated = [...filterConditions]
+                          updated[index].column = e.target.value
+                          setFilterConditions(updated)
+                        }}
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="name">Name</option>
+                        <option value="status">Lead Stage</option>
+                        <option value="interest_level">Lead Type</option>
+                        <option value="source">Source</option>
+                        <option value="assigned_to">Assigned To</option>
+                        <option value="phone">Phone</option>
+                        <option value="email">Email</option>
+                      </select>
+                      <select
+                        value={condition.operator}
+                        onChange={(e) => {
+                          const updated = [...filterConditions]
+                          updated[index].operator = e.target.value
+                          setFilterConditions(updated)
+                        }}
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="equals">Equals</option>
+                        <option value="contains">Contains</option>
+                        <option value="starts_with">Starts With</option>
+                        <option value="is_empty">Is Empty</option>
+                        <option value="is_not_empty">Is Not Empty</option>
+                      </select>
+                      {condition.operator !== 'is_empty' && condition.operator !== 'is_not_empty' && (
+                        <input
+                          type="text"
+                          value={condition.value}
+                          onChange={(e) => {
+                            const updated = [...filterConditions]
+                            updated[index].value = e.target.value
+                            setFilterConditions(updated)
+                          }}
+                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Value"
+                        />
+                      )}
+                      <button
+                        onClick={() => {
+                          setFilterConditions(filterConditions.filter((_, i) => i !== index))
+                        }}
+                        className="p-2 text-red-600"
+                      >
+                        <X size={18} />
             </button>
-            <button className="flex flex-col items-center gap-1">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M2 4H18V16C18 16.5304 17.7893 17.0391 17.4142 17.4142C17.0391 17.7893 16.5304 18 16 18H4C3.46957 18 2.96086 17.7893 2.58579 17.4142C2.21071 17.0391 2 16.5304 2 16V4Z" stroke="#717d8a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M6 8H14M6 12H10" stroke="#717d8a" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              <span className="text-[10px] text-black">Products</span>
+              </div>
+                  ))}
+                  <button
+                    onClick={() => {
+                      setFilterConditions([...filterConditions, {
+                        id: Date.now().toString(),
+                        column: 'name',
+                        operator: 'contains',
+                        value: '',
+                        logic: 'AND'
+                      }])
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm text-gray-700"
+                  >
+                    + Add Condition
+                  </button>
+                  <div className="flex gap-2 pt-4">
+                    <button
+                      onClick={() => {
+                        setFilterConditions([])
+                        setMobileFilterOpen(false)
+                      }}
+                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm"
+                    >
+                      Clear All
+                    </button>
+                    <button
+                      onClick={() => setMobileFilterOpen(false)}
+                      className="flex-1 bg-[#ed1b24] text-white rounded-lg px-4 py-2 text-sm"
+                    >
+                      Apply Filters
+                    </button>
+            </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Sort Modal */}
+        {mobileSortOpen && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+            <div className="bg-white rounded-t-2xl w-full max-h-[60vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Sort Leads</h3>
+                <button onClick={() => setMobileSortOpen(false)} className="p-2">
+                  <X size={20} />
+            </button>
+              </div>
+              <div className="p-4 space-y-2">
+                {[
+                  { key: 'date', label: 'Date' },
+                  { key: 'name', label: 'Name' },
+                  { key: 'status', label: 'Lead Stage' },
+                  { key: 'last_contacted', label: 'Last Contacted' },
+                  { key: 'phone', label: 'Phone' },
+                ].map((col) => (
+                  <button
+                    key={col.key}
+                    onClick={() => {
+                      setSortColumn(col.key)
+                      setMobileSortOpen(false)
+                    }}
+                    className={`w-full text-left px-4 py-3 rounded-lg ${
+                      sortColumn === col.key ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    {col.label}
+                  </button>
+                ))}
+                <div className="border-t pt-4 mt-4">
+                  <button
+                    onClick={() => {
+                      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+                    }}
+                    className="w-full text-left px-4 py-3 rounded-lg hover:bg-gray-50"
+                  >
+                    Direction: {sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓'}
             </button>
           </div>
         </div>
+            </div>
+          </div>
+        )}
+
+        {/* Followups Modal */}
+        {showFollowupsModal && selectedLeadForFollowups && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+            <div className="bg-white rounded-t-2xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Followups - {selectedLeadForFollowups.name}</h3>
+                <button onClick={() => {
+                  setShowFollowupsModal(false)
+                  setSelectedLeadForFollowups(null)
+                  setLeadFollowups([])
+                }} className="p-2">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-4">
+                {loadingFollowups ? (
+                  <div className="text-center py-8">Loading followups...</div>
+                ) : leadFollowups.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">No followups found for this lead</div>
+                ) : (
+                  <div className="space-y-3">
+                    {leadFollowups.map((followup: any) => (
+                      <div key={followup.id} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <p className="font-semibold text-sm">
+                              Scheduled: {new Date(followup.scheduled_at).toLocaleString()}
+                            </p>
+                            {followup.completed_at && (
+                              <p className="text-xs text-gray-600">
+                                Completed: {new Date(followup.completed_at).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            followup.status === 'done' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {followup.status === 'done' ? 'Completed' : 'Pending'}
+                          </span>
+                        </div>
+                        {followup.notes && (
+                          <p className="text-sm text-gray-700 mt-2">{followup.notes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Email Modal */}
+        {showEmailModal && selectedLeadForEmail && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Send Email</h3>
+                <button onClick={() => {
+                  setShowEmailModal(false)
+                  setSelectedLeadForEmail(null)
+                  setEmailSubject('')
+                  setEmailBody('')
+                }} className="p-2">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                  <input
+                    type="email"
+                    value={selectedLeadForEmail.email || ''}
+                    disabled
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    placeholder="Email subject"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ed1b24]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                  <textarea
+                    value={emailBody}
+                    onChange={(e) => setEmailBody(e.target.value)}
+                    placeholder="Email message"
+                    rows={6}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#ed1b24] resize-none"
+                  />
+                </div>
+                <div className="flex gap-2 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowEmailModal(false)
+                      setSelectedLeadForEmail(null)
+                      setEmailSubject('')
+                      setEmailBody('')
+                    }}
+                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSendEmail}
+                    className="flex-1 bg-[#ed1b24] text-white rounded-lg px-4 py-2 text-sm"
+                  >
+                    Send Email
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Desktop View - shown on md and larger screens, with Layout sidebar */}
       <div className="hidden md:block">
         <Layout>
-          <div className="p-6 bg-gray-50 min-h-screen">
+          <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen w-full">
             <div className="w-full">
           {/* Header */}
           <div className="flex justify-between items-center mb-6">
@@ -2794,9 +3249,9 @@ export default function LeadsPage() {
           {/* Leads Table View */}
           {viewMode === 'table' && (
           <>
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-          <table className={`min-w-full divide-y divide-gray-200 ${resizingColumn ? 'select-none' : ''}`}>
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden w-full">
+            <div className="overflow-x-auto w-full">
+          <table className={`w-full divide-y divide-gray-200 ${resizingColumn ? 'select-none' : ''}`} style={{ minWidth: 'max-content' }}>
             <thead className="bg-gray-50">
               <tr>
                 {isAdmin && (
@@ -2812,8 +3267,15 @@ export default function LeadsPage() {
                 {columns.filter(col => col.visible).map((column) => (
                   <th
                     key={column.key}
-                    className="px-6 py-4 text-left text-sm font-medium text-gray-500 uppercase tracking-wider relative"
-                    style={{ width: `${column.width}px`, minWidth: `${column.width}px` }}
+                    className={`px-4 md:px-6 py-3 md:py-4 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider relative ${column.key === 'name' ? '' : 'whitespace-nowrap'}`}
+                    style={column.key === 'name' ? {
+                      width: `${column.width}px`,
+                      minWidth: `${column.width}px`,
+                    } : {
+                      width: `${column.width}px`,
+                      minWidth: `${column.width}px`,
+                      maxWidth: `${column.width}px`
+                    }}
                   >
                     <div className="flex items-center">
                       {column.label}
@@ -2866,7 +3328,7 @@ export default function LeadsPage() {
                         )
                       case 'name':
                         return (
-                          <div className="text-base font-medium text-gray-900">
+                          <div className="text-base font-medium text-gray-900 break-words">
                             {lead.name}
                           </div>
                         )
@@ -2985,8 +3447,15 @@ export default function LeadsPage() {
                       {columns.filter(col => col.visible).map((column) => (
                         <td
                           key={column.key}
-                          className="px-6 py-4 whitespace-nowrap"
-                          style={{ width: `${column.width}px`, minWidth: `${column.width}px` }}
+                          className={`px-4 md:px-6 py-3 md:py-4 ${column.key === 'name' ? '' : 'whitespace-nowrap'}`}
+                          style={column.key === 'name' ? {
+                            width: `${column.width}px`,
+                            minWidth: `${column.width}px`,
+                          } : {
+                            width: `${column.width}px`,
+                            minWidth: `${column.width}px`,
+                            maxWidth: `${column.width}px`
+                          }}
                         >
                           {renderCell(column)}
                     </td>

@@ -108,7 +108,7 @@ export default function Sidebar() {
   const userProfileImage = profile?.profileImageUrl || null
 
   return (
-    <div className={`fixed left-0 top-0 h-screen bg-black flex flex-col z-50 overflow-hidden transition-all duration-300 ${sidebarWidth} border-r border-gray-800`}>
+    <div className={`hidden md:flex fixed left-0 top-0 h-screen bg-black flex-col z-50 overflow-hidden transition-all duration-300 ${sidebarWidth} border-r border-gray-800`}>
       {/* Logo/Brand Section */}
       <div className={`p-4 border-b border-gray-800 flex-shrink-0 flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'}`}>
         {isCollapsed ? (

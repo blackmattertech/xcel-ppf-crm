@@ -94,9 +94,9 @@ export default function DashboardPage() {
 
   return (
     <Layout>
-      <div className="p-8">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Dashboard</h1>
+      <div className="p-4 md:p-6 lg:p-8 w-full">
+        <div className="w-full">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">Dashboard</h1>
 
           {loading && (
             // Keep shell visible and show a lightweight skeleton instead of a blank screen.

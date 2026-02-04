@@ -338,7 +338,7 @@ function MailjetIntegrationCard() {
 export default function IntegrationsPage() {
   return (
     <Layout>
-      <main className="p-6">
+      <main className="p-4 md:p-6 lg:p-8 w-full">
         <div className="max-w-5xl mx-auto space-y-6">
           <header className="space-y-2">
             <h1 className="text-2xl font-bold text-gray-900">Integrations</h1>

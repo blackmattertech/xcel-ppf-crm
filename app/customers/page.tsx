@@ -50,6 +50,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterType>('all')
+  const [activeStatsFilter, setActiveStatsFilter] = useState<'all' | 'total' | 'dealership' | 'individual' | 'revenue' | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [createForm, setCreateForm] = useState<CreateCustomerForm>({
@@ -119,9 +120,19 @@ export default function CustomersPage() {
   }
 
   const filteredCustomers = useMemo(() => {
-    if (filter === 'all') return customers
-    return customers.filter((c) => getUiType(c) === filter)
-  }, [customers, filter])
+    let filtered = customers
+    
+    // Apply stats card filter
+    if (activeStatsFilter === 'dealership') {
+      filtered = filtered.filter((c) => getUiType(c) === 'dealership')
+    } else if (activeStatsFilter === 'individual') {
+      filtered = filtered.filter((c) => getUiType(c) === 'individual')
+    }
+    
+    // Apply main filter
+    if (filter === 'all') return filtered
+    return filtered.filter((c) => getUiType(c) === filter)
+  }, [customers, filter, activeStatsFilter])
 
   const stats = useMemo(() => {
     const total = customers.length
@@ -217,8 +228,8 @@ export default function CustomersPage() {
 
   return (
     <Layout>
-      <div className="p-6 md:p-8 bg-[#f5f5f5] min-h-screen">
-        <div className="space-y-6">
+      <div className="p-4 md:p-6 lg:p-8 bg-[#f5f5f5] min-h-screen w-full">
+        <div className="space-y-4 md:space-y-6 w-full">
           {/* Header */}
           <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
@@ -249,9 +260,15 @@ export default function CustomersPage() {
             </div>
           </header>
 
-          {/* Stats cards */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-[12px] bg-white border border-[#eaecee] p-5 flex items-start justify-between shadow-sm">
+          {/* Stats cards - 2 per row on mobile, filterable */}
+          <section className="grid grid-cols-2 gap-3 md:gap-4">
+            <button
+              type="button"
+              onClick={() => setActiveStatsFilter(prev => prev === 'total' ? null : 'total')}
+              className={`rounded-[12px] bg-white border p-4 md:p-5 flex items-start justify-between shadow-sm transition-all text-left ${
+                activeStatsFilter === 'total' ? 'border-[#2196F3] ring-2 ring-[#2196F3] bg-blue-50' : 'border-[#eaecee]'
+              }`}
+            >
               <div>
                 <p className="text-xs font-medium text-[#717d8a] uppercase tracking-wide">
                   Total Customers
@@ -260,12 +277,24 @@ export default function CustomersPage() {
                   {stats.totalCustomers}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-[#E3F2FD] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-[#E3F2FD] flex items-center justify-center flex-shrink-0">
                 <Users size={20} className="text-[#2196F3]" />
               </div>
-            </div>
+            </button>
 
-            <div className="rounded-[12px] bg-white border border-[#eaecee] p-5 flex items-start justify-between shadow-sm">
+            <button
+              type="button"
+              onClick={() => {
+                const newFilter = activeStatsFilter === 'dealership' ? null : 'dealership'
+                setActiveStatsFilter(newFilter)
+                if (newFilter === 'dealership') {
+                  setFilter('dealership')
+                }
+              }}
+              className={`rounded-[12px] bg-white border p-4 md:p-5 flex items-start justify-between shadow-sm transition-all text-left ${
+                activeStatsFilter === 'dealership' ? 'border-[#44C13C] ring-2 ring-[#44C13C] bg-green-50' : 'border-[#eaecee]'
+              }`}
+            >
               <div>
                 <p className="text-xs font-medium text-[#717d8a] uppercase tracking-wide">
                   Dealerships
@@ -274,12 +303,24 @@ export default function CustomersPage() {
                   {stats.dealerships}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-[#E8F5E9] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-[#E8F5E9] flex items-center justify-center flex-shrink-0">
                 <Building2 size={20} className="text-[#44C13C]" />
               </div>
-            </div>
+            </button>
 
-            <div className="rounded-[12px] bg-white border border-[#eaecee] p-5 flex items-start justify-between shadow-sm">
+            <button
+              type="button"
+              onClick={() => {
+                const newFilter = activeStatsFilter === 'individual' ? null : 'individual'
+                setActiveStatsFilter(newFilter)
+                if (newFilter === 'individual') {
+                  setFilter('individual')
+                }
+              }}
+              className={`rounded-[12px] bg-white border p-4 md:p-5 flex items-start justify-between shadow-sm transition-all text-left ${
+                activeStatsFilter === 'individual' ? 'border-[#9C27B0] ring-2 ring-[#9C27B0] bg-purple-50' : 'border-[#eaecee]'
+              }`}
+            >
               <div>
                 <p className="text-xs font-medium text-[#717d8a] uppercase tracking-wide">
                   Individuals
@@ -288,12 +329,18 @@ export default function CustomersPage() {
                   {stats.individuals}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-[#F3E5F5] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-[#F3E5F5] flex items-center justify-center flex-shrink-0">
                 <User size={20} className="text-[#9C27B0]" />
               </div>
-            </div>
+            </button>
 
-            <div className="rounded-[12px] bg-white border border-[#eaecee] p-5 flex items-start justify-between shadow-sm">
+            <button
+              type="button"
+              onClick={() => setActiveStatsFilter(prev => prev === 'revenue' ? null : 'revenue')}
+              className={`rounded-[12px] bg-white border p-4 md:p-5 flex items-start justify-between shadow-sm transition-all text-left ${
+                activeStatsFilter === 'revenue' ? 'border-[#FF513A] ring-2 ring-[#FF513A] bg-orange-50' : 'border-[#eaecee]'
+              }`}
+            >
               <div>
                 <p className="text-xs font-medium text-[#717d8a] uppercase tracking-wide">
                   Total Revenue
@@ -302,10 +349,10 @@ export default function CustomersPage() {
                   ₹{stats.totalRevenue.toLocaleString('en-IN')}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-[#FFE8D7] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-[#FFE8D7] flex items-center justify-center flex-shrink-0">
                 <IndianRupee size={20} className="text-[#FF513A]" />
               </div>
-            </div>
+            </button>
           </section>
 
           {/* Filters + view toggle */}
