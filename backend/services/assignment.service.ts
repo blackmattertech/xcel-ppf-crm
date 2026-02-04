@@ -122,6 +122,7 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
 
   await supabase
     .from('assignments')
+    // @ts-expect-error - Supabase builder infers update payload as 'never'; assignments.Update is defined in database.ts
     .update({
       last_assigned_at: new Date().toISOString(),
       assignment_count: (selected.assignment_count || 0) + 1,
@@ -192,6 +193,7 @@ export async function redistributeNewLeadsAmongTeleCallers(
 
     const { error: updateError } = await supabase
       .from('leads')
+      // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
       .update({ assigned_to: newAssigneeId })
       .eq('id', lead.id)
 

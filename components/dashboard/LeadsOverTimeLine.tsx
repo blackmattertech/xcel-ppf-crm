@@ -91,9 +91,9 @@ export default function LeadsOverTimeLine({ data, hideTitle }: LeadsOverTimeLine
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
               }}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.date && new Date(payload[0].payload.date).toLocaleDateString()}
-              formatter={(value: number, name: string) => [
-                value,
-                name === 'leads' ? 'Leads' : 'Converted',
+              formatter={(value: number | undefined, name: string | undefined) => [
+                value ?? 0,
+                (name === 'leads' ? 'Leads' : 'Converted'),
               ]}
             />
             <Area

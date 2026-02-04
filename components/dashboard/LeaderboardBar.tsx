@@ -82,10 +82,13 @@ export default function LeaderboardBar({ data, maxItems = 8, hideTitle }: Leader
                 border: '1px solid rgb(226 232 240)',
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
               }}
-              formatter={(value: number, name: string) => [
-                name === 'rate' ? `${value}%` : value,
-                name === 'rate' ? 'Conversion rate' : name === 'converted' ? 'Converted' : 'Total leads',
-              ]}
+              formatter={(value: number | undefined, name: string | undefined) => {
+                const n = name ?? ''
+                return [
+                  n === 'rate' ? `${value ?? 0}%` : (value ?? 0),
+                  n === 'rate' ? 'Conversion rate' : n === 'converted' ? 'Converted' : 'Total leads',
+                ]
+              }}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName}
             />
             <Bar

@@ -69,7 +69,7 @@ export default function LeadsBySourcePie({ data, hideTitle }: LeadsBySourcePiePr
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number) => [value, 'Leads']}
+              formatter={(value: number | undefined) => [value ?? 0, 'Leads']}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',
