@@ -16,8 +16,20 @@ interface User {
   name: string
   email: string
   phone: string | null
+  profile_image_url: string | null
+  address: string | null
+  dob: string | null
+  doj: string | null
   role: Role
   created_at: string
+}
+
+interface UserRoleRow {
+  role_id: string | null
+}
+
+interface RoleNameRow {
+  name: string
 }
 
 export default function UsersPage() {
@@ -32,7 +44,13 @@ export default function UsersPage() {
     password: '',
     phone: '',
     roleId: '',
+    address: '',
+    dob: '',
+    doj: '',
   })
+  const [profileImage, setProfileImage] = useState<File | null>(null)
+  const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   useEffect(() => {
     checkAuth()
@@ -49,20 +67,23 @@ export default function UsersPage() {
       return
     }
 
-    const { data: userData } = await supabase
+    const { data } = await supabase
       .from('users')
       .select('role_id')
       .eq('id', user.id)
       .single()
 
+    const userData = data as UserRoleRow | null
+
     if (userData?.role_id) {
       // Fetch role name using role_id
-      const { data: roleData } = await supabase
+      const { data: roleDataResult } = await supabase
         .from('roles')
         .select('name')
         .eq('id', userData.role_id)
         .single()
 
+      const roleData = roleDataResult as RoleNameRow | null
       const roleName = roleData?.name
       if (roleName !== 'super_admin' && roleName !== 'admin') {
         router.push('/dashboard')
@@ -102,15 +123,70 @@ export default function UsersPage() {
   async function handleCreateUser(e: React.FormEvent) {
     e.preventDefault()
     try {
+      let profileImageUrl: string | null = null
+
+      // Upload profile image if provided
+      if (profileImage) {
+        setUploadingImage(true)
+        const imageFormData = new FormData()
+        imageFormData.append('file', profileImage)
+        // We'll need to create the user first to get the ID, then upload image
+        // For now, we'll upload after user creation
+      }
+
+      const userData = {
+        ...formData,
+        profileImageUrl: null, // Will be updated after image upload
+        dob: formData.dob || null,
+        doj: formData.doj || null,
+        address: formData.address || null,
+      }
+
       const response = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(userData),
       })
 
       if (response.ok) {
+        const { user } = await response.json()
+        
+        // Upload profile image if provided
+        if (profileImage && user.id) {
+          try {
+            const imageFormData = new FormData()
+            imageFormData.append('file', profileImage)
+            imageFormData.append('userId', user.id)
+
+            const imageResponse = await fetch('/api/users/upload-profile-image', {
+              method: 'POST',
+              body: imageFormData,
+            })
+
+            if (imageResponse.ok) {
+              const imageData = await imageResponse.json()
+              // Update user with image URL
+              await fetch(`/api/users/${user.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: formData.name,
+                  phone: formData.phone || null,
+                  roleId: formData.roleId,
+                  profileImageUrl: imageData.url,
+                }),
+              })
+            }
+          } catch (imageError) {
+            console.error('Failed to upload profile image:', imageError)
+            // Don't fail user creation if image upload fails
+          }
+        }
+
         setShowCreateModal(false)
-        setFormData({ name: '', email: '', password: '', phone: '', roleId: '' })
+        setFormData({ name: '', email: '', password: '', phone: '', roleId: '', address: '', dob: '', doj: '' })
+        setProfileImage(null)
+        setProfileImagePreview(null)
         fetchUsers()
       } else {
         const error = await response.json()
@@ -119,6 +195,31 @@ export default function UsersPage() {
     } catch (error) {
       console.error('Failed to create user:', error)
       alert('Failed to create user')
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file')
+        return
+      }
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size must be less than 5MB')
+        return
+      }
+      setProfileImage(file)
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setProfileImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
     }
   }
 
@@ -144,14 +245,6 @@ export default function UsersPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    )
-  }
-
   return (
     <Layout>
       <div className="p-8">
@@ -169,10 +262,21 @@ export default function UsersPage() {
           </button>
         </div>
 
+        {loading ? (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div className="h-4 w-32 rounded bg-gray-200 animate-pulse" />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-10 rounded bg-gray-100 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profile</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
@@ -183,6 +287,21 @@ export default function UsersPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {users.map((user) => (
                 <tr key={user.id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {user.profile_image_url ? (
+                      <img
+                        src={user.profile_image_url}
+                        alt={user.name}
+                        className="h-10 w-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                        <span className="text-gray-600 text-sm font-medium">
+                          {user.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {user.name}
                   </td>
@@ -196,18 +315,27 @@ export default function UsersPage() {
                     {user.role?.name?.replace('_', ' ') || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleDeleteUser(user.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => router.push(`/admin/users/${user.id}`)}
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        View/Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        )}
 
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -285,12 +413,72 @@ export default function UsersPage() {
                   </select>
                 </div>
 
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Profile Image
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                  {profileImagePreview && (
+                    <div className="mt-2">
+                      <img
+                        src={profileImagePreview}
+                        alt="Preview"
+                        className="h-20 w-20 rounded-full object-cover"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Address
+                  </label>
+                  <textarea
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter address..."
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Date of Birth (DOB)
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dob}
+                    onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Date of Joining (DOJ)
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.doj}
+                    onChange={(e) => setFormData({ ...formData, doj: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+
                 <div className="flex justify-end space-x-4">
                   <button
                     type="button"
                     onClick={() => {
                       setShowCreateModal(false)
-                      setFormData({ name: '', email: '', password: '', phone: '', roleId: '' })
+                      setFormData({ name: '', email: '', password: '', phone: '', roleId: '', address: '', dob: '', doj: '' })
+                      setProfileImage(null)
+                      setProfileImagePreview(null)
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
                   >
@@ -298,9 +486,10 @@ export default function UsersPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                    disabled={uploadingImage}
                   >
-                    Create User
+                    {uploadingImage ? 'Creating...' : 'Create User'}
                   </button>
                 </div>
               </form>

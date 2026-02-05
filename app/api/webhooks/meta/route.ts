@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     // Parse Meta leads
     const parsedLeads = parseMetaWebhook(body)
 
-    const createdLeads = []
+    const createdLeads: any[] = []
 
     for (const parsedLead of parsedLeads) {
       // Validate required fields
@@ -28,7 +28,13 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        // Generate lead_id (format: LEAD-YYYYMMDD-HHMMSS-XXXX)
+        const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').split('.')[0]
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+        const lead_id = `LEAD-${timestamp}-${randomSuffix}`
+        
         const lead = await createLead({
+          lead_id,
           name: parsedLead.name,
           phone: parsedLead.phone,
           email: parsedLead.email || null,
@@ -42,7 +48,7 @@ export async function POST(request: NextRequest) {
           campaign_name: parsedLead.campaignName || null,
           meta_data: parsedLead.metaData,
           status: 'new',
-        }, true) // Auto-assign enabled
+        } as any, true) // Auto-assign enabled
 
         createdLeads.push(lead)
       } catch (error) {

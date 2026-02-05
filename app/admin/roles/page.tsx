@@ -21,12 +21,22 @@ interface Role {
   permissions: Permission[]
 }
 
+interface UserRoleRow {
+  role_id: string | null
+}
+
+interface RoleNameRow {
+  name: string
+}
+
 export default function RolesPage() {
   const router = useRouter()
   const [roles, setRoles] = useState<Role[]>([])
   const [permissions, setPermissions] = useState<Permission[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingRole, setEditingRole] = useState<Role | null>(null)
+  const [syncingPermissions, setSyncingPermissions] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -49,20 +59,23 @@ export default function RolesPage() {
     }
 
     // Check if user has permission
-    const { data: userData } = await supabase
+    const { data } = await supabase
       .from('users')
       .select('role_id')
       .eq('id', user.id)
       .single()
 
+    const userData = data as UserRoleRow | null
+
     if (userData?.role_id) {
       // Fetch role name using role_id
-      const { data: roleData } = await supabase
+      const { data } = await supabase
         .from('roles')
         .select('name')
         .eq('id', userData.role_id)
         .single()
 
+      const roleData = data as RoleNameRow | null
       const roleName = roleData?.name
       if (roleName !== 'super_admin' && roleName !== 'admin') {
         router.push('/dashboard')
@@ -105,6 +118,39 @@ export default function RolesPage() {
     }
   }
 
+  async function handleSyncPermissions() {
+    if (!confirm('This will sync permissions from the sidebar configuration. Continue?')) {
+      return
+    }
+
+    setSyncingPermissions(true)
+    try {
+      const response = await fetch('/api/permissions/sync', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert(
+          `Permissions synced successfully!\n` +
+          `Created: ${data.summary.created}\n` +
+          `Existing: ${data.summary.existing}\n` +
+          `Errors: ${data.summary.errors}`
+        )
+        // Refresh permissions list
+        await fetchPermissions()
+      } else {
+        alert(data.error || 'Failed to sync permissions')
+      }
+    } catch (error) {
+      console.error('Failed to sync permissions:', error)
+      alert('Failed to sync permissions: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setSyncingPermissions(false)
+    }
+  }
+
   async function handleCreateRole(e: React.FormEvent) {
     e.preventDefault()
     
@@ -137,6 +183,56 @@ export default function RolesPage() {
       console.error('Failed to create role:', error)
       alert('Failed to create role: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
+  }
+
+  async function handleUpdateRole(e: React.FormEvent) {
+    e.preventDefault()
+    
+    if (!editingRole) return
+    
+    // Validate that at least one permission is selected
+    if (formData.permissionIds.length === 0) {
+      alert('Please select at least one permission')
+      return
+    }
+    
+    try {
+      const response = await fetch(`/api/roles/${editingRole.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description || null,
+          permissionIds: formData.permissionIds,
+        }),
+      })
+
+      const data = await response.json()
+      
+      if (response.ok) {
+        setEditingRole(null)
+        setShowCreateModal(false)
+        setFormData({ name: '', description: '', permissionIds: [] })
+        fetchRoles()
+        alert('Role updated successfully!')
+      } else {
+        console.error('Error updating role:', data)
+        alert(data.error || data.details || 'Failed to update role')
+      }
+    } catch (error) {
+      console.error('Failed to update role:', error)
+      alert('Failed to update role: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }
+
+  function openEditModal(role: Role) {
+    setEditingRole(role)
+    setFormData({
+      name: role.name,
+      description: role.description || '',
+      permissionIds: role.permissions?.map(p => p.id) || [],
+    })
+    setShowCreateModal(true)
   }
 
   async function handleDeleteRole(roleId: string, isSystemRole: boolean) {
@@ -188,14 +284,6 @@ export default function RolesPage() {
     return acc
   }, {} as Record<string, Permission[]>)
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    )
-  }
-
   return (
     <Layout>
       <div className="p-8">
@@ -205,14 +293,34 @@ export default function RolesPage() {
             <h1 className="text-3xl font-bold text-gray-900">Role Management</h1>
             <p className="text-gray-600 mt-1">Create and manage custom roles with specific permissions</p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium"
-          >
-            + Create New Role
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSyncPermissions}
+              disabled={syncingPermissions}
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Sync permissions from sidebar configuration"
+            >
+              {syncingPermissions ? 'Syncing...' : '🔄 Sync Permissions'}
+            </button>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-medium"
+            >
+              + Create New Role
+            </button>
+          </div>
         </div>
 
+        {loading ? (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div className="h-4 w-40 rounded bg-gray-200 animate-pulse" />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-10 rounded bg-gray-100 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -246,26 +354,37 @@ export default function RolesPage() {
                     {role.permissions?.length || 0} permissions
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    {!role.is_system_role && (
+                    <div className="flex gap-3">
                       <button
-                        onClick={() => handleDeleteRole(role.id, role.is_system_role)}
-                        className="text-red-600 hover:text-red-900"
+                        onClick={() => openEditModal(role)}
+                        className="text-indigo-600 hover:text-indigo-900 font-medium"
                       >
-                        Delete
+                        Edit
                       </button>
-                    )}
+                      {!role.is_system_role && (
+                        <button
+                          onClick={() => handleDeleteRole(role.id, role.is_system_role)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        )}
 
         {showCreateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h2 className="text-2xl font-bold mb-4">Create New Role</h2>
-              <form onSubmit={handleCreateRole}>
+              <h2 className="text-2xl font-bold mb-4">
+                {editingRole ? 'Edit Role' : 'Create New Role'}
+              </h2>
+              <form onSubmit={editingRole ? handleUpdateRole : handleCreateRole}>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Role Name *
@@ -277,7 +396,11 @@ export default function RolesPage() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
                     placeholder="e.g., sales_manager"
+                    disabled={editingRole?.is_system_role || false}
                   />
+                  {editingRole?.is_system_role && (
+                    <p className="text-xs text-gray-500 mt-1">System role name cannot be changed</p>
+                  )}
                 </div>
 
                 <div className="mb-4">
@@ -336,6 +459,7 @@ export default function RolesPage() {
                     type="button"
                     onClick={() => {
                       setShowCreateModal(false)
+                      setEditingRole(null)
                       setFormData({ name: '', description: '', permissionIds: [] })
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
@@ -346,7 +470,7 @@ export default function RolesPage() {
                     type="submit"
                     className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                   >
-                    Create Role
+                    {editingRole ? 'Update Role' : 'Create Role'}
                   </button>
                 </div>
               </form>

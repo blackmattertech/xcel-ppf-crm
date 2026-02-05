@@ -44,6 +44,20 @@ export const PERMISSIONS = {
   // Analytics
   ANALYTICS_READ: 'analytics.read',
   ANALYTICS_MANAGE: 'analytics.manage',
+  
+  // Products
+  PRODUCTS_CREATE: 'products.create',
+  PRODUCTS_READ: 'products.read',
+  PRODUCTS_UPDATE: 'products.update',
+  PRODUCTS_DELETE: 'products.delete',
+  PRODUCTS_MANAGE: 'products.manage',
+  
+  // Follow-ups
+  FOLLOWUPS_CREATE: 'followups.create',
+  FOLLOWUPS_READ: 'followups.read',
+  FOLLOWUPS_UPDATE: 'followups.update',
+  FOLLOWUPS_DELETE: 'followups.delete',
+  FOLLOWUPS_MANAGE: 'followups.manage',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]

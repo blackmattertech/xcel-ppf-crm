@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requirePermission } from '@/backend/middleware/auth'
+import { requireAuth, requirePermission } from '@/backend/middleware/auth'
 import { getUserById, updateUser, deleteUser } from '@/backend/services/user.service'
+import { redistributeNewLeadsAmongTeleCallers } from '@/backend/services/assignment.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
@@ -9,20 +10,38 @@ const updateUserSchema = z.object({
   phone: z.string().nullable().optional(),
   roleId: z.string().uuid(),
   branchId: z.string().uuid().nullable().optional(),
+  profileImageUrl: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  dob: z.string().nullable().optional(),
+  doj: z.string().nullable().optional(),
+  languagesKnown: z.array(z.string()).nullable().optional(),
 })
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await requirePermission(request, PERMISSIONS.USERS_READ)
+    const { id } = await params
+    // Allow users to read their own profile OR require USERS_READ permission for others
+    const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    const user = await getUserById(params.id)
+    const { user: currentUser } = authResult
+    const isOwnProfile = currentUser.id === id
+
+    // If reading someone else's profile, require USERS_READ permission
+    if (!isOwnProfile) {
+      const permissionResult = await requirePermission(request, PERMISSIONS.USERS_READ)
+      if ('error' in permissionResult) {
+        return permissionResult.error
+      }
+    }
+
+    const user = await getUserById(id)
     return NextResponse.json({ user })
   } catch (error) {
     return NextResponse.json(
@@ -34,25 +53,71 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await requirePermission(request, PERMISSIONS.USERS_UPDATE)
+    const { id } = await params
+    // Allow users to update their own profile OR require USERS_UPDATE permission for others
+    const authResult = await requireAuth(request)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    const body = await request.json()
-    const { name, phone, roleId, branchId } = updateUserSchema.parse(body)
+    const { user: currentUser } = authResult
+    const isOwnProfile = currentUser.id === id
+    const isAdmin = currentUser.role.name === 'super_admin' || currentUser.role.name === 'admin'
 
-    const user = await updateUser(params.id, name, phone || null, roleId, branchId || null)
+    // If editing someone else's profile, require USERS_UPDATE permission
+    if (!isOwnProfile) {
+      const permissionResult = await requirePermission(request, PERMISSIONS.USERS_UPDATE)
+      if ('error' in permissionResult) {
+        return permissionResult.error
+      }
+    }
+
+    const body = await request.json()
+    let { name, phone, roleId, branchId, profileImageUrl, address, dob, doj, languagesKnown } = updateUserSchema.parse(body)
+
+    // If user is editing their own profile, prevent role change unless they're admin
+    if (isOwnProfile && !isAdmin) {
+      // Get current user's role and keep it
+      const { getUserById } = await import('@/backend/services/user.service')
+      const currentUserData = await getUserById(id)
+      roleId = (currentUserData as any).role?.id || roleId
+    }
+
+    const user = await updateUser(
+      id,
+      name,
+      phone || null,
+      roleId,
+      branchId || null,
+      profileImageUrl || null,
+      address || null,
+      dob || null,
+      doj || null,
+      languagesKnown || null
+    )
+
+    // When a user's role is updated to tele_caller, redistribute existing "new" leads in round-robin
+    const roleName = (user as any).role?.name ?? (Array.isArray((user as any).role) ? (user as any).role?.[0]?.name : null)
+    if (roleName === 'tele_caller' && !('error' in authResult) && authResult.user?.id) {
+      try {
+        const count = await redistributeNewLeadsAmongTeleCallers(authResult.user.id)
+        if (count > 0) {
+          (user as any)._redistributedLeads = count
+        }
+      } catch (err) {
+        console.error('Failed to redistribute new leads after updating user to tele_caller:', err)
+      }
+    }
 
     return NextResponse.json({ user })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }
@@ -66,16 +131,17 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.USERS_DELETE)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    await deleteUser(params.id)
+    await deleteUser(id)
     return NextResponse.json({ message: 'User deleted successfully' })
   } catch (error) {
     return NextResponse.json(

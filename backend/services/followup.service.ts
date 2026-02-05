@@ -97,6 +97,7 @@ export async function updateFollowUp(id: string, updates: Partial<FollowUpInsert
 
   const { data, error } = await supabase
     .from('follow_ups')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update({
       ...updates,
       updated_at: new Date().toISOString(),
@@ -144,10 +145,10 @@ export async function getPendingFollowUps(assignedTo?: string) {
 
 export async function getOverdueFollowUps(assignedTo?: string) {
   const now = new Date().toISOString()
-  const { data } = await getFollowUps({
+  const result = await getFollowUps({
     status: 'pending',
     scheduledBefore: now,
     assignedTo,
   })
-  return data || []
+  return ((result as any).data) || []
 }

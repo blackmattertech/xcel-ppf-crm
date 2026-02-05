@@ -44,7 +44,8 @@ export async function createQuotation(
     .limit(1)
     .single()
 
-  const version = latestQuote ? latestQuote.version + 1 : 1
+  const latestQuoteData = latestQuote as { version: number } | null
+  const version = latestQuoteData ? latestQuoteData.version + 1 : 1
 
   const { data, error } = await supabase
     .from('quotations')
@@ -71,7 +72,8 @@ export async function createQuotation(
       ),
       created_by_user:users!quotations_created_by_fkey (
         id,
-        name
+        name,
+        email
       )
     `)
     .single()
@@ -117,7 +119,8 @@ export async function getQuotations(filters?: {
       ),
       created_by_user:users!quotations_created_by_fkey (
         id,
-        name
+        name,
+        email
       )
     `)
     .order('created_at', { ascending: false })
@@ -158,7 +161,8 @@ export async function getQuotationById(id: string) {
       ),
       created_by_user:users!quotations_created_by_fkey (
         id,
-        name
+        name,
+        email
       )
     `)
     .eq('id', id)
@@ -174,8 +178,21 @@ export async function getQuotationById(id: string) {
 export async function updateQuotationStatus(id: string, status: 'sent' | 'viewed' | 'accepted' | 'expired') {
   const supabase = createServiceClient()
 
+  // Get quotation with lead info
+  const { data: quotation, error: fetchError } = await supabase
+    .from('quotations')
+    .select('lead_id')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !quotation) {
+    throw new Error('Quotation not found')
+  }
+
+  // Update quotation status
   const { data, error } = await supabase
     .from('quotations')
+    // @ts-ignore - Supabase type inference issue with dynamic updates
     .update({
       status,
       updated_at: new Date().toISOString(),
@@ -186,6 +203,74 @@ export async function updateQuotationStatus(id: string, status: 'sent' | 'viewed
 
   if (error) {
     throw new Error(`Failed to update quotation: ${error.message}`)
+  }
+
+  // Get lead info for status update and follow-up creation
+  const { data: lead } = await supabase
+    .from('leads')
+    .select('id, status, assigned_to')
+    .eq('id', (quotation as any).lead_id)
+    .single()
+
+  if (lead) {
+    const leadData = lead as { id: string; status: string; assigned_to: string | null }
+    // Update lead status based on quotation status
+    let newLeadStatus: string | null = null
+    if (status === 'viewed' && leadData.status !== 'quotation_viewed') {
+      newLeadStatus = 'quotation_viewed'
+    } else if (status === 'accepted' && leadData.status !== 'quotation_accepted') {
+      newLeadStatus = 'quotation_accepted'
+    } else if (status === 'expired' && leadData.status !== 'quotation_expired') {
+      newLeadStatus = 'quotation_expired'
+    }
+
+    if (newLeadStatus) {
+      await supabase
+        .from('leads')
+        // @ts-ignore - Supabase type inference issue with dynamic updates
+        .update({
+          status: newLeadStatus,
+          updated_at: new Date().toISOString(),
+        } as any)
+        .eq('id', leadData.id)
+
+      // Create status history
+      await supabase.from('lead_status_history').insert({
+        lead_id: leadData.id,
+        old_status: leadData.status,
+        new_status: newLeadStatus,
+        changed_by: leadData.assigned_to || leadData.id, // Use assigned user or lead ID as fallback
+        notes: `Quotation ${status}`,
+      } as any)
+    }
+
+    // Auto-create follow-up for viewed or expired quotations
+    if ((status === 'viewed' || status === 'expired') && leadData.assigned_to) {
+      try {
+        const followUpDate = new Date()
+        if (status === 'viewed') {
+          // Follow up in 2 days if viewed
+          followUpDate.setDate(followUpDate.getDate() + 2)
+        } else if (status === 'expired') {
+          // Follow up immediately if expired
+          followUpDate.setHours(followUpDate.getHours() + 1)
+        }
+
+        await supabase
+          .from('follow_ups')
+          // @ts-ignore - Supabase type inference issue with dynamic inserts
+          .insert({
+            lead_id: leadData.id,
+            assigned_to: leadData.assigned_to,
+            scheduled_at: followUpDate.toISOString(),
+            notes: `Auto-scheduled follow-up: Quotation ${status}`,
+            status: 'pending',
+          } as any)
+      } catch (followUpError) {
+        // Log but don't fail the quotation update
+        console.error('Failed to create automatic follow-up for quotation:', followUpError)
+      }
+    }
   }
 
   return data

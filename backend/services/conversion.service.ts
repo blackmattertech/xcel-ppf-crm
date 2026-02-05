@@ -16,29 +16,40 @@ export async function convertLeadToCustomer(leadId: string) {
     throw new Error('Lead not found')
   }
 
-  if (lead.status !== LEAD_STATUS.CONVERTED) {
-    throw new Error('Lead must be in converted status before creating customer')
+  // Allow conversion from CONVERTED, FULLY_PAID, or any payment-related status
+  const allowedStatuses = [
+    LEAD_STATUS.CONVERTED,
+    LEAD_STATUS.FULLY_PAID,
+    LEAD_STATUS.DEAL_WON,
+    LEAD_STATUS.PAYMENT_PENDING,
+    LEAD_STATUS.ADVANCE_RECEIVED,
+  ]
+  
+  const leadData = lead as any
+  if (!allowedStatuses.includes(leadData.status)) {
+    throw new Error(`Lead must be in a convertible status (deal_won, payment_pending, advance_received, converted, or fully_paid) before creating customer. Current status: ${leadData.status}`)
   }
 
   // Check if customer already exists
   const { data: existingCustomer } = await supabase
     .from('customers')
     .select('id')
-    .eq('phone', lead.phone)
+    .eq('phone', leadData.phone)
     .single()
 
   if (existingCustomer) {
     // Update existing customer
-    const leadData = lead as any
+    const existingCustomerData = existingCustomer as { id: string }
     const { data: customer, error: customerError } = await supabase
       .from('customers')
+      // @ts-ignore - Supabase type inference issue with dynamic updates
       .update({
         name: leadData.name,
         email: leadData.email || null,
         customer_type: 'repeat',
         updated_at: new Date().toISOString(),
       } as any)
-      .eq('id', existingCustomer.id)
+      .eq('id', existingCustomerData.id)
       .select()
       .single()
 
@@ -50,9 +61,9 @@ export async function convertLeadToCustomer(leadId: string) {
   }
 
   // Create new customer
-  const leadData = lead as any
   const { data: customer, error: customerError } = await supabase
     .from('customers')
+    // @ts-ignore - Supabase type inference issue with dynamic inserts
     .insert({
       lead_id: leadId,
       name: leadData.name,
@@ -78,6 +89,7 @@ export async function createOrderFromLead(leadId: string, customerId: string, as
 
   const { data, error } = await supabase
     .from('orders')
+    // @ts-ignore - Supabase type inference issue with dynamic inserts
     .insert({
       customer_id: customerId,
       lead_id: leadId,

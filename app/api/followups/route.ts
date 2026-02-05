@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createFollowUp, getFollowUps } from '@/backend/services/followup.service'
+import { sendFollowUpAssignedNotification } from '@/backend/services/push-notification.service'
 import { z } from 'zod'
 
 const createFollowUpSchema = z.object({
@@ -23,11 +24,24 @@ export async function POST(request: NextRequest) {
 
     const followUp = await createFollowUp(followUpData)
 
+    // Send push notification to assigned user (no-op if FCM not configured or no tokens)
+    try {
+      const lead = (followUp as any)?.lead
+      await sendFollowUpAssignedNotification(followUpData.assigned_to, {
+        leadName: lead?.name ?? undefined,
+        scheduledAt: followUpData.scheduled_at,
+        followUpId: (followUp as any).id,
+        leadId: followUpData.lead_id,
+      })
+    } catch (_) {
+      // Don't fail the request if push fails
+    }
+
     return NextResponse.json({ followUp }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input', details: error.errors },
+        { error: 'Invalid input', details: error.issues },
         { status: 400 }
       )
     }
