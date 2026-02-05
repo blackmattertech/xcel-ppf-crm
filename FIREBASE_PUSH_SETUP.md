@@ -44,6 +44,7 @@ Set these in `.env.local` (or your deployment env). They are **public** and used
 | Variable | Description |
 |----------|-------------|
 | `FIREBASE_SERVICE_ACCOUNT` | **Secret.** Full JSON of the Firebase **service account** key (the file you download from Project settings → Service accounts → Generate new private key). Used only by the backend to send FCM messages. |
+| `NEXT_PUBLIC_APP_URL` | **(Recommended for production.)** Full app URL (e.g. `https://your-domain.com`). Used to build click-through links in push notifications so they open the correct origin when the app is in background or killed. If unset, Vercel deployments use `https://VERCEL_URL` automatically. |
 
 - Paste the **entire** JSON as the value (minified one line is fine). Do **not** commit this; use env vars or a secrets manager only.
 - The service account is **different** from the web app config above: the former is for server-side sending, the latter is for the browser to get and receive push.

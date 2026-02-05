@@ -21,21 +21,37 @@ importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-comp
 firebase.initializeApp(${JSON.stringify(config)});
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage(function(payload) {
-  var title = payload.notification && payload.notification.title ? payload.notification.title : 'Xcel CRM';
+function showPayloadNotification(payload) {
+  var title = (payload && payload.notification && payload.notification.title) ? payload.notification.title : (payload && payload.data && payload.data.title) ? payload.data.title : 'Xcel CRM';
+  var body = (payload && payload.notification && payload.notification.body) ? payload.notification.body : (payload && payload.data && payload.data.body) ? payload.data.body : '';
   var options = {
-    body: (payload.notification && payload.notification.body) ? payload.notification.body : '',
+    body: body,
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png',
-    data: payload.data || {},
-    tag: payload.data && payload.data.type ? payload.data.type : 'fcm',
+    data: (payload && payload.data) ? payload.data : {},
+    tag: (payload && payload.data && payload.data.type) ? payload.data.type : 'fcm',
     requireInteraction: false
   };
-  if (payload.data && payload.data.click_action) {
+  if (payload && payload.data && (payload.data.url || payload.data.click_action)) {
     options.data = options.data || {};
-    options.data.url = payload.data.click_action;
+    options.data.url = payload.data.url || payload.data.click_action;
   }
   return self.registration.showNotification(title, options);
+}
+
+messaging.onBackgroundMessage(function(payload) {
+  return showPayloadNotification(payload);
+});
+
+self.addEventListener('push', function(event) {
+  if (!event.data) return;
+  event.waitUntil(
+    event.data.json().then(function(payload) {
+      return showPayloadNotification(payload);
+    }).catch(function() {
+      return showPayloadNotification({ data: { title: 'Xcel CRM', body: '' } });
+    })
+  );
 });
 
 self.addEventListener('notificationclick', function(event) {
