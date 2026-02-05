@@ -298,6 +298,32 @@ export interface Database {
           updated_at?: string
         }
       }
+      user_push_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          fcm_token: string
+          device_label: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          fcm_token: string
+          device_label?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          fcm_token?: string
+          device_label?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       quotations: {
         Row: {
           id: string

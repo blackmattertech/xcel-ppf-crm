@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
 import { X, LogOut, Bell, Plus } from 'lucide-react'
 import { useAuthContext } from './AuthProvider'
+import { usePushNotification } from './PushNotificationProvider'
 
 interface MobileHeaderProps {
   title: string
@@ -26,6 +27,7 @@ export default function MobileHeader({
   const pathname = usePathname()
   const router = useRouter()
   const { loading, userId, role, profile } = useAuthContext()
+  const pushNotification = usePushNotification()
   const userRole = role?.name ?? null
   const userPermissions = role?.permissions ?? []
   const menuRef = useRef<HTMLDivElement>(null)
@@ -155,8 +157,34 @@ export default function MobileHeader({
                 )
               })}
             </nav>
-            {/* Logout Button */}
-            <div className="p-4 border-t border-[#272727] mt-auto">
+            {/* Push notifications & Logout */}
+            <div className="p-4 border-t border-[#272727] mt-auto space-y-1">
+              {userId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false)
+                    if (!pushNotification) {
+                      alert('Notifications are not available.')
+                      return
+                    }
+                    if (pushNotification.pushSupported) {
+                      if (pushNotification.pushPermission === 'granted') {
+                        alert('Push notifications are already enabled for this device.')
+                        return
+                      }
+                      pushNotification.requestEnablePush()
+                      return
+                    }
+                    const reason = pushNotification.pushUnavailableReason || 'Notifications are not available for this browser or environment.'
+                    alert(reason)
+                  }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 w-full transition-colors"
+                >
+                  <Bell size={24} />
+                  <span className="text-base font-medium">{pushNotification?.pushSupported && pushNotification?.pushPermission === 'granted' ? 'Push notifications' : 'Enable push notifications'}</span>
+                </button>
+              )}
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 w-full transition-colors"

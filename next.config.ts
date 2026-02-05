@@ -30,13 +30,12 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Allow cross-origin requests from network IP during development
+  // Allow cross-origin requests from network IP during development. Next.js compares Origin *hostname* (e.g. 192.168.1.36), not full URL.
   ...(process.env.NODE_ENV === 'development' && {
     allowedDevOrigins: [
-      'http://172.168.226.128:3000',
-      'http://localhost:3000',
-      'ws://172.168.226.128:3000',
-      'ws://localhost:3000',
+      'localhost',
+      '192.168.1.36',
+      '172.168.226.128',
     ],
   }),
 };
