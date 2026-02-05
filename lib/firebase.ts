@@ -152,9 +152,16 @@ export async function getFCMToken(): Promise<string | null> {
 
 const FCM_SW_URL = '/api/push/sw'
 
+/** Return the registration for the FCM SW script so the push subscription is tied to it (not next-pwa's workbox SW). */
 async function getOrRegisterServiceWorker(): Promise<ServiceWorkerRegistration | undefined> {
   if (!('serviceWorker' in navigator)) return undefined
-  const reg = await navigator.serviceWorker.getRegistration(FCM_SW_URL)
-  if (reg) return reg
+  const all = await navigator.serviceWorker.getRegistrations()
+  const origin = typeof location !== 'undefined' ? location.origin : ''
+  const fcmScriptFull = origin + FCM_SW_URL
+  const existing = all.find((reg) => {
+    const sw = reg.active ?? reg.installing ?? reg.waiting
+    return sw && (sw.scriptURL === fcmScriptFull || sw.scriptURL.endsWith(FCM_SW_URL))
+  })
+  if (existing) return existing
   return navigator.serviceWorker.register(FCM_SW_URL, { scope: '/' })
 }
