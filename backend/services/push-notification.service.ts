@@ -37,6 +37,15 @@ export type PushPayload = {
 
 const isDev = process.env.NODE_ENV === 'development'
 
+/** Base URL of the app (e.g. https://yourapp.com). Used for web push click action. */
+function getAppBaseUrl(): string {
+  const url =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+  if (url) return url.replace(/\/$/, '')
+  return ''
+}
+
 /**
  * Send push notification to all devices registered for a user.
  * No-op if FCM is not configured or user has no tokens.
@@ -56,6 +65,14 @@ export async function sendPushToUser(
     return { success: 0, failure: 0 }
   }
 
+  const baseUrl = getAppBaseUrl()
+  const clickLink =
+    payload.clickAction && baseUrl
+      ? payload.clickAction.startsWith('http')
+        ? payload.clickAction
+        : `${baseUrl}${payload.clickAction!.startsWith('/') ? '' : '/'}${payload.clickAction}`
+      : undefined
+
   const multicastMessage: admin.messaging.MulticastMessage = {
     tokens,
     notification: {
@@ -65,11 +82,15 @@ export async function sendPushToUser(
     data: {
       ...payload.data,
       ...(payload.clickAction ? { click_action: payload.clickAction } : {}),
+      ...(clickLink ? { url: clickLink } : {}),
     },
     webpush: {
-      fcmOptions: payload.clickAction
-        ? { link: payload.clickAction.startsWith('http') ? payload.clickAction : undefined }
-        : undefined,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+        icon: '/icon-192x192.png',
+      },
+      fcmOptions: clickLink ? { link: clickLink } : undefined,
     },
   }
 
