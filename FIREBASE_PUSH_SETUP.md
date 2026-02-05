@@ -88,6 +88,13 @@ It creates `public.user_push_tokens` and the trigger for `updated_at`. If you us
    - From another browser/device, log in as **User B**, create a follow-up and assign it to **User A**.  
    - **User A**’s device should show a notification (app in foreground or background). Clicking it should open the lead.
 
+## Background and killed app: how push is delivered
+
+- **Push is delivered by the browser/OS, not by your app.** The app does not need to be open or “connected”. FCM sends the message to the device; the **browser** wakes the FCM service worker, which then shows the notification. So “app killed” does **not** mean “no push” – the device just needs to be online.
+- **The device must have internet.** If the phone/device is offline (airplane mode, no Wi‑Fi, no data), FCM queues the message and delivers it when the device is back online. The app itself does not need to hold a connection.
+- **FCM service worker is registered early** (in the page `<head>`) so it is installed before next-pwa’s Workbox SW. That way the same SW that owns the push subscription receives background/killed push. If you use another PWA plugin, ensure the FCM SW at `/api/push/sw` is registered and used for `getToken()`.
+- **iOS (Safari / PWA):** Web Push is supported from iOS 16.4. When the PWA is **completely closed** (swiped away), iOS may not run the service worker until the user opens the app again, so notifications can be delayed or appear only after opening. For best results, add the site to the Home Screen and allow notifications when prompted.
+
 ## Why push might not be sent or received
 
 | Cause | What to do |
@@ -97,6 +104,7 @@ It creates `public.user_push_tokens` and the trigger for `updated_at`. If you us
 | **Cross-origin blocked (mobile / network URL)** | When opening the app from another device (e.g. `http://192.168.1.36:3000`), Next.js may block `/_next/*` or API requests. Add the **hostname** (not the full URL) to `allowedDevOrigins` in `next.config.ts`, e.g. `'192.168.1.36'`. Then restart the dev server. |
 | **HTTP on mobile** | Push and service workers can be restricted over plain HTTP on non-localhost origins. For reliable push on phones, use HTTPS (e.g. deploy or use a tunnel like ngrok). |
 | **Wrong port** | Dev server may run on 3001 if 3000 is in use. Use the URL shown in the terminal (e.g. `http://192.168.1.36:3001`). |
+| **Only works in foreground / not when background or killed** | (1) **Device must be online** – push is delivered by the browser/OS; if the device is offline, FCM queues and delivers when back online. (2) **iOS** – when the PWA is fully closed, notifications may appear only after opening the app. (3) **Test in production build** – PWA (and FCM SW) is disabled in dev (`next-pwa`); run `npm run build && npm start` and test over HTTPS. (4) Ensure you allowed notifications and see `[Push] FCM token registered` so the FCM SW owns the push subscription. |
 
 ## API
 
