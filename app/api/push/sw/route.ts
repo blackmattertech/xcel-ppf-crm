@@ -78,7 +78,8 @@ self.addEventListener('notificationclick', function(event) {
   return new NextResponse(script, {
     headers: {
       'Content-Type': 'application/javascript',
-      'Cache-Control': 'no-store, max-age=0',
+      // Allow short cache so the browser can run this SW when waking for push (e.g. from doze) even if network is briefly unavailable
+      'Cache-Control': 'public, max-age=60',
     },
   })
 }
