@@ -86,7 +86,7 @@ export default function OrdersPage() {
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6 md:mb-8">Orders</h1>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-2 gap-3 md:gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
               <p className="text-2xl font-bold text-gray-900 mt-2">
@@ -102,7 +102,8 @@ export default function OrdersPage() {
           </div>
 
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
+            <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+              <table className="min-w-full divide-y divide-gray-200 w-full">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order Number</th>

@@ -1,4 +1,4 @@
-'use client'
+ 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -195,7 +195,7 @@ export default function DashboardPage() {
 
           {loading && (
             <div className="mb-8 space-y-6">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {[1, 2, 3, 4].map((i) => (
                   <motion.div
                     key={i}
@@ -206,7 +206,7 @@ export default function DashboardPage() {
                     <div className="flex h-full flex-col justify-center gap-3 p-6">
                       <div className="h-3 w-24 rounded-full bg-gray-200" />
                       <div className="h-8 w-16 rounded-lg bg-gray-200" />
-                    </div>
+                  </div>
                   </motion.div>
                 ))}
               </div>
@@ -280,22 +280,22 @@ export default function DashboardPage() {
                     <p className="mt-1 text-sm text-orange-700">
                       There are follow-ups that have been pending for more than 1 day and need attention.
                     </p>
-                    <Link
-                      href="/followups"
+                      <Link
+                        href="/followups"
                       className="mt-3 inline-block text-sm font-medium text-orange-800 underline"
-                    >
-                      View All Follow-ups →
-                    </Link>
+                      >
+                        View All Follow-ups →
+                      </Link>
+                    </div>
                   </div>
                 </div>
-              </div>
             </motion.div>
           )}
 
           {!loading && (
             <>
               {/* KPI Cards - theme aligned */}
-              <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <KPICard
                   index={0}
                   title="Active Leads"
@@ -342,8 +342,8 @@ export default function DashboardPage() {
                       <Leaderboard data={analytics.repPerformance} maxItems={8} hideTitle />
                     )}
                   </DashboardCard>
-                </div>
-              )}
+            </div>
+          )}
 
               {/* Leads over time - Line | Table */}
               {analytics?.leadsOverTime && analytics.leadsOverTime.length > 0 && (
@@ -364,7 +364,7 @@ export default function DashboardPage() {
                       <LeadsOverTimeTable data={analytics.leadsOverTime} />
                     )}
                   </DashboardCard>
-                </div>
+            </div>
               )}
 
               {/* Leads interested in products - same data as Products page */}
@@ -387,7 +387,7 @@ export default function DashboardPage() {
                     <LeadsInterestedByProductTable data={leadsInterestedByProductFromProducts} />
                   )}
                 </DashboardCard>
-              </div>
+            </div>
 
               {/* Converted leads for products (Customers Bought) - same data as Products page */}
               <div className="mb-8">
@@ -409,7 +409,7 @@ export default function DashboardPage() {
                     <LeadsInterestedByProductTable data={convertedLeadsByProductFromProducts} countLabel="Customers bought" />
                   )}
                 </DashboardCard>
-              </div>
+          </div>
 
               {/* Leads by source & by status - Chart | Table */}
               <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -462,7 +462,7 @@ export default function DashboardPage() {
                       <RepPerformanceTable data={analytics.repPerformance} hideHeader />
                     )}
                   </DashboardCard>
-                </div>
+            </div>
               )}
             </>
           )}

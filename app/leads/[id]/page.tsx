@@ -5,6 +5,8 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
+import MobileHeader from '@/components/MobileHeader'
+import MobileBottomNav from '@/components/MobileBottomNav'
 import Image from 'next/image'
 import { 
   LEAD_STATUS, 
@@ -43,8 +45,54 @@ import {
   Eye,
   Share2,
   CheckCircle,
-  Pencil
+  Pencil,
+  Search
 } from 'lucide-react'
+
+// Source Icon Component with fallback
+function SourceIcon({ platform, source, size = 24 }: { platform?: string | null; source: string; size?: number }) {
+  const [imgError, setImgError] = useState(false)
+  
+  const getIconPath = (): string | null => {
+    if (platform) {
+      const platformLower = String(platform).toLowerCase().trim()
+      if (platformLower === 'ig' || platformLower === 'instagram') {
+        return '/source-icons/ig.png'
+      } else if (platformLower === 'fb' || platformLower === 'facebook') {
+        return '/source-icons/fb.png'
+      }
+    }
+    
+    const sourceLower = source.toLowerCase()
+    if (sourceLower.includes('facebook') || sourceLower === 'meta') {
+      return '/source-icons/fb.png'
+    } else if (sourceLower.includes('whatsapp')) {
+      return '/source-icons/wa.png'
+    } else if (sourceLower.includes('instagram')) {
+      return '/source-icons/ig.png'
+    }
+    
+    return null
+  }
+
+  const iconPath = getIconPath()
+
+  if (!iconPath || imgError) {
+    return <span className="text-2xl">📱</span>
+  }
+
+  return (
+    <Image
+      src={iconPath}
+      alt={platform || source}
+      width={size}
+      height={size}
+      className="object-contain"
+      style={{ width: `${size}px`, height: `${size}px` }}
+      onError={() => setImgError(true)}
+    />
+  )
+}
 
 // Interactive Time Picker Component
 function TimePicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
@@ -1171,43 +1219,43 @@ export default function LeadDetailPage() {
           } else {
             // Convert lead to customer and create order (e.g. when opening payment from Deal Won)
             try {
-              const convertResponse = await fetch(`/api/leads/${leadId}/convert`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
-              })
+            const convertResponse = await fetch(`/api/leads/${leadId}/convert`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+            })
 
-              if (!convertResponse.ok) {
-                const errorData = await convertResponse.json()
-                throw new Error(errorData.error || 'Failed to convert lead to customer')
-              }
+            if (!convertResponse.ok) {
+              const errorData = await convertResponse.json()
+              throw new Error(errorData.error || 'Failed to convert lead to customer')
+            }
 
               const resLead = await fetch(`/api/leads/${leadId}`).then(r => r.json())
               const currentStatus = resLead.lead?.status ?? resLead.status
               if (currentStatus !== LEAD_STATUS.FULLY_PAID) {
-                await fetch(`/api/leads/${leadId}/status`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    status: LEAD_STATUS.FULLY_PAID,
-                    notes: `Payment status updated: ${paymentStatus}. Lead converted to customer.`,
-                  }),
-                })
-              }
-
-              alert('Payment status updated. Lead converted to customer and order created successfully!')
-              window.location.href = '/customers'
-            } catch (convertError) {
-              console.error('Failed to convert lead:', convertError)
               await fetch(`/api/leads/${leadId}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   status: LEAD_STATUS.FULLY_PAID,
-                  notes: `Payment status updated: ${paymentStatus}`,
+                  notes: `Payment status updated: ${paymentStatus}. Lead converted to customer.`,
                 }),
               })
-              throw convertError
+            }
+
+            alert('Payment status updated. Lead converted to customer and order created successfully!')
+            window.location.href = '/customers'
+          } catch (convertError) {
+            console.error('Failed to convert lead:', convertError)
+            await fetch(`/api/leads/${leadId}/status`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                status: LEAD_STATUS.FULLY_PAID,
+                notes: `Payment status updated: ${paymentStatus}`,
+              }),
+            })
+            throw convertError
             }
           }
         } else if (paymentStatus === 'advance_received') {
@@ -1545,7 +1593,297 @@ export default function LeadDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 relative">
+    <>
+      {/* Mobile View */}
+      <div className="md:hidden bg-[#f5f5f5] min-h-screen pb-20 relative">
+        <MobileHeader 
+          title="My Leads"
+          showAddButton={false}
+        />
+        
+        {/* Search Bar - Sticky */}
+        <div className="sticky top-[65px] z-30 px-4 mb-3 bg-[#f5f5f5] pt-2">
+          <div className="bg-black border border-[#eaecee] rounded-xl h-[49px] flex items-center px-3 gap-2">
+            <div className="bg-white border border-[#313131] rounded-full h-[36px] flex-1 flex items-center pl-5 pr-3 gap-2">
+              <Search size={16} className="text-[#717d8a]" />
+              <input
+                type="text"
+                placeholder="Search leads..."
+                className="flex-1 bg-transparent text-[12px] text-[#717d8a] focus:outline-none"
+                readOnly
+              />
+            </div>
+            <button className="bg-[#222] border border-[#313131] rounded-full h-[33px] w-[115px] flex items-center justify-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M13 1H1L6 7.5V12L8 13V7.5L13 1Z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M4 2V12M4 2L1 5M4 2L7 5M10 2V12M10 12L13 9M10 12L7 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Lead Detail Card */}
+        <div className="px-4 pb-4">
+          <div className="bg-white border border-[#eaecee] rounded-xl p-4">
+            {/* Header */}
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex-1">
+                <h1 className="text-[14px] font-bold text-black mb-0.5 leading-[1.5]">{lead?.name || 'Loading...'}</h1>
+                {getVehicleName() && (
+                  <p className="text-[12px] text-[#717d8a] leading-[1.5]">{getVehicleName()}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {lead?.created_at && (
+                  <p className="text-[10px] text-[#393941] whitespace-nowrap">Date: {new Date(lead.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }).replace(',', '')}</p>
+                )}
+                {(lead?.meta_data?.platform || lead?.meta_data?.Platform) && (
+                  <div className="w-6 h-6 flex-shrink-0 flex items-center justify-center">
+                    <SourceIcon platform={lead.meta_data?.platform || lead.meta_data?.Platform} source={lead?.source || ''} size={20} />
+                  </div>
+                )}
+                {lead?.interest_level === 'hot' && (
+                  <TrendingUp size={20} className="text-[#de0510] flex-shrink-0" />
+                )}
+              </div>
+            </div>
+
+            {/* Status Badges */}
+            <div className="flex items-center gap-2 mb-3">
+              {lead?.status && (
+                <span className={`px-2.5 py-1 rounded-[3px] text-[10px] font-medium leading-none ${
+                  lead.status.toLowerCase().includes('negotiation') 
+                    ? 'bg-[#fce4e0] text-[#dd3f3c]' 
+                    : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {formatStatusName(lead.status)}
+                </span>
+              )}
+              {lead?.interest_level === 'hot' && (
+                <span className="px-2.5 py-1 rounded-[3px] text-[10px] font-medium flex items-center gap-1 leading-none bg-[#fbf4d9] text-[#604927]">
+                  <TrendingUp size={12} className="text-[#de0510]" />
+                  Hot
+                </span>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div className="h-[0.5px] bg-[#eaecee] mb-3"></div>
+
+            {/* Contact Information Section */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="bg-[rgba(248,229,231,0.4)] rounded-[3px] w-6 h-6 flex items-center justify-center">
+                  <Phone size={12} className="text-[#717d8a]" />
+                </div>
+                <h2 className="text-[14px] font-medium text-black">Contact Information</h2>
+              </div>
+              <div className="bg-[#fafafa] rounded-[5px] p-3 mb-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[8px] text-[#717d8a] mb-1">Mobile</p>
+                    <p className="text-[8px] font-semibold text-black">{lead?.phone || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] text-[#717d8a] mb-1">Email</p>
+                    <p className="text-[8px] font-semibold text-black">{lead?.email || 'N/A'}</p>
+                  </div>
+                  {lead?.meta_data?.company && (
+                    <div>
+                      <p className="text-[8px] text-[#717d8a] mb-1">Company</p>
+                      <p className="text-[8px] font-semibold text-black">{lead.meta_data.company}</p>
+                    </div>
+                  )}
+                  {lead?.meta_data?.location && (
+                    <div>
+                      <p className="text-[8px] text-[#717d8a] mb-1">Location</p>
+                      <p className="text-[8px] font-semibold text-black">{lead.meta_data.location}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Lead Details Section */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="bg-[rgba(248,229,231,0.4)] rounded-[3px] w-6 h-6 flex items-center justify-center">
+                  <FileText size={12} className="text-[#717d8a]" />
+                </div>
+                <h2 className="text-[14px] font-medium text-black">Lead Details</h2>
+              </div>
+              <div className="bg-[#fafafa] rounded-[5px] p-3 mb-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[8px] text-[#717d8a] mb-1">Source</p>
+                    <p className="text-[8px] font-semibold text-black capitalize">{lead?.source || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] text-[#717d8a] mb-1">Estimated Value</p>
+                    <p className="text-[8px] font-semibold text-black">{getEstimatedValue() || 'N/A'}</p>
+                  </div>
+                  {lead?.created_at && (
+                    <div>
+                      <p className="text-[8px] text-[#717d8a] mb-1">Created At</p>
+                      <p className="text-[8px] font-semibold text-black">
+                        {new Date(lead.created_at).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                  )}
+                  {getLastContactedTime() && (
+                    <div>
+                      <p className="text-[8px] text-[#717d8a] mb-1">Last Contacted</p>
+                      <p className="text-[8px] font-semibold text-black">{getLastContactedTime()}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Interests Section */}
+            {getInterests().length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="bg-[rgba(248,229,231,0.4)] rounded-[3px] w-6 h-6 flex items-center justify-center">
+                    <Gem size={12} className="text-[#717d8a]" />
+                  </div>
+                  <h2 className="text-[14px] font-medium text-black">Interests</h2>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {getInterests().map((interest, index) => (
+                    <span
+                      key={index}
+                      className="px-2.5 py-1 bg-[#e6fbd9] text-[#38a646] rounded-[3px] text-[10px] font-medium leading-none"
+                    >
+                      {String(interest).replace(/_/g, ' ')}
+                    </span>
+                  ))}
+                </div>
+                <div className="bg-[#fafafa] rounded-[5px] p-3">
+                  <p className="text-[8px] text-black leading-[1.2]">
+                    Interested in the {getVehicleName() || 'product'}. Prefers red color. Looking for financing options.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Assigned To Section */}
+            {lead?.assigned_user && (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="bg-[rgba(248,229,231,0.4)] rounded-[3px] w-6 h-6 flex items-center justify-center">
+                    <User size={12} className="text-[#717d8a]" />
+                  </div>
+                  <h2 className="text-[14px] font-medium text-black">Assigned To</h2>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <div className="relative">
+                    {lead.assigned_user.profile_image_url ? (
+                      <Image
+                        src={lead.assigned_user.profile_image_url}
+                        alt={lead.assigned_user.name}
+                        width={28}
+                        height={28}
+                        className="w-7 h-7 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-[#ed1b24] flex items-center justify-center text-white text-[8px] font-medium">
+                        {lead.assigned_user.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>
+                  </div>
+                  <div>
+                    <p className="text-[8px] font-bold text-black leading-[1.5]">{lead.assigned_user.name}</p>
+                    <p className="text-[8px] text-[#717d8a] leading-[1.5]">Sales Executive</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notes Section */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="bg-[rgba(248,229,231,0.4)] rounded-[3px] w-6 h-6 flex items-center justify-center">
+                  <FileText size={12} className="text-[#717d8a]" />
+                </div>
+                <h2 className="text-[14px] font-medium text-black">Notes</h2>
+              </div>
+              <div className="bg-[#fafafa] rounded-[5px] p-3">
+                <p className="text-[8px] text-black leading-[1.2]">
+                  {lead?.requirement || 'No notes available'}
+                </p>
+              </div>
+            </div>
+
+            {/* Next Follow-up Section */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="bg-[rgba(248,229,231,0.4)] rounded-[3px] w-6 h-6 flex items-center justify-center">
+                  <Calendar size={12} className="text-[#717d8a]" />
+                </div>
+                <h2 className="text-[14px] font-medium text-black">Next Follow-up</h2>
+              </div>
+              <div className="bg-[#fafafa] rounded-[5px] p-3">
+                <p className="text-[10px] text-black">
+                  {callFollowUpDate ? new Date(callFollowUpDate).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  }) : 'No follow-up scheduled'}
+                </p>
+              </div>
+            </div>
+
+            {/* Recent Activity Section */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="bg-[rgba(248,229,231,0.4)] rounded-[3px] w-6 h-6 flex items-center justify-center">
+                  <Clock size={12} className="text-[#717d8a]" />
+                </div>
+                <h2 className="text-[14px] font-medium text-black">Recent Activity</h2>
+              </div>
+              <div className="bg-[#fafafa] rounded-[5px] p-3">
+                <p className="text-[8px] text-[#717d8a] mb-1">Today, 10:30 AM</p>
+                <p className="text-[8px] font-semibold text-black">Lead status updated to Negotiation</p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 mt-4">
+              <button
+                onClick={() => setShowCallModal(true)}
+                className="w-full bg-[#ed1b24] text-white rounded-[6px] h-[37px] flex items-center justify-center text-[15px] font-bold"
+              >
+                Make call
+              </button>
+              <button
+                onClick={() => setShowQuotationModal(true)}
+                className="w-full bg-[#4eb159] text-white rounded-[6px] h-[37px] flex items-center justify-center text-[15px] font-bold"
+              >
+                View Quotation
+              </button>
+              <button
+                onClick={() => router.push('/leads')}
+                className="w-full bg-[#fafafa] border border-[#e0e0e0] text-black rounded-[6px] h-[37px] flex items-center justify-center text-[15px] font-bold"
+              >
+                View full History
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <MobileBottomNav />
+      </div>
+
+      {/* Desktop View */}
+      <div className="hidden md:block min-h-screen bg-gray-50 relative">
       {/* Blurred Background - Leads Page Content */}
       <div className="fixed inset-0 overflow-y-auto pointer-events-none">
     <Layout>
@@ -1643,10 +1981,11 @@ export default function LeadDetailPage() {
                       Cold
                     </span>
                   )}
-                  {/* High Priority Tag */}
+                  {lead?.interest_level === 'hot' && (
                   <span className="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                    High Priority
+                      Hot Priority
                   </span>
+                  )}
               </div>
             </div>
             
@@ -2000,13 +2339,13 @@ export default function LeadDetailPage() {
                   {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
                 </button>
               )}
-              <button
-                onClick={() => setShowQuotationModal(true)}
-                className="flex-1 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
-              >
-                <FilePlus size={18} />
+          <button
+              onClick={() => setShowQuotationModal(true)}
+              className="flex-1 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
+          >
+              <FilePlus size={18} />
                 {leadQuotations.length > 0 ? 'Create Another Quotation' : 'Create Quotation'}
-              </button>
+          </button>
             </>
           )}
           <button
@@ -2663,7 +3002,7 @@ export default function LeadDetailPage() {
                     </div>
                   )}
                 </>
-              )}
+                  )}
             </div>
               </div>
             </div>
@@ -3335,6 +3674,7 @@ export default function LeadDetailPage() {
           </div>
         </div>
       )}
+      </div>
 
       {/* Quotation Success Modal */}
       {showQuotationSuccessModal && createdQuotationId && (
@@ -3423,6 +3763,6 @@ export default function LeadDetailPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

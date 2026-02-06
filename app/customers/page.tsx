@@ -391,8 +391,9 @@ export default function CustomersPage() {
 
           {/* Table */}
           <section className="rounded-[12px] bg-white border border-[#eaecee] shadow-sm overflow-hidden">
-            <div className="hidden md:block">
-              <table className="min-w-full">
+            <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+              <div className="min-w-full inline-block md:block">
+                <table className="min-w-full w-full">
                 <thead className="bg-[#fafafa]">
                   <tr>
                     <th className="px-6 py-3 text-left text-[11px] font-medium text-[#4f5b67]">
@@ -520,6 +521,7 @@ export default function CustomersPage() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
 
             {/* Mobile cards */}

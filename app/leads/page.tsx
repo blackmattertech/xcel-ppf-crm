@@ -21,7 +21,7 @@ const NewLeadForm = dynamic(() => import('@/components/NewLeadForm'), {
 })
 
 // Source Icon Component with fallback
-function SourceIcon({ platform, source }: { platform?: string | null; source: string }) {
+function SourceIcon({ platform, source, size = 32 }: { platform?: string | null; source: string; size?: number }) {
   const [imgError, setImgError] = useState(false)
   
   const getIconPath = (): string | null => {
@@ -58,10 +58,10 @@ function SourceIcon({ platform, source }: { platform?: string | null; source: st
     <Image
       src={iconPath}
       alt={platform || source}
-      width={32}
-      height={32}
-      className="w-8 h-8 object-contain"
-      style={{ width: 'auto', height: 'auto' }}
+      width={size}
+      height={size}
+      className="object-contain"
+      style={{ width: `${size}px`, height: `${size}px` }}
       onError={() => setImgError(true)}
     />
   )
@@ -197,7 +197,7 @@ function GridView({
     const isWarm = lead.interest_level === 'warm'
     
     if (isHot) {
-      return <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#FFEBEE] text-[#F44336]">High</span>
+      return <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#FFEBEE] text-[#F44336]">Hot</span>
     } else if (isWarm) {
       return <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#FFF4E6] text-[#FF9500]">Medium</span>
     } else {
@@ -241,7 +241,7 @@ function GridView({
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" style={{ fontFamily: 'General Sans, Poppins, sans-serif' }}>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4" style={{ fontFamily: 'General Sans, Poppins, sans-serif' }}>
       {leads.map((lead) => {
         const vehicleName = getVehicleName(lead)
         const isHot = lead.interest_level === 'hot'
@@ -660,13 +660,13 @@ function KanbanBoard({
     setDraggedOverColumn(null)
   }
 
-  // Get priority badge (High/Medium based on interest_level)
+  // Get priority badge (Hot/Medium based on interest_level)
   function getPriorityBadge(lead: Lead) {
     const isHot = lead.interest_level === 'hot'
     const isWarm = lead.interest_level === 'warm'
     
     if (isHot) {
-      return <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-[#E6FBD9] text-[#2BA52E]">High</span>
+      return <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-[#E6FBD9] text-[#2BA52E]">Hot</span>
     } else if (isWarm) {
       return <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-[#FFF4E6] text-[#FF9500]">Medium</span>
     } else {
@@ -708,8 +708,8 @@ function KanbanBoard({
     : Object.keys(groupedLeads).sort()
 
   return (
-    <div className="overflow-x-auto pb-4">
-      <div className="flex gap-4 min-w-max">
+    <div className="overflow-x-auto pb-4 -mx-4 md:mx-0 px-4 md:px-0">
+      <div className="flex gap-3 md:gap-4 min-w-max">
         {groupKeys.map((groupKey) => {
           const groupLeadsList = groupedLeads[groupKey]
           const isDraggedOver = draggedOverColumn === groupKey
@@ -718,7 +718,7 @@ function KanbanBoard({
           return (
             <div
               key={groupKey}
-              className={`flex-shrink-0 w-[280px] bg-gray-50 rounded-lg ${
+              className={`flex-shrink-0 w-[260px] md:w-[280px] bg-gray-50 rounded-lg ${
                 isDraggedOver ? 'bg-blue-50 border-2 border-blue-300' : ''
               }`}
               onDragOver={(e) => handleDragOver(e, groupKey)}
@@ -888,6 +888,9 @@ export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
 
+  // Scroll handler for mobile view - hide stats cards when scrolled
+  const [isScrolled, setIsScrolled] = useState(false)
+
   // Column customization state
   interface ColumnConfig {
     key: string
@@ -1040,16 +1043,23 @@ export default function LeadsPage() {
       const statsCards = document.getElementById('stats-cards')
       const searchToolbar = document.getElementById('search-toolbar')
       
+      const scrolled = scrollY > 50
+      setIsScrolled(scrolled)
+      
       if (statsCards && searchToolbar) {
-        if (scrollY > 100) {
+        if (scrolled) {
           statsCards.style.transform = 'translateY(-100%)'
           statsCards.style.opacity = '0'
-          statsCards.style.position = 'absolute'
+          statsCards.style.height = '0'
+          statsCards.style.overflow = 'hidden'
+          statsCards.style.padding = '0'
           statsCards.style.pointerEvents = 'none'
         } else {
           statsCards.style.transform = 'translateY(0)'
           statsCards.style.opacity = '1'
-          statsCards.style.position = 'relative'
+          statsCards.style.height = 'auto'
+          statsCards.style.overflow = 'visible'
+          statsCards.style.padding = ''
           statsCards.style.pointerEvents = 'auto'
         }
       }
@@ -1270,7 +1280,7 @@ export default function LeadsPage() {
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(lead =>
+      filtered = filtered.filter(lead => 
         lead.name.toLowerCase().includes(query) ||
         lead.phone.includes(query) ||
         lead.email?.toLowerCase().includes(query) ||
@@ -2089,7 +2099,12 @@ export default function LeadsPage() {
         />
 
         {/* Stats Cards - 2x2 Grid, tap to filter */}
-        <div className="grid grid-cols-2 gap-3 p-4 pt-[81px] transition-transform duration-300" id="stats-cards">
+        <div 
+          className={`grid grid-cols-2 gap-3 p-4 pt-[81px] transition-all duration-300 ${
+            isScrolled ? 'opacity-0 -translate-y-full pointer-events-none h-0 overflow-hidden p-0' : 'opacity-100 translate-y-0'
+          }`} 
+          id="stats-cards"
+        >
           {/* Untouched Card */}
           <button
             type="button"
@@ -2098,9 +2113,9 @@ export default function LeadsPage() {
               activeQuickFilter === 'untouched' ? 'bg-red-50 border-red-300 ring-2 ring-red-400' : 'bg-white border-[#eaecee]'
             }`}
           >
-            <p className="text-2xl font-semibold text-[#242d35] mb-1">{untouchedLeads}</p>
-            <p className="text-sm font-semibold text-[#373f47] mb-2">Untouched</p>
-            <p className="text-[6px] text-[#717d8a] leading-tight mb-2">New leads pending first call</p>
+            <p className="text-[24px] font-semibold text-[#242d35] mb-1 leading-[1.2]">{untouchedLeads}</p>
+            <p className="text-[14px] font-semibold text-[#373f47] mb-2 leading-[1.5]">Untouched</p>
+            <p className="text-[8px] text-[#717d8a] leading-[1.3] mb-2">New leads pending first call</p>
             <div className="absolute bottom-2 right-2 flex items-center justify-center">
               <div className="relative w-[58px] h-[58px]">
                 <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
@@ -2120,9 +2135,9 @@ export default function LeadsPage() {
               activeQuickFilter === 'contacted' ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400' : 'bg-white border-[#eaecee]'
             }`}
           >
-            <p className="text-2xl font-semibold text-[#242d35] mb-1">{contactedLeads}</p>
-            <p className="text-sm font-semibold text-[#373f47] mb-2">Contacted</p>
-            <p className="text-[6px] text-[#717d8a] leading-tight mb-2">Leads in follow-up</p>
+            <p className="text-[24px] font-semibold text-[#242d35] mb-1 leading-[1.2]">{contactedLeads}</p>
+            <p className="text-[14px] font-semibold text-[#373f47] mb-2 leading-[1.5]">Contacted</p>
+            <p className="text-[8px] text-[#717d8a] leading-[1.3] mb-2">Leads in follow-up</p>
             <div className="absolute bottom-2 right-2 flex items-center justify-center">
               <div className="relative w-[58px] h-[58px]">
                 <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
@@ -2142,9 +2157,9 @@ export default function LeadsPage() {
               activeQuickFilter === 'qualified' ? 'bg-green-50 border-green-300 ring-2 ring-green-400' : 'bg-white border-[#eaecee]'
             }`}
           >
-            <p className="text-2xl font-semibold text-[#242d35] mb-1">{qualifiedLeads}</p>
-            <p className="text-sm font-semibold text-[#373f47] mb-2">Qualified</p>
-            <p className="text-[6px] text-[#717d8a] leading-tight mb-2">Interested leads ({allLeads.filter(l => l.interest_level === 'hot').length} Hot)</p>
+            <p className="text-[24px] font-semibold text-[#242d35] mb-1 leading-[1.2]">{qualifiedLeads}</p>
+            <p className="text-[14px] font-semibold text-[#373f47] mb-2 leading-[1.5]">Qualified</p>
+            <p className="text-[8px] text-[#717d8a] leading-[1.3] mb-2">Interested leads ({allLeads.filter(l => l.interest_level === 'hot').length} Hot)</p>
             <div className="absolute bottom-2 right-2 flex items-center justify-center">
               <div className="relative w-[58px] h-[58px]">
                 <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
@@ -2164,9 +2179,9 @@ export default function LeadsPage() {
               activeQuickFilter === 'conversions' ? 'bg-green-50 border-green-300 ring-2 ring-green-400' : 'bg-white border-[#eaecee]'
             }`}
           >
-            <p className="text-2xl font-semibold text-[#242d35] mb-1">{conversionRate}%</p>
-            <p className="text-sm font-semibold text-[#373f47] mb-2">Conversions</p>
-            <p className="text-[6px] text-[#717d8a] leading-tight mb-2">{convertedLeads} deals won</p>
+            <p className="text-[24px] font-semibold text-[#242d35] mb-1 leading-[1.2]">{conversionRate}%</p>
+            <p className="text-[14px] font-semibold text-[#373f47] mb-2 leading-[1.5]">Conversions</p>
+            <p className="text-[8px] text-[#717d8a] leading-[1.3] mb-2">{convertedLeads} deals won</p>
             <div className="absolute bottom-2 right-2 flex items-center justify-center">
               <div className="relative w-[58px] h-[58px]">
                 <svg className="w-[58px] h-[58px] transform -rotate-90" viewBox="0 0 58 58">
@@ -2258,23 +2273,24 @@ export default function LeadsPage() {
             return (
               <div
                 key={lead.id}
-                className="bg-white border border-[#eaecee] rounded-xl p-4"
+                onClick={() => router.push(`/leads/${lead.id}`)}
+                className="bg-white border border-[#eaecee] rounded-xl p-4 cursor-pointer hover:shadow-md transition-shadow"
               >
                 {/* Header with name, vehicle, date, and icons */}
-                <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-2.5">
                   <div className="flex-1 min-w-0 pr-2">
-                    <h3 className="text-base font-bold text-black mb-1 leading-tight">{lead.name}</h3>
+                    <h3 className="text-[16px] font-bold text-black mb-0.5 leading-[1.5]">{lead.name}</h3>
                     {vehicleName && (
-                      <p className="text-sm text-[#717d8a] leading-tight">{vehicleName}</p>
+                      <p className="text-[13px] text-[#717d8a] leading-[1.5]">{vehicleName}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2.5 flex-shrink-0">
                     {createdDate && (
-                      <p className="text-xs text-[#393941] whitespace-nowrap">Date: {createdDate}</p>
+                      <p className="text-[11px] text-[#393941] whitespace-nowrap">Date: {createdDate}</p>
                     )}
                     {platform && (
-                      <div className="w-6 h-6 flex-shrink-0">
-                        <SourceIcon platform={platform} source={lead.source} />
+                      <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center">
+                        <SourceIcon platform={platform} source={lead.source} size={40} />
                       </div>
                     )}
                   {isHot && (
@@ -2285,14 +2301,14 @@ export default function LeadsPage() {
 
                 {/* Status and Interest Badges */}
                 <div className="flex items-center gap-2 mb-3">
-                  <span className={`px-3 py-1.5 rounded-[3px] text-xs font-medium ${statusColor}`}>
+                  <span className={`px-3 py-1.5 rounded-[3px] text-[11px] font-medium leading-none ${statusColor}`}>
                     {formatStageName(lead.status)}
                   </span>
-                  <span className={`px-3 py-1.5 rounded-[3px] text-xs font-medium flex items-center gap-1.5 ${interestColor}`}>
+                  <span className={`px-3 py-1.5 rounded-[3px] text-[11px] font-medium flex items-center gap-1 leading-none ${interestColor}`}>
                     {isHot ? (
                       <>
-                        <TrendingUp size={14} className="text-[#de0510]" />
-                        High
+                        <TrendingUp size={13} className="text-[#de0510]" />
+                        Hot
                       </>
                     ) : (
                       'Medium'
@@ -2302,14 +2318,14 @@ export default function LeadsPage() {
 
                 {/* Contact Info */}
                 <div className="flex items-center gap-4 mb-3 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <Phone size={14} className="text-[#393941] flex-shrink-0" />
-                    <p className="text-sm text-[#393941]">{lead.phone}</p>
+                  <div className="flex items-center gap-1.5">
+                    <Phone size={16} className="text-[#393941] flex-shrink-0" />
+                    <p className="text-[11px] text-[#393941]">{lead.phone}</p>
                   </div>
                   {lead.email && (
-                    <div className="flex items-center gap-2">
-                      <Mail size={14} className="text-[#393941] flex-shrink-0" />
-                      <p className="text-sm text-[#393941] break-all">{lead.email}</p>
+                    <div className="flex items-center gap-1.5">
+                      <Mail size={16} className="text-[#393941] flex-shrink-0" />
+                      <p className="text-[11px] text-[#393941] break-all">{lead.email}</p>
                     </div>
                   )}
                 </div>
@@ -2323,35 +2339,35 @@ export default function LeadsPage() {
                     {lead.assigned_user ? (
                       <>
                         <div className="relative flex-shrink-0">
-                          <div className="w-9 h-9 rounded-full bg-[#ed1b24] flex items-center justify-center text-white text-xs font-medium">
+                          <div className="w-10 h-10 rounded-full bg-[#ed1b24] flex items-center justify-center text-white text-sm font-medium">
                           {lead.assigned_user.profile_image_url ? (
                             <Image
                               src={lead.assigned_user.profile_image_url}
                               alt={lead.assigned_user.name}
-                                width={36}
-                                height={36}
-                                className="w-9 h-9 rounded-full object-cover"
+                                width={40}
+                                height={40}
+                                className="w-10 h-10 rounded-full object-cover"
                             />
                           ) : (
                             lead.assigned_user.name.charAt(0).toUpperCase()
                           )}
                           </div>
-                          <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>
+                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-black leading-tight">{lead.assigned_user.name}</p>
-                          <p className="text-xs text-[#717d8a] leading-tight">Sales Executive</p>
+                          <p className="text-[9px] font-bold text-black leading-[1.5]">{lead.assigned_user.name}</p>
+                          <p className="text-[9px] text-[#717d8a] leading-[1.5]">Sales Executive</p>
                         </div>
                       </>
                     ) : (
-                      <p className="text-sm text-[#717d8a]">Unassigned</p>
+                      <p className="text-[11px] text-[#717d8a]">Unassigned</p>
                     )}
                   </div>
-                  <p className="text-xs text-[#393941] whitespace-nowrap">{getTimeAgo(lead.first_contact_at || lead.updated_at)}</p>
+                  <p className="text-[10px] text-[#393941] whitespace-nowrap">{getTimeAgo(lead.first_contact_at || lead.updated_at)}</p>
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5" onClick={(e) => e.stopPropagation()}>
                   {/* Followups Button */}
                   <button
                     onClick={(e) => {
@@ -2360,9 +2376,9 @@ export default function LeadsPage() {
                       setShowFollowupsModal(true)
                       fetchLeadFollowups(lead.id)
                     }}
-                    className="bg-[#fbf4d9] text-[#604927] px-4 py-2 rounded-[20px] text-xs font-medium flex items-center gap-2"
+                    className="bg-[#fbf4d9] text-[#604927] px-4 py-2 rounded-[20px] text-[11px] font-medium flex items-center gap-1.5 flex-shrink-0"
                   >
-                    <Check size={14} />
+                    <Check size={15} />
                     <span>{leadFollowupsCounts[lead.id] || 0} Followup{leadFollowupsCounts[lead.id] !== 1 ? 's' : ''}</span>
                   </button>
                   {/* Call Button */}
@@ -2371,9 +2387,9 @@ export default function LeadsPage() {
                       e.stopPropagation()
                       window.location.href = `tel:${lead.phone}`
                     }}
-                    className="bg-[#ed1b24] text-white rounded-full w-10 h-10 flex items-center justify-center flex-shrink-0"
+                    className="bg-[#ed1b24] text-white rounded-full w-11 h-11 flex items-center justify-center flex-shrink-0"
                   >
-                    <Phone size={16} />
+                    <Phone size={18} />
                   </button>
                   {/* Email Button */}
                   <button
@@ -2384,9 +2400,9 @@ export default function LeadsPage() {
                       setEmailBody('')
                       setShowEmailModal(true)
                     }}
-                    className="bg-black text-white rounded-full w-10 h-10 flex items-center justify-center flex-shrink-0"
+                    className="bg-black text-white rounded-full w-11 h-11 flex items-center justify-center flex-shrink-0"
                   >
-                    <Mail size={16} />
+                    <Mail size={18} />
                   </button>
                 </div>
               </div>
@@ -2400,7 +2416,7 @@ export default function LeadsPage() {
         {/* Mobile Filter Modal */}
         {mobileFilterOpen && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
-            <div className="bg-white rounded-t-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="bg-white rounded-t-2xl w-full max-w-full max-h-[80vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Filter Leads</h3>
                 <button onClick={() => setMobileFilterOpen(false)} className="p-2">
@@ -2411,7 +2427,7 @@ export default function LeadsPage() {
                 {/* Use the same filter UI as desktop */}
                 <div className="space-y-4">
                   {filterConditions.map((condition, index) => (
-                    <div key={condition.id} className="flex gap-2 items-end">
+                    <div key={condition.id} className="flex flex-col sm:flex-row gap-2 items-end">
                       <select
                         value={condition.column}
                         onChange={(e) => {
@@ -2419,7 +2435,7 @@ export default function LeadsPage() {
                           updated[index].column = e.target.value
                           setFilterConditions(updated)
                         }}
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                        className="flex-1 w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm"
                       >
                         <option value="name">Name</option>
                         <option value="status">Lead Stage</option>
@@ -2436,7 +2452,7 @@ export default function LeadsPage() {
                           updated[index].operator = e.target.value
                           setFilterConditions(updated)
                         }}
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                        className="flex-1 w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm"
                       >
                         <option value="equals">Equals</option>
                         <option value="contains">Contains</option>
@@ -2453,7 +2469,7 @@ export default function LeadsPage() {
                             updated[index].value = e.target.value
                             setFilterConditions(updated)
                           }}
-                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          className="flex-1 w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-2 text-sm"
                           placeholder="Value"
                         />
                       )}
@@ -2461,7 +2477,7 @@ export default function LeadsPage() {
                         onClick={() => {
                           setFilterConditions(filterConditions.filter((_, i) => i !== index))
                         }}
-                        className="p-2 text-red-600"
+                        className="p-2 text-red-600 flex-shrink-0 w-10 h-10 flex items-center justify-center"
                       >
                         <X size={18} />
             </button>
@@ -2507,7 +2523,7 @@ export default function LeadsPage() {
         {/* Mobile Sort Modal */}
         {mobileSortOpen && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
-            <div className="bg-white rounded-t-2xl w-full max-h-[60vh] overflow-y-auto">
+            <div className="bg-white rounded-t-2xl w-full max-w-full max-h-[60vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Sort Leads</h3>
                 <button onClick={() => setMobileSortOpen(false)} className="p-2">
@@ -2552,8 +2568,8 @@ export default function LeadsPage() {
 
         {/* Followups Modal */}
         {showFollowupsModal && selectedLeadForFollowups && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
-            <div className="bg-white rounded-t-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center md:justify-center p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-full md:max-w-2xl max-h-[80vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Followups - {selectedLeadForFollowups.name}</h3>
                 <button onClick={() => {
@@ -2605,7 +2621,7 @@ export default function LeadsPage() {
         {/* Email Modal */}
         {showEmailModal && selectedLeadForEmail && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-2xl w-full max-w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Send Email</h3>
                 <button onClick={() => {
@@ -2890,7 +2906,7 @@ export default function LeadsPage() {
                   <ChevronDown size={18} className={`transition-transform ${filterDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
                 </button>
                 {filterDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[600px] max-w-[800px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 w-full sm:w-auto min-w-[280px] sm:min-w-[600px] max-w-[95vw] sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
                     <div className="p-4">
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="text-base font-semibold text-gray-900">Advanced Filters</h3>
@@ -3099,7 +3115,7 @@ export default function LeadsPage() {
                     setSearchQuery(e.target.value)
                     setCurrentPage(1)
                   }}
-                  className="w-full pl-10 pr-4 py-2.5 text-base border rounded-md focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all"
+                  className="w-full pl-10 pr-4 py-2 sm:py-2.5 text-sm sm:text-base border rounded-md focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all"
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
@@ -3158,7 +3174,7 @@ export default function LeadsPage() {
               <button
                 type="button"
                 onClick={handleExportLeads}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="px-2 sm:px-4 py-2 text-xs sm:text-base border rounded-md hover:opacity-80 flex items-center gap-1 sm:gap-2 transition-all"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
@@ -3173,7 +3189,7 @@ export default function LeadsPage() {
                   setCustomizeModalOpen(true)
                   setCustomizeMode(null)
                 }}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="px-2 sm:px-4 py-2 text-xs sm:text-base border rounded-md hover:opacity-80 flex items-center gap-1 sm:gap-2 transition-all"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
@@ -3192,7 +3208,7 @@ export default function LeadsPage() {
                   <MoreVertical size={18} />
                 </button>
                 {moreOptionsOpen && (
-                  <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[200px]">
+                  <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px] sm:min-w-[200px] max-w-[90vw] sm:max-w-none">
                     <div className="p-2">
                       <button
                         onClick={() => {
@@ -3231,7 +3247,7 @@ export default function LeadsPage() {
                   <ChevronDown size={18} className={`transition-transform ${groupByDropdownOpen ? 'transform rotate-180' : ''}`} />
                 </button>
                 {groupByDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[200px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[180px] sm:min-w-[200px] max-w-[90vw] sm:max-w-none">
                     <div className="p-2">
                       {[
                         { key: 'status', label: 'Lead Stage' },
@@ -3263,7 +3279,7 @@ export default function LeadsPage() {
           {viewMode === 'table' && (
           <>
           <div className="bg-white rounded-lg shadow-sm overflow-hidden w-full">
-            <div className="overflow-x-auto w-full">
+            <div className="overflow-x-auto w-full -mx-4 md:mx-0 px-4 md:px-0">
           <table className={`w-full divide-y divide-gray-200 ${resizingColumn ? 'select-none' : ''}`} style={{ minWidth: 'max-content' }}>
             <thead className="bg-gray-50">
               <tr>

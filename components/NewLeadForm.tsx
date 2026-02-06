@@ -238,19 +238,19 @@ export default function NewLeadForm({ onClose }: NewLeadFormProps) {
       />
 
       {/* Full Page Form Container */}
-      <div className="relative min-h-screen flex items-start justify-center p-4 pt-8 pb-8 pointer-events-none">
+      <div className="relative min-h-screen flex items-start justify-center p-2 sm:p-4 pt-4 sm:pt-8 pb-4 sm:pb-8 pointer-events-none">
         <div
-          className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col animate-slideUp my-8 pointer-events-auto overflow-hidden"
+          className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-full sm:max-w-2xl shadow-2xl flex flex-col animate-slideUp my-4 sm:my-8 pointer-events-auto overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-[#de0510] to-[#ff1a24] text-white p-6 sticky top-0 z-10 rounded-t-3xl">
+          <div className="bg-gradient-to-r from-[#de0510] to-[#ff1a24] text-white p-4 sm:p-6 sticky top-0 z-10 rounded-t-2xl sm:rounded-t-3xl">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Sparkles className="animate-pulse" size={24} />
-                <div>
-                  <h2 className="text-2xl font-semibold">New Lead</h2>
-                  <p className="text-sm text-white/90">Create a new lead in the system</p>
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                <Sparkles className="animate-pulse flex-shrink-0" size={20} />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg sm:text-2xl font-semibold truncate">New Lead</h2>
+                  <p className="text-xs sm:text-sm text-white/90 truncate">Create a new lead in the system</p>
                 </div>
               </div>
               <button
@@ -264,8 +264,8 @@ export default function NewLeadForm({ onClose }: NewLeadFormProps) {
           </div>
 
           {/* Form Content */}
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto max-h-[calc(95vh-200px)]">
-            <div className="p-6 space-y-6">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto max-h-[calc(95vh-120px)] sm:max-h-[calc(95vh-200px)]">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {/* Required Fields Section */}
               <div>
                 <div className="flex items-center gap-2 mb-4">

@@ -1,7 +1,9 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import Image from 'next/image'
+import { useEffect, useCallback } from 'react'
 
 interface NavItem {
   href: string
@@ -47,9 +49,32 @@ export default function MobileBottomNav() {
   const pathname = usePathname()
   const router = useRouter()
 
-  const handleNavigation = (href: string) => {
-    router.push(href)
-  }
+  // Prefetch all navigation routes on mount and when pathname changes
+  useEffect(() => {
+    // Prefetch all routes immediately
+    navItems.forEach((item) => {
+      router.prefetch(item.href)
+    })
+    
+    // Also prefetch on idle for better performance
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const idleCallback = window.requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1))
+      idleCallback(() => {
+        navItems.forEach((item) => {
+          router.prefetch(item.href)
+        })
+      })
+    }
+  }, [router])
+
+  // Prefetch on hover/touch for faster navigation
+  const handleMouseEnter = useCallback((href: string) => {
+    router.prefetch(href)
+  }, [router])
+
+  const handleTouchStart = useCallback((href: string) => {
+    router.prefetch(href)
+  }, [router])
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-[2px] h-[98px] z-30">
@@ -58,10 +83,13 @@ export default function MobileBottomNav() {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
           
           return (
-            <button
+            <Link
               key={item.href}
-              onClick={() => handleNavigation(item.href)}
-              className="flex flex-col items-center justify-center relative flex-1 h-full"
+              href={item.href}
+              prefetch={true}
+              onMouseEnter={() => handleMouseEnter(item.href)}
+              onTouchStart={() => handleTouchStart(item.href)}
+              className="flex flex-col items-center justify-center relative flex-1 h-full active:opacity-70 transition-opacity"
             >
               {/* Red line indicator for selected item - positioned at top */}
               {isActive && (
@@ -93,6 +121,8 @@ export default function MobileBottomNav() {
                       width={isActive ? 26 : 18}
                       height={isActive ? 26 : 18}
                       className="object-contain"
+                      priority={isActive}
+                      loading={isActive ? 'eager' : 'lazy'}
                       style={{
                         width: '100%',
                         height: '100%',
@@ -107,7 +137,7 @@ export default function MobileBottomNav() {
                   {item.label}
                 </span>
               </div>
-            </button>
+            </Link>
           )
         })}
       </div>

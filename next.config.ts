@@ -99,6 +99,22 @@ const pwaConfig = withPWA({
         },
       },
     },
+    {
+      // Cache navigation routes for faster page loads
+      urlPattern: /^\/(dashboard|followups|leads|customers|products)(\/.*)?$/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'navigationCache',
+        expiration: {
+          maxEntries: 10,
+          maxAgeSeconds: 60 * 60, // 1 hour
+        },
+        networkTimeoutSeconds: 3,
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
   ],
   buildExcludes: [/middleware-manifest\.json$/],
   publicExcludes: ['!noprecache/**/*'],

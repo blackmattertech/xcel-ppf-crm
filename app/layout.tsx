@@ -58,6 +58,12 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#000000" />
         <meta name="msapplication-TileImage" content="/icon-192x192.png" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
+        {/* Prefetch navigation routes for faster mobile navigation */}
+        <link rel="prefetch" href="/dashboard" />
+        <link rel="prefetch" href="/followups" />
+        <link rel="prefetch" href="/leads" />
+        <link rel="prefetch" href="/customers" />
+        <link rel="prefetch" href="/products" />
       </head>
       <body className="antialiased">
         <ClientProviders>
