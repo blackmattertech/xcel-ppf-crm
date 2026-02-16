@@ -36,11 +36,12 @@ export async function GET(request: NextRequest) {
     // Generate state parameter for CSRF protection
     const state = Buffer.from(JSON.stringify({ userId: user.id, redirectUri })).toString('base64')
 
-    // Facebook OAuth URL with required permissions (leads_retrieval for syncing leads from Meta)
+    // Facebook OAuth URL – scopes match Meta Permissions Reference; leads_retrieval requires pages_manage_ads
     const scopes = [
+      'pages_show_list',
       'pages_read_engagement',
       'pages_manage_metadata',
-      'pages_show_list',
+      'pages_manage_ads',
       'business_management',
       'ads_read',
       'ads_management',
