@@ -1377,18 +1377,38 @@ export default function LeadDetailPage() {
   const availableStatuses = getAvailableStatuses()
   const canUpdateStatus = userRole === 'tele_caller' || userRole === 'admin' || userRole === 'super_admin'
 
+  // Read a field from meta_data: top-level key or from field_data array (Meta sync stores in field_data)
+  function getMetaDataField(metaData: Record<string, any> | null | undefined, ...fieldNames: string[]): string | null {
+    if (!metaData) return null
+    for (const fieldName of fieldNames) {
+      if (metaData[fieldName] != null) {
+        const v = String(metaData[fieldName]).trim()
+        if (v) return v
+      }
+      const arr = metaData.field_data
+      if (Array.isArray(arr)) {
+        const item = arr.find((e: { name?: string }) => e && e.name === fieldName)
+        const val = (item as { values?: string[] })?.values?.[0]
+        if (val != null) {
+          const v = String(val).trim()
+          if (v) return v
+        }
+      }
+    }
+    return null
+  }
+
   // Raw product/interest string (requirement or meta) — may contain "| Car Model: X"
   function getRawProductInterest(): string {
     if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
-    if (lead?.meta_data) {
-      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] ||
-                             lead.meta_data['what_services_are_you_looking_for'] ||
-                             lead.meta_data['What services are you looking for?'] ||
-                             lead.meta_data['product_interest'] ||
-                             lead.meta_data['service'] ||
-                             null
-      if (productInterest) return String(productInterest).replace(/_/g, ' ')
-    }
+    const productInterest = getMetaDataField(lead?.meta_data,
+      'what_services_are_you_looking_for?',
+      'what_services_are_you_looking_for',
+      'What services are you looking for?',
+      'product_interest',
+      'service'
+    )
+    if (productInterest) return productInterest.replace(/_/g, ' ')
     return ''
   }
 
@@ -1405,14 +1425,17 @@ export default function LeadDetailPage() {
     return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
   }
 
-  // Car model: from meta_data first, else from product string
+  // Car model: from meta_data (top-level or field_data), else from product string
   function getLeadCarModel(): string {
-    if (lead?.meta_data) {
-      const carModel = lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
-                       lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
-                       lead.meta_data['vehicle'] || lead.meta_data['Vehicle'] || null
-      if (carModel) return String(carModel).replace(/_/g, ' ')
-    }
+    const carModel = getMetaDataField(lead?.meta_data,
+      'car_model',
+      'Car Model',
+      'vehicle_model',
+      'Vehicle Model',
+      'vehicle',
+      'Vehicle'
+    )
+    if (carModel) return carModel.replace(/_/g, ' ')
     return extractCarModelFromString(getRawProductInterest())
   }
 
@@ -1423,20 +1446,13 @@ export default function LeadDetailPage() {
 
   // Get vehicle name from requirement or meta_data (for header: show car model when present)
   function getVehicleName() {
-    const fromMeta = lead?.meta_data && (
-      lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
-      lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
-      lead.meta_data['vehicle'] || lead.meta_data['Vehicle']
-    )
-    if (fromMeta) return String(fromMeta).replace(/_/g, ' ')
+    const carModel = getMetaDataField(lead?.meta_data, 'car_model', 'Car Model', 'vehicle_model', 'Vehicle Model', 'vehicle', 'Vehicle')
+    if (carModel) return carModel.replace(/_/g, ' ')
     const fromProduct = extractCarModelFromString(getRawProductInterest())
     if (fromProduct) return fromProduct
     if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
-    if (lead?.meta_data) {
-      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] ||
-                     lead.meta_data['what_services_are_you_looking_for'] || null
-      if (vehicle) return String(vehicle).replace(/_/g, ' ')
-    }
+    const vehicle = getMetaDataField(lead?.meta_data, 'what_services_are_you_looking_for?', 'what_services_are_you_looking_for')
+    if (vehicle) return vehicle.replace(/_/g, ' ')
     return null
   }
 
