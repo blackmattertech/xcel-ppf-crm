@@ -43,20 +43,28 @@ export async function getFacebookLeadsSettings(userId: string): Promise<Facebook
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('facebook_business_settings')
-    .select('page_id, access_token, expires_at')
+    .select('page_id, page_access_token, access_token, expires_at')
     .eq('created_by', userId)
     .eq('is_active', true)
     .maybeSingle()
 
   if (error || !data) return null
 
-  const row = data as { page_id: string | null; access_token: string; expires_at: string | null }
-  if (!row.page_id || !row.access_token) return null
+  const row = data as {
+    page_id: string | null
+    page_access_token: string | null
+    access_token: string
+    expires_at: string | null
+  }
+  if (!row.page_id) return null
+  // Leadgen API requires Page Access Token (#190); prefer page_access_token, fall back to access_token for older connections
+  const token = row.page_access_token || row.access_token
+  if (!token) return null
   if (row.expires_at && new Date(row.expires_at) < new Date()) return null
 
   return {
     page_id: row.page_id,
-    access_token: row.access_token,
+    access_token: token,
   }
 }
 
