@@ -189,6 +189,11 @@ export async function fetchAllLeadsFromMeta(userId: string): Promise<ParsedMetaL
       for (const node of nodes) {
         if (seenIds.has(node.id)) continue
         seenIds.add(node.id)
+        // Log first raw lead from Meta API (exact Graph API response shape)
+        if (allParsed.length === 0) {
+          console.log('[Meta Leads Sync] First lead (raw from Meta Graph API):')
+          console.log(JSON.stringify(node, null, 2))
+        }
         const value = toMetaLeadValue(node)
         const parsed = parseMetaLeadValue(value)
         allParsed.push(parsed)

@@ -26,6 +26,13 @@ export async function POST(request: NextRequest) {
     // Fetch all leads from Meta API
     const parsedLeads = await fetchAllLeadsFromMeta(user.id)
 
+    // Log first lead in full so you can see exact data/format (remove or guard with NODE_ENV if needed)
+    if (parsedLeads.length > 0) {
+      const first = parsedLeads[0]
+      console.log('[Meta Leads Sync] First lead (parsed) — full structure:')
+      console.log(JSON.stringify(first, null, 2))
+    }
+
     if (parsedLeads.length === 0) {
       return NextResponse.json({
         message: 'No leads found on Meta, or no leadgen forms on the connected Page.',
