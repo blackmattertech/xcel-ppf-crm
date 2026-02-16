@@ -70,7 +70,7 @@ export async function getAllLeads(filters?: {
 export async function getLeadById(id: string, userId?: string, userRole?: string) {
   const supabase = createServiceClient()
 
-  let query = supabase
+  const query = supabase
     .from('leads')
     .select(`
       *,

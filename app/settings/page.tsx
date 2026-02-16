@@ -25,10 +25,12 @@ function SettingsContent() {
     const integration = searchParams.get('integration')
 
     if (success && integration === 'facebook') {
-      setNotification({
-        type: 'success',
-        message: 'Facebook Business account connected successfully!',
-      })
+      setTimeout(() => {
+        setNotification({
+          type: 'success',
+          message: 'Facebook Business account connected successfully!',
+        })
+      }, 0)
       // Clear URL params
       router.replace('/settings', { scroll: false })
     } else if (error && integration === 'facebook') {
@@ -40,10 +42,12 @@ function SettingsContent() {
         callback_failed: 'Failed to process Facebook callback. Please try again.',
         facebook_not_configured: 'Facebook integration is not configured. Please contact your administrator.',
       }
-      setNotification({
-        type: 'error',
-        message: errorMessages[error] || 'An error occurred while connecting Facebook.',
-      })
+      setTimeout(() => {
+        setNotification({
+          type: 'error',
+          message: errorMessages[error] || 'An error occurred while connecting Facebook.',
+        })
+      }, 0)
       // Clear URL params
       router.replace('/settings', { scroll: false })
     }

@@ -21,8 +21,9 @@ CREATE INDEX IF NOT EXISTS facebook_business_settings_active_idx ON public.faceb
 -- Create index for created_by
 CREATE INDEX IF NOT EXISTS facebook_business_settings_created_by_idx ON public.facebook_business_settings(created_by);
 
--- Create trigger for updated_at
-CREATE TRIGGER update_facebook_business_settings_updated_at 
+-- Create trigger for updated_at (drop first so migration is idempotent)
+DROP TRIGGER IF EXISTS update_facebook_business_settings_updated_at ON public.facebook_business_settings;
+CREATE TRIGGER update_facebook_business_settings_updated_at
     BEFORE UPDATE ON public.facebook_business_settings
-    FOR EACH ROW 
+    FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

@@ -24,8 +24,11 @@ export default function PopupNotification() {
 
     const currentTime = Date.now()
     if (currentTime - lastNotificationTime > 10 * 60 * 1000) {
-      setShowPopup(true)
-      setLastNotificationTime(currentTime)
+      // Defer state updates to avoid calling setState synchronously inside the effect
+      setTimeout(() => {
+        setShowPopup(true)
+        setLastNotificationTime(currentTime)
+      }, 0)
 
       // Show browser notification only if user already granted (do NOT call requestPermission here –
       // it must be from a user gesture; use sidebar "Enable push notifications" instead)

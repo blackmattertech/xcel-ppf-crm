@@ -8,11 +8,25 @@ import TypingAnimation from '@/components/TypingAnimation'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  function getStoredCredentials() {
+    if (typeof window === 'undefined') return null
+    const stored = localStorage.getItem('remembered_credentials')
+    if (!stored) return null
+    try {
+      const credentials = JSON.parse(stored)
+      const expiresAt = new Date(credentials.expiresAt)
+      if (expiresAt > new Date()) return credentials
+      return null
+    } catch (e) {
+      return null
+    }
+  }
+
+  const [email, setEmail] = useState(() => getStoredCredentials()?.email ?? '')
+  const [password, setPassword] = useState(() => getStoredCredentials()?.password ?? '')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
+  const [rememberMe, setRememberMe] = useState(() => Boolean(getStoredCredentials()))
   const [showPassword, setShowPassword] = useState(false)
   const [muted, setMuted] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -36,36 +50,25 @@ export default function LoginPage() {
       try {
         const credentials = JSON.parse(stored)
         const expiresAt = new Date(credentials.expiresAt)
-        
-        // Check if credentials are still valid (not expired)
-        if (expiresAt > new Date()) {
-          setEmail(credentials.email)
-          if (credentials.password) {
-            setPassword(credentials.password)
-          }
-          setRememberMe(true)
-          
-          // Check if session is still valid
-          const checkSession = async () => {
-            const supabase = createClient()
-            const { data: { session } } = await supabase.auth.getSession()
-            
-            // If session exists but credentials are expired, sign out
-            if (session && expiresAt <= new Date()) {
-              await supabase.auth.signOut()
-              localStorage.removeItem('remembered_credentials')
-              setRememberMe(false)
-            }
-          }
-          
-          checkSession()
-        } else {
-          // Remove expired credentials
-          localStorage.removeItem('remembered_credentials')
-          // Sign out if session exists
+
+        // Check if session is still valid (async); do NOT call setState synchronously here
+        const checkSession = async () => {
           const supabase = createClient()
-          supabase.auth.signOut()
+          const { data: { session } } = await supabase.auth.getSession()
+
+          // If session exists but credentials are expired, sign out
+          if (session && expiresAt <= new Date()) {
+            await supabase.auth.signOut()
+            localStorage.removeItem('remembered_credentials')
+            // keep rememberMe in sync on next render
+          }
+          // If credentials expired but no session, also remove stored data
+          if (!session && expiresAt <= new Date()) {
+            localStorage.removeItem('remembered_credentials')
+          }
         }
+
+        checkSession()
       } catch (err) {
         // Invalid stored data, remove it
         localStorage.removeItem('remembered_credentials')

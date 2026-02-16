@@ -18,19 +18,14 @@ export default function Sidebar() {
   const userRole = role?.name ?? null
   const userPermissions = role?.permissions ?? []
   const [followUpCount, setFollowUpCount] = useState(0)
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('sidebar-collapsed') === 'true'
+  })
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
 
-  // Load collapsed state from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebar-collapsed')
-      if (saved === 'true') {
-        setIsCollapsed(true)
-      }
-    }
-  }, [])
+  // Initial collapsed state is derived from localStorage via lazy state initializer
 
   // Save collapsed state to localStorage and notify Layout
   useEffect(() => {
@@ -40,14 +35,6 @@ export default function Sidebar() {
       window.dispatchEvent(new CustomEvent('sidebar-toggle', { detail: { isCollapsed } }))
     }
   }, [isCollapsed])
-
-  useEffect(() => {
-    if (userRole === 'tele_caller') {
-      fetchFollowUpCount()
-      const interval = setInterval(fetchFollowUpCount, 5 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [userRole])
 
   async function fetchFollowUpCount() {
     try {
@@ -60,6 +47,14 @@ export default function Sidebar() {
       console.error('Failed to fetch follow-up count:', error)
     }
   }
+
+  useEffect(() => {
+    if (userRole === 'tele_caller') {
+      ;(async () => { await fetchFollowUpCount() })()
+      const interval = setInterval(() => { void fetchFollowUpCount() }, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [userRole])
 
   // Close profile menu when clicking outside
   useEffect(() => {

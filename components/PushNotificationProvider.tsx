@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { useAuthContext } from './AuthProvider'
 import {
   isFirebaseConfigured,
@@ -37,34 +37,23 @@ export function usePushNotification() {
 export function PushNotificationProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, userId } = useAuthContext()
   const registeredTokenRef = useRef<string | null>(null)
-  const [showPermissionBanner, setShowPermissionBanner] = useState(false)
   const [permissionDismissed, setPermissionDismissed] = useState(false)
+  const [permissionState, setPermissionState] = useState<'default' | 'granted' | 'denied'>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission as 'default' | 'granted' | 'denied'
+    }
+    return 'default'
+  })
   const [enabling, setEnabling] = useState(false)
-  const [permissionState, setPermissionState] = useState<'default' | 'granted' | 'denied'>('default')
-
-  // When already granted, register token automatically. When default, show banner so user can click to enable.
-  // Skip if browser doesn't support FCM (e.g. in-app browsers, non-HTTPS, no service workers) to avoid messaging/unsupported-browser.
-  useEffect(() => {
-    if (!isAuthenticated || !userId || !isFirebaseConfigured() || typeof window === 'undefined') return
-    if (!('Notification' in window)) return
-
-    const supported = isFirebaseMessagingSupported()
-    const permission = Notification.permission as 'default' | 'granted' | 'denied'
-    setPermissionState(permission)
-
-    if (!supported) return
-    if (permission === 'granted') {
-      setShowPermissionBanner(false)
-      registerTokenInBackground()
-      return
-    }
-    if (permission === 'default' && !permissionDismissed) {
-      setShowPermissionBanner(true)
-    } else {
-      setShowPermissionBanner(false)
-    }
-  }, [isAuthenticated, userId, permissionDismissed])
-
+  const showPermissionBanner = Boolean(
+    isAuthenticated &&
+    userId &&
+    isFirebaseConfigured() &&
+    isFirebaseMessagingSupported() &&
+    permissionState === 'default' &&
+    !permissionDismissed
+  )
+  // Registers token in background (keeps function above effects to avoid hoisting lint errors)
   async function registerTokenInBackground(providedToken?: string | null, retryCount = 0) {
     const token = providedToken ?? (await getFCMTokenWhenGranted())
     if (!token) {
@@ -96,13 +85,27 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
     }
   }
 
+  // When already granted, register token automatically. When default, show banner so user can click to enable.
+  // Skip if browser doesn't support FCM (e.g. in-app browsers, non-HTTPS, no service workers) to avoid messaging/unsupported-browser.
+  useEffect(() => {
+    if (!isAuthenticated || !userId || !isFirebaseConfigured() || typeof window === 'undefined') return
+    if (!('Notification' in window)) return
+
+    const supported = isFirebaseMessagingSupported()
+    if (!supported) return
+    if (permissionState === 'granted') {
+      void registerTokenInBackground()
+      return
+    }
+  }, [isAuthenticated, userId, permissionDismissed, permissionState, registerTokenInBackground])
+
   async function handleEnableNotifications() {
     if (!isAuthenticated || !userId || !isFirebaseConfigured() || !isFirebaseMessagingSupported()) {
       if (isDev) console.warn('[Push] Enable skipped: auth or Firebase not ready.')
       return
     }
     setEnabling(true)
-    setShowPermissionBanner(false)
+    setPermissionDismissed(true)
     // Request permission synchronously in the same turn as the click (no await before this).
     // Browsers require this to be inside a "short-running user-generated event handler".
     const permissionPromise = Notification.requestPermission()
@@ -110,7 +113,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
     setEnabling(false)
     setPermissionState(permission as 'default' | 'granted' | 'denied')
     if (permission !== 'granted') {
-      if (permission === 'default') setShowPermissionBanner(true)
+      if (permission === 'default') setPermissionDismissed(false)
       return
     }
     const token = await getFCMTokenWhenGranted()
@@ -118,13 +121,12 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
       await registerTokenInBackground(token)
     } else {
       if (isDev) console.warn('[Push] No token after permission granted. If you see "insecure", use https:// or http://localhost (not http://192.168.x.x).')
-      setShowPermissionBanner(true)
+      setPermissionDismissed(false)
     }
   }
 
   function dismissBanner() {
     setPermissionDismissed(true)
-    setShowPermissionBanner(false)
   }
 
   // Foreground message handler: show browser Notification if permitted
