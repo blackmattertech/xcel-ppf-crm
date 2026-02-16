@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const scopes = [
       'pages_read_engagement',
       'pages_manage_metadata',
-      'pages_read_user_content',
+      'pages_show_list',
       'business_management',
       'ads_read',
       'ads_management',
