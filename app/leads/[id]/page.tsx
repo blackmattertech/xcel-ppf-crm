@@ -904,7 +904,9 @@ export default function LeadDetailPage() {
 
   // LEAD JOURNEY: Handle Connected sub-option selection
   async function handleConnectedSubOption(option: 'interested' | 'not_interested' | 'call_later') {
-    if (!callStartTime || !callEndTime) {
+    // Call start/end time are only required for "interested" and "not_interested" (to record call duration).
+    // For "call_later" we only need follow-up date/time; call_duration can be null.
+    if (option !== 'call_later' && (!callStartTime || !callEndTime)) {
       alert('Please select both start and end time for the call')
       return
     }
@@ -2207,11 +2209,36 @@ export default function LeadDetailPage() {
                   {/* Conditional Expansion Based on Outcome */}
                   {callOutcome && (
                     <div className="border-t pt-6 space-y-4 animate-slideUp">
-                      {/* Connected Flow - Show Sub-Options */}
+                      {/* Connected Flow - Call timing then Sub-Options */}
                       {callOutcome === CALL_OUTCOME.CONNECTED && !connectedSubOption && (
-                        <div>
-                          <h4 className="text-base font-medium text-gray-900 mb-4">What was the outcome of the call?</h4>
-                          <div className="space-y-3">
+                        <div className="space-y-6">
+                          <div>
+                            <h4 className="text-base font-medium text-gray-900 mb-3">Call timing</h4>
+                            <p className="text-sm text-gray-600 mb-3">When did the call start and end? (Required for Interested / Not Interested)</p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
+                                <input
+                                  type="time"
+                                  value={callStartTime}
+                                  onChange={(e) => setCallStartTime(e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">End time</label>
+                                <input
+                                  type="time"
+                                  value={callEndTime}
+                                  onChange={(e) => setCallEndTime(e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="text-base font-medium text-gray-900 mb-4">What was the outcome of the call?</h4>
+                            <div className="space-y-3">
                             {/* Interested */}
                             <button
                               type="button"
@@ -2286,6 +2313,7 @@ export default function LeadDetailPage() {
                                 </div>
                               </div>
                             </button>
+                          </div>
                           </div>
                         </div>
                       )}
