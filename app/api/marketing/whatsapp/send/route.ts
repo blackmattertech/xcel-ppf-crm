@@ -9,6 +9,8 @@ const sendSchema = z.object({
   message: z.string().min(1).max(4096),
   defaultCountryCode: z.string().max(4).optional().default('91'),
   leadId: z.string().uuid().optional(),
+  /** WhatsApp message ID (wamid) to reply to – sends as contextual reply. */
+  contextMessageId: z.string().min(1).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -41,11 +43,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { recipients, message, defaultCountryCode, leadId } = parsed.data
+  const { recipients, message, defaultCountryCode, leadId, contextMessageId } = parsed.data
 
   if (recipients.length === 1 && leadId) {
     const r = recipients[0]
-    const result = await sendWhatsAppText(r.phone, message, config)
+    const result = await sendWhatsAppText(r.phone, message, config, contextMessageId ?? null)
     if (result.success) {
       const saved = await saveOutgoingMessage({
         leadId,
@@ -72,6 +74,19 @@ export async function POST(request: NextRequest) {
     message,
     { delayMs: 250, defaultCountryCode }
   )
+
+  for (let i = 0; i < result.results.length; i++) {
+    const r = result.results[i]
+    if (r.success) {
+      const recipient = recipients[i]
+      await saveOutgoingMessage({
+        leadId: null,
+        phone: recipient?.phone ?? r.phone,
+        body: message,
+        metaMessageId: r.messageId ?? undefined,
+      })
+    }
+  }
 
   return NextResponse.json({
     sent: result.sent,

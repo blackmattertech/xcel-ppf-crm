@@ -191,3 +191,48 @@ export async function updateTemplateMetaLanguage(
     throw new Error(error.message)
   }
 }
+
+/** Delete a template by id. Only removes from DB; call Meta delete separately if meta_id is set. */
+export async function deleteTemplate(id: string): Promise<void> {
+  const supabase = createServiceClient()
+  const { error } = await supabase.from('whatsapp_templates').delete().eq('id', id)
+  if (error) {
+    if (isTableMissingError(error)) throw new Error(TABLE_MISSING_MESSAGE)
+    throw new Error(error.message)
+  }
+}
+
+/** Update a draft template. Fails if template is not in draft status. */
+export async function updateTemplate(id: string, input: CreateTemplateInput): Promise<WhatsAppTemplateRow> {
+  const existing = await getTemplateById(id)
+  if (!existing) throw new Error('Template not found')
+  if (existing.status !== 'draft') throw new Error('Only draft templates can be edited')
+
+  const supabase = createServiceClient()
+  const name = sanitizeTemplateName(input.name)
+  const language = (input.language || 'en').replace(/-/g, '_').slice(0, 10)
+  const row = {
+    name,
+    language,
+    category: input.category,
+    body_text: input.body_text,
+    header_text: input.header_text || null,
+    footer_text: input.footer_text || null,
+    header_format: input.header_format ?? 'TEXT',
+    header_media_url: input.header_media_url || null,
+    buttons: input.buttons && input.buttons.length > 0 ? input.buttons : [],
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('whatsapp_templates')
+    .update(row as never)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    if (isTableMissingError(error)) throw new Error(TABLE_MISSING_MESSAGE)
+    throw new Error(error.message)
+  }
+  return data as WhatsAppTemplateRow
+}

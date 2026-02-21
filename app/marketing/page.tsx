@@ -2,9 +2,29 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Layout from '@/components/Layout'
-import { MessageCircle, Megaphone, Search, Loader2, Send, Users, UserCheck, ListOrdered, FileText, RefreshCw, CheckCircle, Clock, XCircle, FileEdit, MessageSquare } from 'lucide-react'
+import { TemplatePreview } from '@/app/marketing/_components/TemplatePreview'
+import { MessageCircle, Megaphone, Search, Loader2, Send, Users, UserCheck, ListOrdered, FileText, RefreshCw, CheckCircle, Clock, XCircle, FileEdit, MessageSquare, BookOpen, Eye, Trash2, Upload } from 'lucide-react'
 
 type MarketingTab = 'overview' | 'bulk-whatsapp' | 'templates' | 'chat'
+
+/** True if two template names are likely the same (e.g. typo: welcom vs welcome). Hides local when Meta has similar name to avoid #132001. */
+function templateNameSimilar(a: string, b: string): boolean {
+  const x = a.toLowerCase().trim()
+  const y = b.toLowerCase().trim()
+  if (x === y) return true
+  const lenDiff = Math.abs(x.length - y.length)
+  if (lenDiff > 1) return false
+  if (x.length === y.length) {
+    let diff = 0
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) diff++
+    return diff <= 1
+  }
+  const [short, long] = x.length < y.length ? [x, y] : [y, x]
+  for (let i = 0; i < long.length; i++) {
+    if (long.slice(0, i) + long.slice(i + 1) === short) return true
+  }
+  return false
+}
 
 /** Meta-supported template languages: display name and code for dropdown & list. */
 const META_LANGUAGES: { code: string; name: string }[] = [
@@ -258,6 +278,15 @@ function OverviewTab() {
               <p className="text-xs text-gray-500 mt-0.5">Not submitted yet</p>
             </div>
           </div>
+          <p className="mt-4 text-xs text-gray-500">
+            This app uses the <strong>WhatsApp Cloud API</strong>. Meta also offers the{' '}
+            <a href="https://developers.facebook.com/docs/whatsapp/marketing-messages-api-for-whatsapp/" target="_blank" rel="noopener noreferrer" className="text-[#ed1b24] hover:underline">Marketing Messages API for WhatsApp</a>
+            {' '}with extra features: GIF headers, TTL 12h–30d for marketing, benchmarks, recommendations, conversion metrics. Same message payload; onboard via App Dashboard → WhatsApp → Quickstart if you need those features.
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            Throughput: default up to 80 messages/sec (up to 1,000 when upgraded). If you see error 130429, you’re over the limit — wait and retry.{' '}
+            <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/guides/throughput" target="_blank" rel="noopener noreferrer" className="text-[#ed1b24] hover:underline">Throughput</a>
+          </p>
         </div>
       </section>
     </div>
@@ -279,9 +308,10 @@ function BulkWhatsAppTab() {
   const [sendResult, setSendResult] = useState<SendResult | null>(null)
   const [broadcastMode, setBroadcastMode] = useState<'free-text' | 'template'>('free-text')
   const [approvedTemplates, setApprovedTemplates] = useState<WhatsAppTemplate[]>([])
-  const [metaTemplates, setMetaTemplates] = useState<Array<{ name: string; language: string; category?: string }>>([])
+  const [metaTemplates, setMetaTemplates] = useState<Array<{ name: string; language: string; category?: string; body_text?: string; header_text?: string | null }>>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [templateParamValues, setTemplateParamValues] = useState<string[]>([])
+  const [templateHeaderParamValues, setTemplateHeaderParamValues] = useState<string[]>([])
 
   // Check if Meta WhatsApp API is configured
   useEffect(() => {
@@ -308,13 +338,19 @@ function BulkWhatsAppTab() {
       })
   }, [apiConfigured])
 
-  // If current selection is a local template whose name exists in Meta, use Meta option (exact language, avoids #132001)
+  // If current selection is a local template whose name exists (or is similar) in Meta, use Meta option (avoids #132001)
   useEffect(() => {
     if (!selectedTemplateId || selectedTemplateId.startsWith('meta:')) return
     const local = approvedTemplates.find((t) => t.id === selectedTemplateId)
     if (!local) return
-    const metaMatch = metaTemplates.find((m) => m.name === local.name)
-    if (metaMatch) setSelectedTemplateId(`meta:${metaMatch.name}:${metaMatch.language}`)
+    const exactMatch = metaTemplates.find((m) => m.name === local.name)
+    if (exactMatch) {
+      setSelectedTemplateId(`meta:${exactMatch.name}:${exactMatch.language}`)
+      return
+    }
+    // If a Meta template has a very similar name (e.g. "welcome" vs "welcom"), prefer Meta to avoid #132001
+    const similarMeta = metaTemplates.find((m) => templateNameSimilar(local.name, m.name))
+    if (similarMeta) setSelectedTemplateId(`meta:${similarMeta.name}:${similarMeta.language}`)
   }, [approvedTemplates, metaTemplates, selectedTemplateId])
 
   // Fetch leads
@@ -495,14 +531,29 @@ function BulkWhatsAppTab() {
     const [, name, language] = selectedTemplateId.split(':')
     return name && language ? { name, language } : null
   }, [selectedTemplateId])
+  /** Resolved template for param counts: from Meta list (with body_text/header_text) or local approved. */
+  const resolvedTemplateForParams = useMemo(() => {
+    if (selectedMetaTemplate) {
+      const meta = metaTemplates.find((m) => m.name === selectedMetaTemplate?.name && m.language === selectedMetaTemplate?.language)
+      return meta ? { body_text: meta.body_text ?? '', header_text: meta.header_text ?? null } : null
+    }
+    return selectedTemplate ? { body_text: selectedTemplate.body_text ?? '', header_text: selectedTemplate.header_text ?? null } : null
+  }, [selectedMetaTemplate, selectedTemplate, metaTemplates])
   const templateParamCount = useMemo(() => {
-    if (selectedMetaTemplate) return 0
-    if (!selectedTemplate?.body_text) return 0
-    const matches = selectedTemplate.body_text.match(/\{\{(\d+)\}\}/g)
+    if (!resolvedTemplateForParams?.body_text) return 0
+    const matches = resolvedTemplateForParams.body_text.match(/\{\{(\d+)\}\}/g)
     if (!matches) return 0
     const indices = new Set(matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10)))
     return indices.size === 0 ? 0 : Math.max(...indices)
-  }, [selectedTemplate, selectedMetaTemplate])
+  }, [resolvedTemplateForParams])
+  const templateHeaderParamCount = useMemo(() => {
+    const headerText = resolvedTemplateForParams?.header_text
+    if (!headerText || typeof headerText !== 'string') return 0
+    const matches = headerText.match(/\{\{(\d+)\}\}/g)
+    if (!matches) return 0
+    const indices = new Set(matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10)))
+    return indices.size === 0 ? 0 : Math.max(...indices)
+  }, [resolvedTemplateForParams])
 
   const sendTemplateViaApi = async () => {
     if (!selectedTemplateId || count === 0) return
@@ -514,9 +565,11 @@ function BulkWhatsAppTab() {
     const BATCH_SIZE = 100
     const recipients = selectedRecipients.map((r) => ({ phone: r.phone, name: r.name }))
     const bodyParameters = templateParamCount > 0 ? templateParamValues.slice(0, templateParamCount) : undefined
+    const headerParameters = templateHeaderParamCount > 0 ? templateHeaderParamValues.slice(0, templateHeaderParamCount) : undefined
     const payload: Record<string, unknown> = {
       recipients: [],
       bodyParameters,
+      headerParameters,
       defaultCountryCode: '91',
     }
     if (isMetaTemplate && selectedMetaTemplate) {
@@ -700,6 +753,7 @@ function BulkWhatsAppTab() {
                 onChange={(e) => {
                   setSelectedTemplateId(e.target.value)
                   setTemplateParamValues([])
+                  setTemplateHeaderParamValues([])
                   clearSendResult()
                 }}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -711,20 +765,25 @@ function BulkWhatsAppTab() {
                     {t.name} ({t.language}) — from Meta
                   </option>
                 ))}
-                {/* Local approved templates only when Meta does not have this name */}
+                {/* Local approved only when Meta has no exact or similar name (avoids typo mismatch #132001) */}
                 {approvedTemplates
-                  .filter((l) => !metaTemplates.some((m) => m.name === l.name))
+                  .filter((l) => !metaTemplates.some((m) => m.name === l.name || templateNameSimilar(l.name, m.name)))
                   .map((t) => (
                     <option key={t.id} value={t.id}>{t.name} ({t.language})</option>
                   ))}
               </select>
+              {metaTemplates.length > 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Prefer options labeled <strong>— from Meta</strong> so name and language match Meta exactly (avoids #132001).
+                </p>
+              )}
               {approvedTemplates.length === 0 && metaTemplates.length === 0 && (
                 <p className="mt-1 text-xs text-amber-600">No templates. Create one in the Message templates tab or add in Meta WhatsApp dashboard, then sync.</p>
               )}
             </div>
             {templateParamCount > 0 && (
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Template variables (same for all recipients)</label>
+                <label className="block text-sm font-medium text-gray-700">Body variables (same for all recipients)</label>
                 {Array.from({ length: templateParamCount }, (_, i) => (
                   <input
                     key={i}
@@ -736,6 +795,25 @@ function BulkWhatsAppTab() {
                       setTemplateParamValues(next)
                     }}
                     placeholder={`{{${i + 1}}}`}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                ))}
+              </div>
+            )}
+            {templateHeaderParamCount > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Header variables (same for all recipients)</label>
+                {Array.from({ length: templateHeaderParamCount }, (_, i) => (
+                  <input
+                    key={i}
+                    type="text"
+                    value={templateHeaderParamValues[i] ?? ''}
+                    onChange={(e) => {
+                      const next = [...templateHeaderParamValues]
+                      next[i] = e.target.value
+                      setTemplateHeaderParamValues(next)
+                    }}
+                    placeholder={`Header {{${i + 1}}}`}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
                 ))}
@@ -803,7 +881,7 @@ function BulkWhatsAppTab() {
                   <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
                     <p className="font-medium">Template or language mismatch (#132001)</p>
                     <p className="mt-1 text-amber-700">
-                      Pick a template that says <strong>&quot;— from Meta&quot;</strong> in the dropdown so name and language match Meta exactly. In Meta, &quot;English&quot; uses code <code>en</code> and &quot;English (US)&quot; uses <code>en_US</code>. If you still see this, go to <strong>Message templates</strong> → click <strong>Sync</strong>, then try again with the same &quot;— from Meta&quot; option.
+                      Sent template <strong>&quot;{(selectedMetaTemplate ?? selectedTemplate)?.name ?? '?'}&quot;</strong> ({selectedMetaTemplate?.language ?? selectedTemplate?.language ?? '?'}). Meta says it doesn’t exist in that language — name and language must match Meta exactly. Pick an option labeled <strong>&quot;— from Meta&quot;</strong> (e.g. welcome (en_US) — from Meta), or go to <strong>Message templates</strong> → <strong>Sync</strong>, then choose the same &quot;— from Meta&quot; option again.
                     </p>
                   </div>
                 )}
@@ -849,7 +927,7 @@ function BulkWhatsAppTab() {
               <button
                 type="button"
                 onClick={sendTemplateViaApi}
-                disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim()))}
+                disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) || (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))}
                 className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
               >
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -934,69 +1012,6 @@ function BulkWhatsAppTab() {
 
 // ---------- Message templates (design → submit to Meta → use in broadcast) ----------
 
-function TemplatePreview({
-  headerFormat,
-  headerText,
-  headerMediaUrl,
-  body,
-  footer,
-  buttons,
-}: {
-  headerFormat: string
-  headerText: string
-  headerMediaUrl: string
-  body: string
-  footer: string
-  buttons: Array<{ type: string; text: string; example?: string }>
-}) {
-  const bodyPreview = body.replace(/\{\{(\d+)\}\}/g, (_, n) => {
-    const samples: Record<string, string> = { '1': 'John', '2': 'Offer', '3': 'Code' }
-    return samples[n] ?? `{{${n}}}`
-  })
-  return (
-    <div className="rounded-2xl bg-[#e5ddd5] p-4 max-w-sm transition-all duration-300 ease-out">
-      <div className="bg-white rounded-xl shadow-md overflow-hidden text-left border border-gray-100">
-        {headerFormat !== 'TEXT' && (headerMediaUrl || headerFormat !== 'TEXT') && (
-          <div className="aspect-video bg-gray-100 flex items-center justify-center text-gray-400 text-sm">
-            {headerMediaUrl ? (
-              headerFormat === 'IMAGE' ? (
-                <img src={headerMediaUrl} alt="Header" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-              ) : (
-                <span className="p-2">{headerFormat === 'VIDEO' ? '▶ Video' : '📄 Document'}</span>
-              )
-            ) : (
-              <span>{headerFormat === 'IMAGE' ? '🖼 Image' : headerFormat === 'VIDEO' ? '▶ Video' : '📄 Document'}</span>
-            )}
-          </div>
-        )}
-        {headerFormat === 'TEXT' && headerText && (
-          <div className="px-3 pt-3 pb-1 font-semibold text-gray-900 text-sm">{headerText}</div>
-        )}
-        <div className="px-3 py-2 text-gray-800 text-sm whitespace-pre-wrap transition-opacity duration-200">{bodyPreview || 'Body text…'}</div>
-        {footer && <div className="px-3 pb-2 pt-0 text-gray-500 text-xs">{footer}</div>}
-        {buttons.length > 0 && (
-          <div className="px-2 pb-3 pt-1 flex flex-col gap-1.5">
-            {buttons.map((b, i) => (
-              <span
-                key={i}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-white transition transform hover:scale-[1.02] ${
-                  b.type === 'URL' ? 'bg-[#25D366]' : b.type === 'PHONE_NUMBER' ? 'bg-[#128C7E]' : b.type === 'COPY_CODE' ? 'bg-[#075E54]' : 'bg-[#25D366]'
-                }`}
-              >
-                {b.type === 'URL' && <span aria-hidden>🔗</span>}
-                {b.type === 'PHONE_NUMBER' && <span aria-hidden>📞</span>}
-                {b.type === 'COPY_CODE' && <span aria-hidden>📋</span>}
-                {b.text}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      <p className="text-[10px] text-gray-500 mt-1.5">Live preview</p>
-    </div>
-  )
-}
-
 function normalizePhoneForChat(phone: string): string {
   const digits = phone.replace(/\D/g, '')
   if (digits.length >= 10) return digits.slice(-10)
@@ -1024,6 +1039,7 @@ function ChatWithLeadsTab() {
   const [sendStatus, setSendStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [search, setSearch] = useState('')
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
+  const [messagesError, setMessagesError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -1059,11 +1075,18 @@ function ChatWithLeadsTab() {
 
   const fetchMessages = useCallback((leadId: string, phone: string) => {
     setLoadingMessages(true)
+    setMessagesError(null)
     const params = new URLSearchParams({ leadId, phone })
-    fetch(`/api/marketing/whatsapp/chat?${params}`)
-      .then((res) => (res.ok ? res.json() : { messages: [] }))
+    fetch(`/api/marketing/whatsapp/chat?${params}`, { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) return res.json().then((d) => { throw new Error(d?.error || res.statusText) })
+        return res.json()
+      })
       .then((data) => setMessages(data.messages || []))
-      .catch(() => setMessages([]))
+      .catch((err) => {
+        setMessages([])
+        setMessagesError(err?.message || 'Could not load messages')
+      })
       .finally(() => setLoadingMessages(false))
   }, [])
 
@@ -1087,15 +1110,19 @@ function ChatWithLeadsTab() {
     setSending(true)
     setSendStatus('idle')
     setMessage('')
+    const lastIncoming = [...messages].filter((m) => m.direction === 'in').pop()
+    const contextMessageId = lastIncoming?.meta_message_id ?? undefined
     try {
       const res = await fetch('/api/marketing/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           recipients: [{ phone: selectedLead.phone, name: selectedLead.name }],
           message: text,
           defaultCountryCode: '91',
           leadId: selectedLead.id,
+          ...(contextMessageId && { contextMessageId }),
         }),
       })
       const data = await res.json()
@@ -1106,7 +1133,7 @@ function ChatWithLeadsTab() {
       }
       setSendStatus('success')
       if (data.message) setMessages((prev) => [...prev, data.message])
-      else fetchMessages(selectedLead.id, selectedLead.phone)
+      fetchMessages(selectedLead.id, selectedLead.phone)
     } catch {
       setSendStatus('error')
       setMessage(text)
@@ -1145,7 +1172,7 @@ function ChatWithLeadsTab() {
                   <li key={lead.id}>
                     <button
                       type="button"
-                      onClick={() => { setSelectedLead(lead); setSendStatus('idle') }}
+                      onClick={() => { setSelectedLead(lead); setSendStatus('idle'); setMessagesError(null) }}
                       className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
                         selectedLead?.id === lead.id ? 'bg-[#25D366]/10 border-l-2 border-[#25D366]' : 'hover:bg-gray-100'
                       }`}
@@ -1193,6 +1220,8 @@ function ChatWithLeadsTab() {
                   <div className="flex justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-[#25D366]" />
                   </div>
+                ) : messagesError ? (
+                  <p className="text-xs text-amber-600 text-center py-4">{messagesError}. Ensure database migration 019 (whatsapp_messages) has been run.</p>
                 ) : messages.length === 0 ? (
                   <p className="text-xs text-gray-400 text-center py-4">No messages yet. Say hi — messages you send and lead replies will appear here.</p>
                 ) : (
@@ -1258,6 +1287,9 @@ interface WhatsAppTemplate {
   body_text: string
   header_text: string | null
   footer_text: string | null
+  header_format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+  header_media_url?: string | null
+  buttons?: Array<{ type: string; text: string; example?: string }> | null
   status: 'draft' | 'pending' | 'approved' | 'rejected'
   meta_id: string | null
   rejection_reason: string | null
@@ -1265,12 +1297,30 @@ interface WhatsAppTemplate {
   updated_at: string
 }
 
+interface LibraryTemplate {
+  id: string
+  name: string
+  language: string
+  status: string
+  category: string
+  body_text: string
+  header_format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+  header_text: string | null
+  footer_text: string | null
+  buttons: Array<{ type: string; text: string; example?: string }>
+}
+
 function TemplatesTab() {
+  const [templatesSubTab, setTemplatesSubTab] = useState<'my-templates' | 'library'>('my-templates')
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
   const [metaOnlyTemplates, setMetaOnlyTemplates] = useState<Array<{ name: string; language: string; category?: string }>>([])
+  const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [submittingId, setSubmittingId] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [formName, setFormName] = useState('')
   const [formCategory, setFormCategory] = useState<'MARKETING' | 'UTILITY' | 'AUTHENTICATION'>('MARKETING')
@@ -1280,12 +1330,20 @@ function TemplatesTab() {
   const [formFooter, setFormFooter] = useState('')
   const [formHeaderFormat, setFormHeaderFormat] = useState<'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'>('TEXT')
   const [formHeaderMediaUrl, setFormHeaderMediaUrl] = useState('')
+  const [formHeaderPreviewUrl, setFormHeaderPreviewUrl] = useState('')
+  const [formHeaderUploading, setFormHeaderUploading] = useState(false)
+  const headerPreviewUrlRef = useRef<string | null>(null)
   const [formButtons, setFormButtons] = useState<Array<{ type: string; text: string; example?: string }>>([])
   const [formSaving, setFormSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [showWabaHelp, setShowWabaHelp] = useState(false)
   const [discoverResult, setDiscoverResult] = useState<{ wabaId?: string; wabaIds?: string[]; error?: string } | null>(null)
   const [discovering, setDiscovering] = useState(false)
+  const [previewTemplate, setPreviewTemplate] = useState<WhatsAppTemplate | null>(null)
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [permissionError, setPermissionError] = useState<string | null>(null)
 
   const fetchTemplates = () => {
     setLoading(true)
@@ -1307,9 +1365,89 @@ function TemplatesTab() {
 
   useEffect(() => { fetchTemplates() }, [])
 
+  const fetchLibrary = useCallback(() => {
+    setLibraryLoading(true)
+    setLibraryError(null)
+    fetch('/api/marketing/whatsapp/templates/library')
+      .then((res) => (res.ok ? res.json() : { templates: [], error: 'Failed to load' }))
+      .then((data) => {
+        setLibraryTemplates(data.templates || [])
+        if (data.error) setLibraryError(data.error)
+      })
+      .catch(() => { setLibraryTemplates([]); setLibraryError('Could not load template library') })
+      .finally(() => setLibraryLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (templatesSubTab === 'library') fetchLibrary()
+  }, [templatesSubTab, fetchLibrary])
+
+  const openFormFromLibrary = (lib: LibraryTemplate) => {
+    const cat = (lib.category?.toUpperCase() === 'UTILITY' || lib.category?.toUpperCase() === 'AUTHENTICATION')
+      ? lib.category.toUpperCase() as 'UTILITY' | 'AUTHENTICATION'
+      : 'MARKETING'
+    setFormName(`${lib.name}_copy`)
+    setFormCategory(cat)
+    setFormLanguage(lib.language)
+    setFormBody(lib.body_text)
+    setFormHeader(lib.header_text ?? '')
+    setFormFooter(lib.footer_text ?? '')
+    setFormHeaderFormat(lib.header_format ?? 'TEXT')
+    if (headerPreviewUrlRef.current) {
+      URL.revokeObjectURL(headerPreviewUrlRef.current)
+      headerPreviewUrlRef.current = null
+    }
+    setFormHeaderMediaUrl('')
+    setFormHeaderPreviewUrl('')
+    setFormButtons(lib.buttons?.length ? lib.buttons.map((b) => ({ type: b.type, text: b.text, example: b.example })) : [])
+    setFormError(null)
+    setEditingTemplateId(null)
+    setShowForm(true)
+    setTemplatesSubTab('my-templates')
+  }
+
+  const openFormForEdit = (t: WhatsAppTemplate) => {
+    if (headerPreviewUrlRef.current) {
+      URL.revokeObjectURL(headerPreviewUrlRef.current)
+      headerPreviewUrlRef.current = null
+    }
+    setFormHeaderPreviewUrl('')
+    setFormName(t.name)
+    setFormCategory(t.category as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION')
+    setFormLanguage(t.language)
+    setFormBody(t.body_text)
+    setFormHeader(t.header_text ?? '')
+    setFormFooter(t.footer_text ?? '')
+    setFormHeaderFormat((t.header_format as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') ?? 'TEXT')
+    setFormHeaderMediaUrl(t.header_media_url ?? '')
+    setFormButtons(Array.isArray(t.buttons) && t.buttons.length > 0
+      ? t.buttons.map((b) => ({ type: b.type, text: b.text, example: b.example }))
+      : [])
+    setFormError(null)
+    setEditingTemplateId(t.id)
+    setShowForm(true)
+  }
+
+  const handleDeleteTemplate = (id: string) => {
+    setDeletingId(id)
+    fetch(`/api/marketing/whatsapp/templates/${id}`, { method: 'DELETE', credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          alert(data.error)
+          if (/100|permission|WhatsApp Business Account/i.test(String(data.error))) setPermissionError(String(data.error))
+        } else {
+          setDeleteConfirmId(null)
+          fetchTemplates()
+        }
+      })
+      .finally(() => setDeletingId(null))
+  }
+
   const handleSync = () => {
     setSyncing(true)
     setDiscoverResult(null)
+    setPermissionError(null)
     fetch('/api/marketing/whatsapp/templates/sync', { method: 'POST' })
       .then((res) => res.json())
       .then((data) => {
@@ -1317,7 +1455,9 @@ function TemplatesTab() {
           const msg = data.detail ? `${data.error}\n\n${data.detail}` : data.error
           alert(msg)
           setShowWabaHelp(true)
+          if (/100|permission|WhatsApp Business Account/i.test(String(data.error))) setPermissionError(String(data.error))
         } else {
+          setPermissionError(null)
           fetchTemplates()
         }
       })
@@ -1335,6 +1475,7 @@ function TemplatesTab() {
 
   const handleSubmitToMeta = (id: string) => {
     setSubmittingId(id)
+    setSubmitError(null)
     fetch(`/api/marketing/whatsapp/templates/${id}/submit`, { method: 'POST' })
       .then((res) => res.json())
       .then((data) => {
@@ -1343,8 +1484,12 @@ function TemplatesTab() {
           if (data.detail) msg += `\n\n${data.detail}`
           if (data.currentStatus) msg += `\n(Current status: ${data.currentStatus})`
           if (data.reason === 'status_not_draft') msg += '\n\nOnly draft templates can be submitted. Create a new template or use one that is still in draft.'
-          alert(msg)
+          setSubmitError(msg)
+          alert('Submit failed. See the message below for details.')
+          if (/100|permission|WhatsApp Business Account/i.test(String(data.error))) setPermissionError(String(data.error))
         } else {
+          setSubmitError(null)
+          setPermissionError(null)
           fetchTemplates()
         }
       })
@@ -1370,22 +1515,33 @@ function TemplatesTab() {
         ...(b.example?.trim() && { example: b.example.trim() }),
       })),
     }
-    fetch('/api/marketing/whatsapp/templates', {
-      method: 'POST',
+    const url = editingTemplateId
+      ? `/api/marketing/whatsapp/templates/${editingTemplateId}`
+      : '/api/marketing/whatsapp/templates'
+    const method = editingTemplateId ? 'PATCH' : 'POST'
+    fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      credentials: 'include',
     })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) setFormError(data.error)
         else {
+          if (headerPreviewUrlRef.current) {
+            URL.revokeObjectURL(headerPreviewUrlRef.current)
+            headerPreviewUrlRef.current = null
+          }
           setShowForm(false)
+          setEditingTemplateId(null)
           setFormName('')
           setFormBody('')
           setFormHeader('')
           setFormFooter('')
           setFormHeaderFormat('TEXT')
           setFormHeaderMediaUrl('')
+          setFormHeaderPreviewUrl('')
           setFormButtons([])
           fetchTemplates()
         }
@@ -1396,9 +1552,10 @@ function TemplatesTab() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <p className="text-sm text-gray-600">
-          Design message templates, submit for Meta review, then use approved templates for bulk broadcast.
-        </p>
+        {/* <p className="text-sm text-gray-600">
+          Design message templates, submit for Meta review, then use approved templates for bulk broadcast. For GIF headers, marketing TTL (12h–30d), benchmarks and recommendations, see{' '}
+          <a href="https://developers.facebook.com/docs/whatsapp/marketing-messages-api-for-whatsapp/features/" target="_blank" rel="noopener noreferrer" className="text-[#ed1b24] hover:underline">Marketing Messages API for WhatsApp</a>.
+        </p> */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -1411,7 +1568,10 @@ function TemplatesTab() {
           </button>
           <button
             type="button"
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => {
+              if (showForm) setShowForm(false)
+              else { setEditingTemplateId(null); setShowForm(true) }
+            }}
             className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e]"
           >
             {showForm ? 'Cancel' : 'Create template'}
@@ -1426,6 +1586,93 @@ function TemplatesTab() {
         </div>
       </div>
 
+      <div className="flex gap-1 rounded-lg bg-gray-100 p-1 w-fit">
+        <button
+          type="button"
+          onClick={() => setTemplatesSubTab('my-templates')}
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            templatesSubTab === 'my-templates' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <FileText className="h-4 w-4" />
+          My templates
+        </button>
+        <button
+          type="button"
+          onClick={() => setTemplatesSubTab('library')}
+          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            templatesSubTab === 'library' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <BookOpen className="h-4 w-4" />
+          Template library
+        </button>
+      </div>
+
+      {templatesSubTab === 'library' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <p className="text-sm text-gray-600">Templates in your account (from Meta). Preview and clone to edit as a new draft.</p>
+              <button
+                type="button"
+                onClick={fetchLibrary}
+                disabled={libraryLoading}
+                className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {libraryLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh
+              </button>
+            </div>
+            {libraryError && <p className="text-sm text-amber-600 mb-3">{libraryError}</p>}
+            {libraryLoading && libraryTemplates.length === 0 ? (
+              <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-[#ed1b24]" /></div>
+            ) : libraryTemplates.length === 0 ? (
+              <p className="text-sm text-gray-500 py-6 text-center">No templates in your account yet. Add templates in WhatsApp Manager or create custom ones in My templates.</p>
+            ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {libraryTemplates.map((lib) => (
+                <div key={`${lib.id}-${lib.name}-${lib.language}`} className="rounded-xl border border-gray-200 p-4 bg-gray-50/50 flex flex-col">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div>
+                      <p className="font-medium text-gray-900">{lib.name}</p>
+                      <p className="text-xs text-gray-500">{getLanguageName(lib.language)} · {lib.category}</p>
+                      <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${
+                        lib.status === 'approved' || lib.status === 'active' ? 'bg-green-100 text-green-800' :
+                        lib.status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                        lib.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {lib.status}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openFormFromLibrary(lib)}
+                      className="shrink-0 rounded-lg border border-[#ed1b24] px-3 py-1.5 text-sm font-medium text-[#ed1b24] hover:bg-red-50"
+                    >
+                      Edit (clone)
+                    </button>
+                  </div>
+                  <div className="mt-auto">
+                    <TemplatePreview
+                      headerFormat={lib.header_format ?? 'TEXT'}
+                      headerText={lib.header_text ?? ''}
+                      headerMediaUrl=""
+                      body={lib.body_text}
+                      footer={lib.footer_text ?? ''}
+                      buttons={lib.buttons?.filter((b) => b.text) ?? []}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          </div>
+        </div>
+      )}
+
+      {templatesSubTab === 'my-templates' && (
+        <>
       {showWabaHelp && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
           <h4 className="font-medium text-amber-900">Find your WhatsApp Business Account ID</h4>
@@ -1462,11 +1709,49 @@ function TemplatesTab() {
         </div>
       )}
 
+      {submitError && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-start justify-between gap-2">
+            <h4 className="font-medium text-amber-900">Submit for review failed</h4>
+            <button type="button" onClick={() => setSubmitError(null)} className="text-amber-700 hover:text-amber-900 text-sm shrink-0">Dismiss</button>
+          </div>
+          <p className="mt-2 text-sm text-amber-800 whitespace-pre-wrap">{submitError}</p>
+        </div>
+      )}
+
+      {(showWabaHelp || permissionError || libraryError?.includes('100') || libraryError?.toLowerCase().includes('permission')) && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <h4 className="font-medium text-blue-900">If you see &quot;#100) Need permission on WhatsApp Business Account&quot;</h4>
+            <button type="button" onClick={() => setPermissionError(null)} className="text-blue-600 hover:text-blue-800 text-sm shrink-0">Dismiss</button>
+          </div>
+          <p className="text-sm text-blue-800">
+            This means your <strong>access token</strong> does not have the right permissions, or the app is not linked to the business that owns the WhatsApp account.
+          </p>
+          <ol className="text-sm text-blue-800 list-decimal list-inside space-y-2">
+            <li>
+              <strong>Use a System User token</strong> with <code className="bg-white/80 px-1 rounded">whatsapp_business_management</code> (for templates) and <code className="bg-white/80 px-1 rounded">whatsapp_business_messaging</code> (for sending). In Meta Business Suite → Business settings → Users → System users → Add assets → generate token for your app and select these permissions.
+            </li>
+            <li>
+              <strong>Link the app to the correct Business:</strong> The WhatsApp Business Account must be owned by or shared with the same Meta Business that has your app. In Business settings → Accounts → WhatsApp Accounts, ensure the WABA is under the business where your app is registered.
+            </li>
+            <li>
+              <strong>Use the WABA ID, not the Business ID:</strong> <code className="bg-white/80 px-1 rounded">WHATSAPP_BUSINESS_ACCOUNT_ID</code> must be the <strong>WhatsApp Business Account ID</strong> (from WhatsApp Accounts), not the Meta Business ID.
+            </li>
+          </ol>
+          <p className="text-sm text-blue-800">
+            <a href="https://developers.facebook.com/docs/whatsapp/access-tokens/" target="_blank" rel="noopener noreferrer" className="underline">Meta: Access tokens</a>
+            {' · '}
+            <a href="https://developers.facebook.com/docs/whatsapp/business-management-api/get-started/" target="_blank" rel="noopener noreferrer" className="underline">Business Management API</a>
+          </p>
+        </div>
+      )}
+
       {showForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm transition-all duration-300 ease-out">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <form onSubmit={handleCreateTemplate} className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">New message template</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{editingTemplateId ? 'Edit template' : 'New message template'}</h3>
               {formError && <p className="text-sm text-red-600">{formError}</p>}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name (lowercase, underscores only)</label>
@@ -1519,30 +1804,68 @@ function TemplatesTab() {
               </div>
               {formHeaderFormat === 'TEXT' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Header text (optional, max 60 chars)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Header text (optional, max 60 chars; you can use {"{{1}}"} etc.)</label>
                   <input
                     type="text"
                     value={formHeader}
                     onChange={(e) => setFormHeader(e.target.value)}
                     maxLength={60}
+                    placeholder="e.g. Hello {{1}}"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
                 </div>
               )}
               {(formHeaderFormat === 'IMAGE' || formHeaderFormat === 'VIDEO' || formHeaderFormat === 'DOCUMENT') && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sample media URL (for Meta review)</label>
-                  <input
-                    type="url"
-                    value={formHeaderMediaUrl}
-                    onChange={(e) => setFormHeaderMediaUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Upload {formHeaderFormat.toLowerCase()} for Meta (required for template review)
+                  </label>
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 cursor-pointer disabled:opacity-50">
+                    <input
+                      type="file"
+                      accept={formHeaderFormat === 'IMAGE' ? 'image/jpeg,image/png,image/gif,image/webp' : formHeaderFormat === 'VIDEO' ? 'video/mp4,video/x-m4v' : 'application/pdf'}
+                      className="sr-only"
+                      disabled={formHeaderUploading}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        if (headerPreviewUrlRef.current) {
+                          URL.revokeObjectURL(headerPreviewUrlRef.current)
+                          headerPreviewUrlRef.current = null
+                        }
+                        const objectUrl = URL.createObjectURL(f)
+                        headerPreviewUrlRef.current = objectUrl
+                        setFormHeaderPreviewUrl(objectUrl)
+                        setFormHeaderUploading(true)
+                        setFormError(null)
+                        const fd = new FormData()
+                        fd.append('file', f)
+                        try {
+                          const res = await fetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
+                          const data = await res.json()
+                          if (data.handle) setFormHeaderMediaUrl(data.handle)
+                          else setFormError(data.error ?? 'Upload failed')
+                        } catch (err) {
+                          setFormError(err instanceof Error ? err.message : 'Upload failed')
+                        } finally {
+                          setFormHeaderUploading(false)
+                          e.target.value = ''
+                        }
+                      }}
+                    />
+                    {formHeaderUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {formHeaderUploading ? 'Uploading…' : `Choose ${formHeaderFormat.toLowerCase()} file`}
+                  </label>
+                  {formHeaderMediaUrl && (
+                    <p className="mt-1.5 text-xs text-green-600">Uploaded to Meta ✓</p>
+                  )}
                 </div>
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Body (use {"{{1}}"}, {"{{2}}"} for variables)</label>
+                <p className="text-xs text-gray-500 mb-1.5">
+                  Variables: type {"{{1}}"}, {"{{2}}"}, {"{{3}}"} etc. in the body (and optionally in a TEXT header). When sending, you fill value for {"{{1}}"}, {"{{2}}"}, … in order. Example: &quot;Hi {"{{1}}"}, your order {"{{2}}"} is ready.&quot; → you provide [name, order_id].
+                </p>
                 <textarea
                   value={formBody}
                   onChange={(e) => setFormBody(e.target.value)}
@@ -1613,7 +1936,7 @@ function TemplatesTab() {
                 disabled={!formBody.trim() || formSaving}
                 className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50"
               >
-                {formSaving ? 'Saving…' : 'Save draft'}
+                {formSaving ? 'Saving…' : editingTemplateId ? 'Save changes' : 'Save draft'}
               </button>
             </form>
             <div className="lg:sticky lg:top-4 h-fit">
@@ -1622,6 +1945,7 @@ function TemplatesTab() {
                 headerFormat={formHeaderFormat}
                 headerText={formHeader}
                 headerMediaUrl={formHeaderMediaUrl}
+                headerPreviewUrl={formHeaderPreviewUrl}
                 body={formBody}
                 footer={formFooter}
                 buttons={formButtons.filter((b) => b.text.trim())}
@@ -1654,7 +1978,57 @@ function TemplatesTab() {
                       {t.status}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTemplate(t)}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5"
+                      title="Preview"
+                    >
+                      <Eye className="h-4 w-4" />
+                      Preview
+                    </button>
+                    {t.status === 'draft' && (
+                      <button
+                        type="button"
+                        onClick={() => openFormForEdit(t)}
+                        className="rounded-lg border border-[#ed1b24] px-3 py-1.5 text-sm font-medium text-[#ed1b24] hover:bg-red-50 inline-flex items-center gap-1.5"
+                        title="Edit"
+                      >
+                        <FileEdit className="h-4 w-4" />
+                        Edit
+                      </button>
+                    )}
+                    {deleteConfirmId === t.id ? (
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600">Delete?</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(t.id)}
+                          disabled={!!deletingId}
+                          className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {deletingId === t.id ? 'Deleting…' : 'Yes'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmId(null)}
+                          className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmId(t.id)}
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 inline-flex items-center gap-1.5"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </button>
+                    )}
                     {t.status === 'draft' && (
                       <button
                         type="button"
@@ -1694,6 +2068,34 @@ function TemplatesTab() {
           </>
         )}
       </div>
+
+      {previewTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setPreviewTemplate(null)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Template preview</h3>
+              <button
+                type="button"
+                onClick={() => setPreviewTemplate(null)}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-2">{previewTemplate.name} · {getLanguageName(previewTemplate.language)}</p>
+            <TemplatePreview
+              headerFormat={(previewTemplate.header_format as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') ?? 'TEXT'}
+              headerText={previewTemplate.header_text ?? ''}
+              headerMediaUrl={previewTemplate.header_media_url ?? ''}
+              body={previewTemplate.body_text}
+              footer={previewTemplate.footer_text ?? ''}
+              buttons={previewTemplate.buttons?.filter((b) => b?.text) ?? []}
+            />
+          </div>
+        </div>
+      )}
+        </>
+      )}
     </div>
   )
 }

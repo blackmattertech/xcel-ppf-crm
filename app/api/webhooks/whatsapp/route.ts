@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { saveIncomingMessage } from '@/backend/services/whatsapp-chat.service'
+import { markMessageAsRead } from '@/backend/services/whatsapp.service'
 import { createServiceClient } from '@/lib/supabase/service'
 
 /** Meta WhatsApp webhook: GET for verification, POST for incoming messages. */
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
             metaMessageId: msg.id,
             leadId,
           })
+          markMessageAsRead(msg.id).catch((err) => console.warn('[webhooks/whatsapp] mark read failed:', err))
         }
       }
     }
