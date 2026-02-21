@@ -21,6 +21,7 @@ export default function ChatWithLeadsPage() {
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
   const [messagesError, setMessagesError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const sendingRef = useRef(false)
 
   useEffect(() => {
     fetch('/api/marketing/whatsapp/config')
@@ -72,11 +73,10 @@ export default function ChatWithLeadsPage() {
     const handleChange = (payload: { eventType: string; new: unknown }) => {
       const row = payload.new as unknown as ChatMessage
       if (payload.eventType === 'INSERT') {
-        setMessages((prev) =>
-          prev.some((m) => m.id === row.id)
-            ? prev
-            : [...prev, row].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-        )
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === row.id)) return prev
+          return [...prev, row].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        })
       } else if (payload.eventType === 'UPDATE') {
         setMessages((prev) => prev.map((m) => (m.id === row.id ? { ...m, ...row } : m)))
       }
@@ -112,7 +112,8 @@ export default function ChatWithLeadsPage() {
   }, [messages])
 
   const handleSend = async () => {
-    if (!selectedLead || !message.trim() || sending) return
+    if (!selectedLead || !message.trim() || sending || sendingRef.current) return
+    sendingRef.current = true
     const text = message.trim()
     setSending(true)
     setSendStatus('idle')
@@ -138,12 +139,17 @@ export default function ChatWithLeadsPage() {
       }
       setSendStatus(data.saveFailed ? 'save_failed' : 'success')
       setSaveError(data.saveFailed ? [data.saveErrorCode, data.saveErrorMessage].filter(Boolean).join(': ') || null : null)
-      if (data.message) setMessages((prev) => [...prev, data.message])
-      else fetchMessages(selectedLead.id, selectedLead.phone)
+      if (data.message) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.message.id)) return prev
+          return [...prev, data.message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        })
+      } else fetchMessages(selectedLead.id, selectedLead.phone)
     } catch {
       setSendStatus('error')
       setMessage(text)
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }

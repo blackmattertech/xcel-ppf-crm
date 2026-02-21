@@ -33,13 +33,19 @@ create index if not exists idx_whatsapp_messages_created_at on public.whatsapp_m
 
 In **Supabase Dashboard → Database → Replication**, add `whatsapp_messages` to the replication list so status updates (sent/delivered/read) appear instantly without polling.
 
-### Add status column (022) – sent/delivered/read receipts
+### Add status column (022) – sent/delivered/read receipts (blue ticks)
 
 For message status indicators (✓, ✓✓, blue ✓✓), run:
 
 ```sql
 alter table public.whatsapp_messages add column if not exists status text;
 ```
+
+**Blue ticks not showing?** Ensure:
+1. Migration 022 is run (status column exists)
+2. **Meta webhook** is configured: Meta for Developers → Your App → WhatsApp → Configuration → Webhook. Subscribe to `messages` (includes status updates)
+3. **Webhook URL** points to your `/api/webhooks/whatsapp` endpoint
+4. Recipient has **read receipts enabled** in WhatsApp (Settings → Privacy → Read receipts) for "read" (blue ✓✓) to appear
 
 ### Fix direction constraint (error 23514)
 
