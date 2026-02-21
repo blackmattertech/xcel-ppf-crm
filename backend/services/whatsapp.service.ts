@@ -972,7 +972,7 @@ export async function listMessageTemplatesWithDetails(
 
   const templates: MetaTemplateWithDetails[] = data.data.map((t) => {
     const rawLang = typeof t.language === 'string' ? t.language : (t.language?.code ?? '')
-    const language = (rawLang || 'en').replace(/-/g, '_').trim()
+    const language = normalizeTemplateLanguageCode(rawLang || 'en')
     const comps = t.components ?? []
     let body_text = ''
     let header_format: MetaTemplateWithDetails['header_format'] = null
@@ -1069,7 +1069,7 @@ export async function sendTemplateMessage(
     })
   }
 
-  const code = (templateLanguage || 'en').trim() || 'en'
+  const code = normalizeTemplateLanguageCode(templateLanguage || 'en')
   const payload = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',

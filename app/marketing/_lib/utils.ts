@@ -74,3 +74,10 @@ export function normalizePhoneForChat(phone: string): string {
   if (digits.length >= 10) return digits.slice(-10)
   return digits
 }
+
+/** Normalize phone for storage/DB (E.164-ish). */
+export function normalizePhoneForStorage(phone: string, defaultCountryCode = '91'): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length <= 10) return defaultCountryCode + digits.slice(-10)
+  return digits
+}
