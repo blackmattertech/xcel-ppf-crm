@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { getWhatsAppConfig, sendTemplateBulk } from '@/backend/services/whatsapp.service'
-import { getTemplateById } from '@/backend/services/whatsapp-template.service'
+import { getTemplateById, getApprovedTemplateByName, getTemplateByName } from '@/backend/services/whatsapp-template.service'
 import { z } from 'zod'
 
 const sendSchema = z.object({
@@ -57,7 +57,11 @@ export async function POST(request: NextRequest) {
     templateLanguage = template.language
   } else if (parsed.data.templateName) {
     templateName = parsed.data.templateName
-    templateLanguage = parsed.data.templateLanguage ?? 'en'
+    const localTemplate = await getTemplateByName(templateName)
+    templateLanguage = (localTemplate?.language ?? 'en').trim()
+    if (!templateLanguage || templateLanguage.toLowerCase() === 'en_us' || templateLanguage.toLowerCase().startsWith('en_')) {
+      templateLanguage = 'en'
+    }
   } else {
     return NextResponse.json({ error: 'Provide templateId or templateName' }, { status: 400 })
   }
