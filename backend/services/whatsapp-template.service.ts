@@ -65,22 +65,23 @@ export async function createTemplate(input: CreateTemplateInput, userId: string)
   const supabase = createServiceClient()
   const name = sanitizeTemplateName(input.name)
   const language = (input.language || 'en').replace(/-/g, '_').slice(0, 10)
+  const row = {
+    name,
+    language,
+    category: input.category,
+    body_text: input.body_text,
+    header_text: input.header_text || null,
+    footer_text: input.footer_text || null,
+    header_format: input.header_format || 'TEXT',
+    header_media_url: input.header_media_url || null,
+    buttons: input.buttons && input.buttons.length > 0 ? input.buttons : [],
+    status: 'draft' as const,
+    created_by: userId,
+    updated_at: new Date().toISOString(),
+  }
   const { data, error } = await supabase
     .from('whatsapp_templates')
-    .insert({
-      name,
-      language,
-      category: input.category,
-      body_text: input.body_text,
-      header_text: input.header_text || null,
-      footer_text: input.footer_text || null,
-      header_format: input.header_format || 'TEXT',
-      header_media_url: input.header_media_url || null,
-      buttons: input.buttons && input.buttons.length > 0 ? input.buttons : [],
-      status: 'draft',
-      created_by: userId,
-      updated_at: new Date().toISOString(),
-    })
+    .insert(row as never)
     .select()
     .single()
 
@@ -113,6 +114,42 @@ export async function listTemplates(filters?: { status?: TemplateStatus }): Prom
   return (data || []) as WhatsAppTemplateRow[]
 }
 
+/** Get an approved template by name. Use its language as the original when sending to avoid #132001. */
+export async function getApprovedTemplateByName(name: string): Promise<WhatsAppTemplateRow | null> {
+  const supabase = createServiceClient()
+  const normalized = sanitizeTemplateName(name)
+  const { data, error } = await supabase
+    .from('whatsapp_templates')
+    .select('*')
+    .eq('name', normalized)
+    .eq('status', 'approved')
+    .limit(1)
+    .maybeSingle()
+  if (error) {
+    if (isTableMissingError(error)) return null
+    throw new Error(error.message)
+  }
+  return data as WhatsAppTemplateRow | null
+}
+
+/** Get any template by name (any status). Use for resolving creation language when sending. */
+export async function getTemplateByName(name: string): Promise<WhatsAppTemplateRow | null> {
+  const supabase = createServiceClient()
+  const normalized = sanitizeTemplateName(name)
+  const { data, error } = await supabase
+    .from('whatsapp_templates')
+    .select('*')
+    .eq('name', normalized)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) {
+    if (isTableMissingError(error)) return null
+    throw new Error(error.message)
+  }
+  return data as WhatsAppTemplateRow | null
+}
+
 export async function updateTemplateMetaStatus(
   id: string,
   metaId: string | null,
@@ -127,7 +164,7 @@ export async function updateTemplateMetaStatus(
       status,
       rejection_reason: rejectionReason ?? null,
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq('id', id)
 
   if (error) {
@@ -148,7 +185,7 @@ export async function updateTemplateMetaLanguage(
     updated_at: new Date().toISOString(),
   }
   if (name !== undefined) payload.name = sanitizeTemplateName(name)
-  const { error } = await supabase.from('whatsapp_templates').update(payload).eq('id', id)
+  const { error } = await supabase.from('whatsapp_templates').update(payload as never).eq('id', id)
   if (error) {
     if (isTableMissingError(error)) throw new Error(TABLE_MISSING_MESSAGE)
     throw new Error(error.message)

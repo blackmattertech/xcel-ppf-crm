@@ -1,10 +1,46 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Layout from '@/components/Layout'
-import { MessageCircle, Megaphone, Search, Loader2, Send, Users, UserCheck, ListOrdered, FileText, RefreshCw } from 'lucide-react'
+import { MessageCircle, Megaphone, Search, Loader2, Send, Users, UserCheck, ListOrdered, FileText, RefreshCw, CheckCircle, Clock, XCircle, FileEdit, MessageSquare } from 'lucide-react'
 
-type MarketingTab = 'overview' | 'bulk-whatsapp' | 'templates'
+type MarketingTab = 'overview' | 'bulk-whatsapp' | 'templates' | 'chat'
+
+/** Meta-supported template languages: display name and code for dropdown & list. */
+const META_LANGUAGES: { code: string; name: string }[] = [
+  { code: 'en', name: 'English' },
+  { code: 'en_US', name: 'English (US)' },
+  { code: 'en_GB', name: 'English (UK)' },
+  { code: 'en_IN', name: 'English (India)' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'bn', name: 'Bengali' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'te', name: 'Telugu' },
+  { code: 'mr', name: 'Marathi' },
+  { code: 'gu', name: 'Gujarati' },
+  { code: 'kn', name: 'Kannada' },
+  { code: 'ml', name: 'Malayalam' },
+  { code: 'ur', name: 'Urdu' },
+  { code: 'pa', name: 'Punjabi' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'es_ES', name: 'Spanish (Spain)' },
+  { code: 'es_MX', name: 'Spanish (Mexico)' },
+  { code: 'pt_BR', name: 'Portuguese (Brazil)' },
+  { code: 'pt_PT', name: 'Portuguese (Portugal)' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'id', name: 'Indonesian' },
+  { code: 'ms', name: 'Malay' },
+  { code: 'th', name: 'Thai' },
+  { code: 'vi', name: 'Vietnamese' },
+  { code: 'zh_CN', name: 'Chinese (Simplified)' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+]
+function getLanguageName(code: string): string {
+  return META_LANGUAGES.find((l) => l.code === code || l.code.replace('_', '') === code?.replace('_', ''))?.name ?? code
+}
 
 interface LeadRecipient {
   id: string
@@ -88,13 +124,22 @@ export default function MarketingPage() {
             <MessageCircle className="h-4 w-4" />
             Bulk WhatsApp
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === 'chat'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <MessageSquare className="h-4 w-4" />
+            Chat with leads
+          </button>
         </div>
 
-        {activeTab === 'overview' && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-gray-600">
-            <p>Campaign analytics and overview coming soon.</p>
-          </div>
-        )}
+        {activeTab === 'overview' && <OverviewTab />}
+        {activeTab === 'chat' && <ChatWithLeadsTab />}
 
         {activeTab === 'templates' && <TemplatesTab />}
         {activeTab === 'bulk-whatsapp' && <BulkWhatsAppTab />}
@@ -106,7 +151,117 @@ export default function MarketingPage() {
 interface SendResult {
   sent: number
   failed: number
-  results: Array<{ phone: string; success: boolean; error?: string }>
+  results: Array<{ phone: string; success: boolean; error?: string; metaResponse?: unknown }>
+}
+
+interface TemplateForOverview {
+  id: string
+  name: string
+  language: string
+  status: string
+  category?: string
+}
+
+function OverviewTab() {
+  const [loading, setLoading] = useState(true)
+  const [apiConfigured, setApiConfigured] = useState(false)
+  const [templates, setTemplates] = useState<TemplateForOverview[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    Promise.all([
+      fetch('/api/marketing/whatsapp/config').then((r) => (r.ok ? r.json() : { configured: false })),
+      fetch('/api/marketing/whatsapp/templates').then((r) => {
+        if (!r.ok) throw new Error('Failed to load templates')
+        return r.json()
+      }),
+    ])
+      .then(([config, data]) => {
+        setApiConfigured(!!config?.configured)
+        setTemplates(data?.templates ?? [])
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const stats = useMemo(() => {
+    const total = templates.length
+    const approved = templates.filter((t) => t.status === 'approved').length
+    const pending = templates.filter((t) => t.status === 'pending').length
+    const rejected = templates.filter((t) => t.status === 'rejected').length
+    const draft = templates.filter((t) => t.status === 'draft').length
+    return { total, approved, pending, rejected, draft }
+  }, [templates])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-[#ed1b24]" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">WhatsApp broadcasting</div>
+        <div className="p-4">
+          {error && (
+            <p className="text-sm text-amber-600 mb-4">{error}</p>
+          )}
+          {!apiConfigured && (
+            <p className="text-sm text-amber-600 mb-4">
+              WhatsApp API is not configured. Add WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to use templates and bulk send.
+            </p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4">
+              <div className="flex items-center gap-2 text-gray-600 text-sm font-medium mb-1">
+                <FileEdit className="h-4 w-4" />
+                Templates created
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Total in app</p>
+            </div>
+            <div className="rounded-lg border border-green-200 bg-green-50/50 p-4">
+              <div className="flex items-center gap-2 text-green-700 text-sm font-medium mb-1">
+                <CheckCircle className="h-4 w-4" />
+                Approved
+              </div>
+              <p className="text-2xl font-bold text-green-800">{stats.approved}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Ready for broadcast</p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+              <div className="flex items-center gap-2 text-amber-700 text-sm font-medium mb-1">
+                <Clock className="h-4 w-4" />
+                Pending
+              </div>
+              <p className="text-2xl font-bold text-amber-800">{stats.pending}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Under Meta review</p>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50/50 p-4">
+              <div className="flex items-center gap-2 text-red-700 text-sm font-medium mb-1">
+                <XCircle className="h-4 w-4" />
+                Rejected
+              </div>
+              <p className="text-2xl font-bold text-red-800">{stats.rejected}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Not approved by Meta</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4">
+              <div className="flex items-center gap-2 text-gray-600 text-sm font-medium mb-1">
+                <FileEdit className="h-4 w-4" />
+                Draft
+              </div>
+              <p className="text-2xl font-bold text-gray-800">{stats.draft}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Not submitted yet</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
 }
 
 function BulkWhatsAppTab() {
@@ -222,7 +377,7 @@ function BulkWhatsAppTab() {
         id: `pasted-${i}-${phone}`,
         name,
         phone: phone || line,
-        type: 'pasted',
+        type: 'pasted' as const,
       }
     }).filter((r) => normalizePhone(r.phone).length >= 10)
   }, [source, pastedText])
@@ -648,8 +803,20 @@ function BulkWhatsAppTab() {
                   <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
                     <p className="font-medium">Template or language mismatch (#132001)</p>
                     <p className="mt-1 text-amber-700">
-                      Use a template from the <strong>Approved template</strong> dropdown (prefer one that says &quot;— from Meta&quot; so name and language match exactly). Language must match Meta (e.g. <code>en_US</code> not <code>en</code>). If you have multiple phone numbers, ensure the template is for the same number as WHATSAPP_PHONE_NUMBER_ID.
+                      Pick a template that says <strong>&quot;— from Meta&quot;</strong> in the dropdown so name and language match Meta exactly. In Meta, &quot;English&quot; uses code <code>en</code> and &quot;English (US)&quot; uses <code>en_US</code>. If you still see this, go to <strong>Message templates</strong> → click <strong>Sync</strong>, then try again with the same &quot;— from Meta&quot; option.
                     </p>
+                  </div>
+                )}
+                {sendResult.results.some((r) => !r.success && r.metaResponse != null) && (
+                  <div className="mt-3 p-3 rounded-lg bg-gray-100 border border-gray-200 text-xs">
+                    <p className="font-medium text-gray-800 mb-1">Meta API response (for debugging)</p>
+                    <pre className="whitespace-pre-wrap break-all text-gray-700">
+                      {JSON.stringify(
+                        sendResult.results.find((r) => !r.success && r.metaResponse != null)?.metaResponse,
+                        null,
+                        2
+                      )}
+                    </pre>
                   </div>
                 )}
                 <ul className="mt-3 max-h-32 overflow-y-auto space-y-1 text-xs text-red-700">
@@ -787,8 +954,8 @@ function TemplatePreview({
     return samples[n] ?? `{{${n}}}`
   })
   return (
-    <div className="rounded-2xl bg-[#e5ddd5] p-4 max-w-sm">
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden text-left">
+    <div className="rounded-2xl bg-[#e5ddd5] p-4 max-w-sm transition-all duration-300 ease-out">
+      <div className="bg-white rounded-xl shadow-md overflow-hidden text-left border border-gray-100">
         {headerFormat !== 'TEXT' && (headerMediaUrl || headerFormat !== 'TEXT') && (
           <div className="aspect-video bg-gray-100 flex items-center justify-center text-gray-400 text-sm">
             {headerMediaUrl ? (
@@ -805,22 +972,280 @@ function TemplatePreview({
         {headerFormat === 'TEXT' && headerText && (
           <div className="px-3 pt-3 pb-1 font-semibold text-gray-900 text-sm">{headerText}</div>
         )}
-        <div className="px-3 py-2 text-gray-800 text-sm whitespace-pre-wrap">{bodyPreview || 'Body text…'}</div>
-        {footer && <div className="px-3 pb-3 pt-0 text-gray-500 text-xs">{footer}</div>}
+        <div className="px-3 py-2 text-gray-800 text-sm whitespace-pre-wrap transition-opacity duration-200">{bodyPreview || 'Body text…'}</div>
+        {footer && <div className="px-3 pb-2 pt-0 text-gray-500 text-xs">{footer}</div>}
         {buttons.length > 0 && (
-          <div className="px-2 pb-2 flex flex-wrap gap-1">
+          <div className="px-2 pb-3 pt-1 flex flex-col gap-1.5">
             {buttons.map((b, i) => (
-              <span key={i} className="inline-flex items-center px-3 py-1.5 rounded-full bg-[#25D366] text-white text-xs font-medium">
-                {b.type === 'URL' && '🔗 '}
-                {b.type === 'PHONE_NUMBER' && '📞 '}
-                {b.type === 'COPY_CODE' && '📋 '}
+              <span
+                key={i}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-white transition transform hover:scale-[1.02] ${
+                  b.type === 'URL' ? 'bg-[#25D366]' : b.type === 'PHONE_NUMBER' ? 'bg-[#128C7E]' : b.type === 'COPY_CODE' ? 'bg-[#075E54]' : 'bg-[#25D366]'
+                }`}
+              >
+                {b.type === 'URL' && <span aria-hidden>🔗</span>}
+                {b.type === 'PHONE_NUMBER' && <span aria-hidden>📞</span>}
+                {b.type === 'COPY_CODE' && <span aria-hidden>📋</span>}
                 {b.text}
               </span>
             ))}
           </div>
         )}
       </div>
-      <p className="text-[10px] text-gray-500 mt-1">Preview</p>
+      <p className="text-[10px] text-gray-500 mt-1.5">Live preview</p>
+    </div>
+  )
+}
+
+function normalizePhoneForChat(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length >= 10) return digits.slice(-10)
+  return digits
+}
+
+interface ChatMessage {
+  id: string
+  lead_id: string | null
+  phone: string
+  direction: 'out' | 'in'
+  body: string
+  meta_message_id: string | null
+  created_at: string
+}
+
+function ChatWithLeadsTab() {
+  const [leads, setLeads] = useState<LeadRecipient[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedLead, setSelectedLead] = useState<LeadRecipient | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [loadingMessages, setLoadingMessages] = useState(false)
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendStatus, setSendStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [search, setSearch] = useState('')
+  const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  useEffect(() => {
+    fetch('/api/marketing/whatsapp/config')
+      .then((res) => (res.ok ? res.json() : { configured: false }))
+      .then((data) => setApiConfigured(!!data?.configured))
+      .catch(() => setApiConfigured(false))
+  }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    fetch('/api/leads')
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status === 403 ? 'You don’t have access to leads.' : 'Failed to load leads')
+        return res.json()
+      })
+      .then((data) => {
+        const list: LeadRecipient[] = (data.leads || []).map((l: any) => ({
+          id: l.id,
+          name: l.name || '—',
+          phone: l.phone || '',
+          type: 'lead',
+        })).filter((r: LeadRecipient) => normalizePhoneForChat(r.phone).length >= 10)
+        setLeads(list)
+      })
+      .catch(() => setLeads([]))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const fetchMessages = useCallback((leadId: string, phone: string) => {
+    setLoadingMessages(true)
+    const params = new URLSearchParams({ leadId, phone })
+    fetch(`/api/marketing/whatsapp/chat?${params}`)
+      .then((res) => (res.ok ? res.json() : { messages: [] }))
+      .then((data) => setMessages(data.messages || []))
+      .catch(() => setMessages([]))
+      .finally(() => setLoadingMessages(false))
+  }, [])
+
+  useEffect(() => {
+    if (!selectedLead) {
+      setMessages([])
+      return
+    }
+    fetchMessages(selectedLead.id, selectedLead.phone)
+  }, [selectedLead?.id, selectedLead?.phone, fetchMessages])
+
+  const filteredLeads = useMemo(() => {
+    if (!search.trim()) return leads
+    const q = search.toLowerCase()
+    return leads.filter((l) => l.name.toLowerCase().includes(q) || l.phone.includes(q))
+  }, [leads, search])
+
+  const handleSend = async () => {
+    if (!selectedLead || !message.trim() || sending) return
+    const text = message.trim()
+    setSending(true)
+    setSendStatus('idle')
+    setMessage('')
+    try {
+      const res = await fetch('/api/marketing/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients: [{ phone: selectedLead.phone, name: selectedLead.name }],
+          message: text,
+          defaultCountryCode: '91',
+          leadId: selectedLead.id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSendStatus('error')
+        setMessage(text)
+        return
+      }
+      setSendStatus('success')
+      if (data.message) setMessages((prev) => [...prev, data.message])
+      else fetchMessages(selectedLead.id, selectedLead.phone)
+    } catch {
+      setSendStatus('error')
+      setMessage(text)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-14rem)] min-h-[420px]">
+        {/* Lead list */}
+        <div className="w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50/50">
+          <div className="p-3 border-b border-gray-200">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search leads..."
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:ring-2 focus:ring-[#25D366]/30 focus:border-[#25D366] outline-none transition"
+              />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-[#25D366]" />
+              </div>
+            ) : filteredLeads.length === 0 ? (
+              <div className="p-4 text-center text-sm text-gray-500">No leads with valid phone numbers.</div>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {filteredLeads.map((lead) => (
+                  <li key={lead.id}>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedLead(lead); setSendStatus('idle') }}
+                      className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
+                        selectedLead?.id === lead.id ? 'bg-[#25D366]/10 border-l-2 border-[#25D366]' : 'hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-full bg-[#25D366]/20 flex items-center justify-center shrink-0">
+                        <Users className="h-5 w-5 text-[#25D366]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 truncate">{lead.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{lead.phone}</p>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        {/* Chat area */}
+        <div className="flex-1 flex flex-col bg-[#e5ddd5]/30 min-h-[280px]">
+          {!apiConfigured ? (
+            <div className="flex-1 flex items-center justify-center p-6 text-center text-gray-500 text-sm">
+              WhatsApp API is not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to chat with leads.
+            </div>
+          ) : !selectedLead ? (
+            <div className="flex-1 flex items-center justify-center p-6 text-center">
+              <div>
+                <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm">Select a lead to start chatting</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="px-4 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#25D366]/20 flex items-center justify-center shrink-0">
+                  <Users className="h-4 w-4 text-[#25D366]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-gray-900 truncate">{selectedLead.name}</p>
+                  <p className="text-xs text-gray-500 truncate">{selectedLead.phone}</p>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 min-h-0">
+                {loadingMessages ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-[#25D366]" />
+                  </div>
+                ) : messages.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-4">No messages yet. Say hi — messages you send and lead replies will appear here.</p>
+                ) : (
+                  <>
+                    {messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${
+                            msg.direction === 'out'
+                              ? 'bg-[#D9FDD3] text-gray-900 rounded-br-md'
+                              : 'bg-white text-gray-900 rounded-bl-md border border-gray-200'
+                          }`}
+                        >
+                          <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
+                          <p className={`text-[10px] mt-0.5 ${msg.direction === 'out' ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </>
+                )}
+              </div>
+              <div className="p-3 bg-white border-t border-gray-200">
+                <div className="flex gap-2">
+                  <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                    placeholder="Type a message..."
+                    rows={2}
+                    className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm resize-none focus:ring-2 focus:ring-[#25D366]/30 focus:border-[#25D366] outline-none transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSend}
+                    disabled={!message.trim() || sending}
+                    className="shrink-0 rounded-xl bg-[#25D366] text-white p-2.5 hover:bg-[#20bd5a] disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center"
+                  >
+                    {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+                  </button>
+                </div>
+                {sendStatus === 'success' && <p className="text-xs text-green-600 mt-1">Sent</p>}
+                {sendStatus === 'error' && <p className="text-xs text-red-600 mt-1">Failed to send. Check WhatsApp config and phone number.</p>}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -914,7 +1339,10 @@ function TemplatesTab() {
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
-          const msg = data.detail ? `${data.error}\n\n${data.detail}` : data.error
+          let msg = data.error
+          if (data.detail) msg += `\n\n${data.detail}`
+          if (data.currentStatus) msg += `\n(Current status: ${data.currentStatus})`
+          if (data.reason === 'status_not_draft') msg += '\n\nOnly draft templates can be submitted. Create a new template or use one that is still in draft.'
           alert(msg)
         } else {
           fetchTemplates()
@@ -1035,7 +1463,7 @@ function TemplatesTab() {
       )}
 
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm transition-all duration-300 ease-out">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <form onSubmit={handleCreateTemplate} className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">New message template</h3>
@@ -1064,14 +1492,16 @@ function TemplatesTab() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Language code</label>
-                  <input
-                    type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
+                  <select
                     value={formLanguage}
                     onChange={(e) => setFormLanguage(e.target.value)}
-                    placeholder="en"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
+                  >
+                    {META_LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>{l.name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>
@@ -1214,7 +1644,7 @@ function TemplatesTab() {
                 <li key={t.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <span className="font-medium text-gray-900">{t.name}</span>
-                    <span className="text-gray-500 text-sm ml-2">({t.language})</span>
+                    <span className="text-gray-500 text-sm ml-2">({getLanguageName(t.language)})</span>
                     <span className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-100">{t.category}</span>
                     <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
                       t.status === 'approved' ? 'bg-green-100 text-green-800' :
@@ -1249,7 +1679,7 @@ function TemplatesTab() {
                     <li key={`${m.name}:${m.language}`} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <span className="font-medium text-gray-900">{m.name}</span>
-                        <span className="text-gray-500 text-sm ml-2">({m.language})</span>
+                        <span className="text-gray-500 text-sm ml-2">({getLanguageName(m.language)})</span>
                         {m.category && (
                           <span className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-100">{m.category}</span>
                         )}

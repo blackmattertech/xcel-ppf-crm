@@ -128,15 +128,22 @@ const LANGUAGE_DISPLAY_NAME_TO_CODE: Record<string, string> = {
 /**
  * Normalize Meta template language to a code Meta send API accepts (fixes #132001).
  * Meta may return a code (en_US) or a display name (English); we always output a code.
+ * For SENDING, we force "en" for any English variant (en_US, en_GB, etc.) so templates
+ * created as "English" in Meta always work.
  */
 export function normalizeTemplateLanguageCode(value: string | { code?: string } | null | undefined): string {
   const raw = typeof value === 'string' ? value : (value && typeof value === 'object' && value.code) ? value.code : ''
   const s = (raw || 'en').replace(/-/g, '_').trim()
   if (!s) return 'en'
-  // Already a valid code (e.g. en, en_US, prs_AF): use as-is
+  const lower = s.toLowerCase()
+  // Force "en" for any English variant (en, en_US, en_GB, etc.) so Meta "English" templates always work (#132001)
+  if (lower === 'en' || lower.startsWith('en_')) return 'en'
+  // Already a valid non-English code (e.g. hi, pt_BR): use as-is
   if (/^[a-z]{2,3}(_[a-zA-Z0-9]{2,4})?$/.test(s)) return s
-  const key = s.toLowerCase().replace(/\s+/g, '_').replace(/[()]/g, '')
-  return LANGUAGE_DISPLAY_NAME_TO_CODE[key] ?? s
+  const key = lower.replace(/\s+/g, '_').replace(/[()]/g, '')
+  const fromMap = LANGUAGE_DISPLAY_NAME_TO_CODE[key]
+  if (fromMap && (fromMap === 'en_US' || fromMap.startsWith('en_'))) return 'en'
+  return fromMap ?? s
 }
 
 export interface WhatsAppConfig {
@@ -318,7 +325,7 @@ export async function sendWhatsAppText(
 export interface BulkSendResult {
   sent: number
   failed: number
-  results: Array<{ phone: string; success: boolean; error?: string }>
+  results: Array<{ phone: string; success: boolean; error?: string; metaResponse?: unknown }>
 }
 
 /**
@@ -356,6 +363,86 @@ export async function sendWhatsAppBulk(
   }
 
   return { sent, failed, results }
+}
+
+// ---------- Resumable Upload (for template media headers) ----------
+
+/**
+ * Upload a file from a URL to Meta via Resumable Upload API; returns handle for header_handle.
+ * Requires FACEBOOK_APP_ID (or META_APP_ID) and WHATSAPP_ACCESS_TOKEN.
+ */
+export async function uploadMediaToMeta(
+  mediaUrl: string,
+  options: { mimeType?: string; accessToken: string; appId?: string }
+): Promise<{ success: true; handle: string } | { success: false; error: string }> {
+  const appId = options.appId ?? process.env.FACEBOOK_APP_ID ?? process.env.META_APP_ID
+  const token = options.accessToken?.trim()
+  if (!appId?.trim() || !token) {
+    return { success: false, error: 'Missing FACEBOOK_APP_ID (or META_APP_ID) and WHATSAPP_ACCESS_TOKEN for media upload' }
+  }
+
+  let buffer: ArrayBuffer
+  let mimeType = options.mimeType?.trim()
+  try {
+    const res = await fetch(mediaUrl, { method: 'GET' })
+    if (!res.ok) return { success: false, error: `Failed to fetch media: ${res.status}` }
+    buffer = await res.arrayBuffer()
+    if (!mimeType && res.headers.get('content-type')) {
+      mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() || ''
+    }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch media URL' }
+  }
+
+  const fileLength = buffer.byteLength
+  if (fileLength === 0) return { success: false, error: 'Media file is empty' }
+
+  const inferredType = mediaUrl.match(/\.(jpe?g|png|gif|webp|mp4|m4v|pdf)(\?|$)/i)?.[1]?.toLowerCase()
+  const typeMap: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+    mp4: 'video/mp4', m4v: 'video/x-m4v', pdf: 'application/pdf',
+  }
+  mimeType = mimeType || (inferredType ? typeMap[inferredType] : 'application/octet-stream')
+
+  const createUrl = `${META_GRAPH_BASE}/${appId}/uploads`
+  const createRes = await fetch(createUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Bearer ${token}`,
+    },
+    body: new URLSearchParams({
+      file_length: String(fileLength),
+      file_type: mimeType,
+    }).toString(),
+  })
+  const createData = await createRes.json().catch(() => ({})) as { id?: string; error?: { message?: string } }
+  if (!createRes.ok || !createData.id) {
+    const msg = createData?.error?.message ?? `Create session failed: ${createRes.status}`
+    return { success: false, error: msg }
+  }
+
+  const sessionId = createData.id
+  const uploadUrl = `${META_GRAPH_BASE}/${sessionId}`
+  const form = new FormData()
+  form.append('file', new Blob([buffer], { type: mimeType }), 'file')
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  const uploadData = await uploadRes.json().catch(() => ({})) as { h?: string; handle?: string; error?: { message?: string } }
+  if (!uploadRes.ok) {
+    const msg = uploadData?.error?.message ?? `Upload failed: ${uploadRes.status}`
+    return { success: false, error: msg }
+  }
+
+  const handle = uploadData?.h ?? uploadData?.handle
+  if (!handle || typeof handle !== 'string') {
+    return { success: false, error: 'Meta did not return a media handle (response missing "h")' }
+  }
+  return { success: true, handle }
 }
 
 // ---------- Message templates (design → submit to Meta → bulk send) ----------
@@ -498,7 +585,8 @@ export async function listMessageTemplatesFromMeta(
   }
 
   const templates = data.data.map((t) => {
-    const languageCode = normalizeTemplateLanguageCode(t.language)
+    const raw = typeof t.language === 'string' ? t.language : (t.language?.code ?? '')
+    const languageCode = normalizeTemplateLanguageCode(raw)
     const rawStatus = (t.status ?? '').toString().toLowerCase().replace(/\s+/g, '_')
     return {
       id: t.id,
@@ -525,6 +613,8 @@ export interface SendTemplateResult {
   success: boolean
   messageId?: string
   error?: string
+  /** Full Meta API response body when send failed (for debugging #132001 etc.) */
+  metaResponse?: unknown
 }
 
 /**
@@ -561,36 +651,72 @@ export async function sendTemplateMessage(
     })
   }
 
-  const languageCode = normalizeTemplateLanguageCode(templateLanguage || 'en')
-  const payload = {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to: digits,
-    type: 'template',
-    template: {
-      name: (templateName || '').trim(),
-      language: { code: languageCode },
-      components: components.length > 0 ? components : undefined,
-    },
+  const tl = (templateLanguage || 'en').trim().toLowerCase()
+  const languageCode = (tl === 'en_us' || tl.startsWith('en_')) ? 'en' : normalizeTemplateLanguageCode(templateLanguage || 'en')
+  const doSend = async (lang: string) => {
+    const code = (lang || 'en').toLowerCase().startsWith('en_') ? 'en' : (lang || 'en')
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: digits,
+      type: 'template',
+      template: {
+        name: (templateName || '').trim(),
+        language: { code },
+        components: components.length > 0 ? components : undefined,
+      },
+    }
+    console.log('[WhatsApp send template] Request to Meta:', {
+      templateName: payload.template.name,
+      language: code,
+      to: digits,
+      phoneNumberId: cfg.phoneNumberId,
+    })
+    const res = await fetch(`${META_GRAPH_BASE}/${cfg.phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    })
+    const body = await res.json().catch(() => ({}))
+    console.log('[WhatsApp send template] Meta API response:', {
+      status: res.status,
+      ok: res.ok,
+      body,
+    })
+    return { res, data: body as { messages?: Array<{ id: string }>; error?: { message: string; code?: number; error_data?: unknown } } }
   }
 
-  const url = `${META_GRAPH_BASE}/${cfg.phoneNumberId}/messages`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.accessToken}`,
-    },
-    body: JSON.stringify(payload),
-  })
+  let { res, data } = await doSend(languageCode)
 
-  const data = await res.json().catch(() => ({})) as {
-    messages?: Array<{ id: string }>
-    error?: { message: string }
+  if (!res.ok && /132001|translation|does not exist/i.test(data?.error?.message ?? '')) {
+    const errData = data?.error as { error_data?: { details?: string } } | undefined
+    const details = typeof errData?.error_data?.details === 'string' ? errData.error_data.details : ''
+    const matchLang = details.match(/does not exist in (\w+)/i)
+    const failedLang = matchLang?.[1] ?? languageCode
+    let alt: string | null = null
+    if (failedLang === 'en_US' || failedLang === 'en') {
+      alt = failedLang === 'en_US' ? 'en' : 'en_US'
+    }
+    if (!alt) {
+      alt = languageCode === 'en' ? 'en_US' : languageCode === 'en_US' ? 'en' : null
+    }
+    if (alt) {
+      console.log('[WhatsApp send template] Retrying with alternate language:', alt, '(failed lang from Meta:', failedLang + ')')
+      const retried = await doSend(alt)
+      res = retried.res
+      data = retried.data
+    }
   }
 
   if (!res.ok) {
-    return { success: false, error: data?.error?.message ?? `HTTP ${res.status}` }
+    return {
+      success: false,
+      error: data?.error?.message ?? `HTTP ${res.status}`,
+      metaResponse: data,
+    }
   }
 
   return { success: true, messageId: data?.messages?.[0]?.id }
@@ -619,7 +745,12 @@ export async function sendTemplateBulk(
       templateLanguage,
       { bodyParameters: bodyParams.length > 0 ? bodyParams : undefined, defaultCountryCode }
     )
-    results.push({ phone: r.phone, success: result.success, error: result.error })
+    results.push({
+      phone: r.phone,
+      success: result.success,
+      error: result.error,
+      ...(result.metaResponse !== undefined && { metaResponse: result.metaResponse }),
+    })
     if (result.success) sent++
     else failed++
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))

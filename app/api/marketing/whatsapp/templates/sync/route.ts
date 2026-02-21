@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { listTemplates, updateTemplateMetaStatus, updateTemplateMetaLanguage } from '@/backend/services/whatsapp-template.service'
+import { listTemplates, updateTemplateMetaStatus } from '@/backend/services/whatsapp-template.service'
 import { listMessageTemplatesFromMeta, getWhatsAppWabaConfig } from '@/backend/services/whatsapp.service'
 
 /**
@@ -63,8 +63,6 @@ export async function POST(request: NextRequest) {
       status,
       status === 'rejected' ? 'Rejected by Meta' : undefined
     )
-    // Use Meta's exact language (and name) so send-template avoids #132001 mismatch
-    await updateTemplateMetaLanguage(local.id, meta.language, meta.name)
     updated++
   }
 

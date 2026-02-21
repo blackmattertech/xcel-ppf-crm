@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { sendWhatsAppBulk, getWhatsAppConfig } from '@/backend/services/whatsapp.service'
+import { sendWhatsAppBulk, sendWhatsAppText, getWhatsAppConfig } from '@/backend/services/whatsapp.service'
+import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
 import { z } from 'zod'
 
 const sendSchema = z.object({
   recipients: z.array(z.object({ phone: z.string().min(1), name: z.string().optional() })).min(1).max(100),
   message: z.string().min(1).max(4096),
   defaultCountryCode: z.string().max(4).optional().default('91'),
+  leadId: z.string().uuid().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -39,7 +41,31 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { recipients, message, defaultCountryCode } = parsed.data
+  const { recipients, message, defaultCountryCode, leadId } = parsed.data
+
+  if (recipients.length === 1 && leadId) {
+    const r = recipients[0]
+    const result = await sendWhatsAppText(r.phone, message, config)
+    if (result.success) {
+      const saved = await saveOutgoingMessage({
+        leadId,
+        phone: r.phone,
+        body: message,
+        metaMessageId: result.messageId ?? undefined,
+      })
+      return NextResponse.json({
+        sent: 1,
+        failed: 0,
+        results: [{ phone: r.phone, success: true }],
+        message: saved ?? undefined,
+      })
+    }
+    return NextResponse.json({
+      sent: 0,
+      failed: 1,
+      results: [{ phone: r.phone, success: false, error: result.error }],
+    })
+  }
 
   const result = await sendWhatsAppBulk(
     recipients.map((r) => ({ phone: r.phone })),
