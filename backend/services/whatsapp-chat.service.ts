@@ -98,8 +98,10 @@ export async function listMessagesByLeadId(leadId: string): Promise<WhatsAppMess
 
 /** List messages by phone (normalized). Use when lead_id is unknown. */
 export async function listMessagesByPhone(phone: string): Promise<WhatsAppMessageRow[]> {
-  const supabase = createServiceClient()
   const normalized = normalizePhoneForStorage(phone)
+  // Avoid querying with useless values: empty/minimal input becomes "91" and would match nothing or wrong rows
+  if (!normalized || normalized.length < 10) return []
+  const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('whatsapp_messages')
     .select('*')
@@ -113,11 +115,21 @@ export async function listMessagesByPhone(phone: string): Promise<WhatsAppMessag
   return (data ?? []) as WhatsAppMessageRow[]
 }
 
-/** Get conversation: by leadId if provided, else by phone. */
+/** Get full conversation: merge messages by lead_id and by phone, dedupe, sort by time. */
 export async function getConversation(leadId: string | null, phone: string): Promise<WhatsAppMessageRow[]> {
-  if (leadId) {
-    const byLead = await listMessagesByLeadId(leadId)
-    if (byLead.length > 0) return byLead
+  const normalizedPhone = normalizePhoneForStorage(phone)
+  const hasValidPhone = normalizedPhone.length >= 10
+  const [byLead, byPhone] = await Promise.all([
+    leadId ? listMessagesByLeadId(leadId) : Promise.resolve([]),
+    hasValidPhone ? listMessagesByPhone(phone) : Promise.resolve([]),
+  ])
+  const seen = new Set<string>()
+  const merged: WhatsAppMessageRow[] = []
+  for (const m of [...byLead, ...byPhone]) {
+    if (seen.has(m.id)) continue
+    seen.add(m.id)
+    merged.push(m)
   }
-  return listMessagesByPhone(phone)
+  merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  return merged
 }

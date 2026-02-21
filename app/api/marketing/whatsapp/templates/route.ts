@@ -23,7 +23,7 @@ const createSchema = z.object({
   header_text: z.string().max(60).optional().nullable(),
   footer_text: z.string().max(60).optional().nullable(),
   header_format: z.enum(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT']).optional().default('TEXT'),
-  header_media_url: z.string().url().max(2000).optional().nullable(),
+  header_media_url: z.string().max(2000).optional().nullable(),
   buttons: z.array(buttonSchema).max(10).optional().default([]),
 })
 

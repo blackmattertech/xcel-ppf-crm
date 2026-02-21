@@ -3,6 +3,7 @@ import { requireAuth } from '@/backend/middleware/auth'
 import { getTemplateById, updateTemplateMetaStatus } from '@/backend/services/whatsapp-template.service'
 import {
   createMessageTemplateAtMeta,
+  getTemplateBodyVariableCount,
   getWhatsAppWabaConfig,
   uploadMediaToMeta,
   type MetaTemplateComponent,
@@ -50,11 +51,31 @@ export async function POST(
   if (headerFormat !== 'TEXT' && !headerMediaUrl) {
     return NextResponse.json(
       {
-        error: 'Sample media is required for Image/Video/Document headers. Add a public URL to the template (we upload it to Meta for you).',
+        error: 'Sample media is required for Image/Video/Document headers. Upload an image/video/document in the template form.',
         reason: 'missing_header_media',
       },
       { status: 400 }
     )
+  }
+
+  const buttons = (template as { buttons?: Array<{ type: string; text: string; example?: string | string[] }> }).buttons
+  if (buttons && Array.isArray(buttons)) {
+    const missingExample = buttons.find((b) => {
+      if (b.type !== 'URL' && b.type !== 'PHONE_NUMBER' && b.type !== 'COPY_CODE') return false
+      const ex = b.example == null ? [] : Array.isArray(b.example) ? b.example : [b.example]
+      const hasExample = ex.some((e) => typeof e === 'string' && e.trim() !== '')
+      return !hasExample
+    })
+    if (missingExample) {
+      const typeLabel = missingExample.type === 'URL' ? 'URL' : missingExample.type === 'PHONE_NUMBER' ? 'Call' : 'Copy code'
+      return NextResponse.json(
+        {
+          error: `"${missingExample.text || typeLabel}" button requires an example (e.g. ${missingExample.type === 'URL' ? 'https://example.com' : missingExample.type === 'PHONE_NUMBER' ? '+1234567890' : 'promo code'}). Edit the template and fill the example field.`,
+          reason: 'missing_button_example',
+        },
+        { status: 400 }
+      )
+    }
   }
 
   let headerHandle: string | null = null
@@ -89,15 +110,28 @@ export async function POST(
     })
   } else if (template.header_text || headerFormat === 'TEXT') {
     if (template.header_text) {
-      components.push({ type: 'HEADER', format: 'TEXT', text: template.header_text })
+      const headerVarCount = getTemplateBodyVariableCount(template.header_text)
+      const headerComp: MetaTemplateComponent = { type: 'HEADER', format: 'TEXT', text: template.header_text }
+      if (headerVarCount > 0) {
+        headerComp.example = {
+          header_text: Array.from({ length: headerVarCount }, (_, i) => `Sample${i + 1}`),
+        }
+      }
+      components.push(headerComp)
     }
   }
-  components.push({ type: 'BODY', text: template.body_text })
+  const bodyVarCount = getTemplateBodyVariableCount(template.body_text)
+  const bodyComp: MetaTemplateComponent = { type: 'BODY', text: template.body_text }
+  if (bodyVarCount > 0) {
+    bodyComp.example = {
+      body_text: [Array.from({ length: bodyVarCount }, (_, i) => `Sample${i + 1}`)],
+    }
+  }
+  components.push(bodyComp)
   if (template.footer_text) {
     components.push({ type: 'FOOTER', text: template.footer_text })
   }
-  const buttons = (template as { buttons?: Array<{ type: string; text: string; example?: string | string[] }> }).buttons
-  if (buttons && Array.isArray(buttons) && buttons.length > 0) {
+  if (buttons && buttons.length > 0) {
     components.push({
       type: 'BUTTONS',
       buttons: buttons.map((b) => {
@@ -125,9 +159,8 @@ export async function POST(
 
   if (!result.success) {
     let err = result.error ?? 'Failed to submit template to Meta'
-    if (/invalid parameter/i.test(err)) {
-      err +=
-        ' Common causes: (1) Image/Video/Document header — use a Text header instead, or upload the file in Meta Business Manager. (2) Button URL/phone/code example missing or invalid. (3) Template name or language format.'
+    if (/invalid parameter|code 100/i.test(err) && headerHandle && !isMediaUrl) {
+      err += ' The header image may have expired. Re-upload the image in the template, save draft, then submit again.'
     }
     console.warn(`[WhatsApp submit] ${id}: Meta error - ${result.error}`)
     return NextResponse.json(
