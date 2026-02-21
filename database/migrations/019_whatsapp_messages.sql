@@ -1,8 +1,9 @@
 -- WhatsApp chat messages (sent + received) for CRM conversation history
 -- Incoming messages are stored via webhook; outgoing when sent from Chat tab
+-- Uses gen_random_uuid() for compatibility (no extension required; Postgres 13+)
 
 create table if not exists public.whatsapp_messages (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   lead_id uuid references public.leads(id) on delete set null,
   phone text not null,
   direction text not null check (direction in ('out', 'in')),

@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Search, Loader2, Send, Users, MessageSquare } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import type { LeadRecipient } from '../_lib/types'
 import type { ChatMessage } from '../_lib/types'
-import { normalizePhoneForChat } from '../_lib/utils'
+import { normalizePhoneForChat, normalizePhoneForStorage } from '../_lib/utils'
 
 export default function ChatWithLeadsPage() {
   const [leads, setLeads] = useState<LeadRecipient[]>([])
@@ -14,7 +15,8 @@ export default function ChatWithLeadsPage() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
-  const [sendStatus, setSendStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [sendStatus, setSendStatus] = useState<'idle' | 'success' | 'error' | 'save_failed'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
   const [messagesError, setMessagesError] = useState<string | null>(null)
@@ -64,6 +66,34 @@ export default function ChatWithLeadsPage() {
       return
     }
     fetchMessages(selectedLead.id, selectedLead.phone)
+
+    const supabase = createClient()
+    const storedPhone = normalizePhoneForStorage(selectedLead.phone)
+    const handleChange = (payload: { eventType: string; new: unknown }) => {
+      const row = payload.new as unknown as ChatMessage
+      if (payload.eventType === 'INSERT') {
+        setMessages((prev) =>
+          prev.some((m) => m.id === row.id)
+            ? prev
+            : [...prev, row].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        )
+      } else if (payload.eventType === 'UPDATE') {
+        setMessages((prev) => prev.map((m) => (m.id === row.id ? { ...m, ...row } : m)))
+      }
+    }
+    const ch1 = supabase
+      .channel(`whatsapp-lead-${selectedLead.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `lead_id=eq.${selectedLead.id}` }, handleChange)
+      .subscribe()
+    const ch2 = supabase
+      .channel(`whatsapp-phone-${storedPhone}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `phone=eq.${storedPhone}` }, handleChange)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(ch1)
+      supabase.removeChannel(ch2)
+    }
   }, [selectedLead?.id, selectedLead?.phone, fetchMessages])
 
   useEffect(() => {
@@ -106,7 +136,8 @@ export default function ChatWithLeadsPage() {
         setMessage(text)
         return
       }
-      setSendStatus('success')
+      setSendStatus(data.saveFailed ? 'save_failed' : 'success')
+      setSaveError(data.saveFailed ? [data.saveErrorCode, data.saveErrorMessage].filter(Boolean).join(': ') || null : null)
       if (data.message) setMessages((prev) => [...prev, data.message])
       else fetchMessages(selectedLead.id, selectedLead.phone)
     } catch {
@@ -146,7 +177,7 @@ export default function ChatWithLeadsPage() {
                   <li key={lead.id}>
                     <button
                       type="button"
-                      onClick={() => { setSelectedLead(lead); setSendStatus('idle'); setMessagesError(null) }}
+                      onClick={() => { setSelectedLead(lead); setSendStatus('idle'); setMessagesError(null); setSaveError(null) }}
                       className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
                         selectedLead?.id === lead.id ? 'bg-[#25D366]/10 border-l-2 border-[#25D366]' : 'hover:bg-gray-100'
                       }`}
@@ -212,9 +243,19 @@ export default function ChatWithLeadsPage() {
                           }`}
                         >
                           <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
-                          <p className={`text-[10px] mt-0.5 ${msg.direction === 'out' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
+                          <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                            <p className={`text-[10px] ${msg.direction === 'out' ? 'text-gray-500' : 'text-gray-400'}`}>
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                            {msg.direction === 'out' && (
+                              <span
+                                className={`text-[10px] ${msg.status === 'read' ? 'text-blue-600' : 'text-gray-500'}`}
+                                title={msg.status ?? 'sent'}
+                              >
+                                {msg.status === 'read' || msg.status === 'delivered' ? '✓✓' : '✓'}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -242,6 +283,13 @@ export default function ChatWithLeadsPage() {
                   </button>
                 </div>
                 {sendStatus === 'success' && <p className="text-xs text-green-600 mt-1">Sent</p>}
+                {sendStatus === 'save_failed' && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Sent to WhatsApp but not saved to history.
+                    {saveError && <span className="block mt-0.5 font-mono text-[10px]">{saveError}</span>}
+                    {!saveError && ' Run migration 019 (whatsapp_messages) on your Supabase project.'}
+                  </p>
+                )}
                 {sendStatus === 'error' && <p className="text-xs text-red-600 mt-1">Failed to send. Check WhatsApp config and phone number.</p>}
               </div>
             </>

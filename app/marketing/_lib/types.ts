@@ -68,6 +68,8 @@ export interface LibraryTemplate {
   buttons: Array<{ type: string; text: string; example?: string }>
 }
 
+export type MessageStatus = 'sent' | 'delivered' | 'read'
+
 export interface ChatMessage {
   id: string
   lead_id: string | null
@@ -75,6 +77,7 @@ export interface ChatMessage {
   direction: 'out' | 'in'
   body: string
   meta_message_id: string | null
+  status: MessageStatus | null
   created_at: string
 }
 

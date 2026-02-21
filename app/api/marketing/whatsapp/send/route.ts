@@ -49,17 +49,23 @@ export async function POST(request: NextRequest) {
     const r = recipients[0]
     const result = await sendWhatsAppText(r.phone, message, config, contextMessageId ?? null)
     if (result.success) {
-      const saved = await saveOutgoingMessage({
+      const saveResult = await saveOutgoingMessage({
         leadId,
         phone: r.phone,
         body: message,
         metaMessageId: result.messageId ?? undefined,
       })
+      if (!saveResult.success) {
+        console.warn('[whatsapp/send] Save failed:', saveResult.errorCode, saveResult.errorMessage)
+      }
       return NextResponse.json({
         sent: 1,
         failed: 0,
         results: [{ phone: r.phone, success: true }],
-        message: saved ?? undefined,
+        message: saveResult.success ? saveResult.data : undefined,
+        saveFailed: !saveResult.success,
+        saveErrorCode: saveResult.success ? undefined : saveResult.errorCode,
+        saveErrorMessage: saveResult.success ? undefined : saveResult.errorMessage,
       })
     }
     return NextResponse.json({
@@ -75,16 +81,22 @@ export async function POST(request: NextRequest) {
     { delayMs: 250, defaultCountryCode }
   )
 
+  let anySaveFailed = false
+  let lastSaveError: { code?: string; message?: string } | undefined
   for (let i = 0; i < result.results.length; i++) {
     const r = result.results[i]
     if (r.success) {
       const recipient = recipients[i]
-      await saveOutgoingMessage({
+      const saveResult = await saveOutgoingMessage({
         leadId: null,
         phone: recipient?.phone ?? r.phone,
         body: message,
         metaMessageId: r.messageId ?? undefined,
       })
+      if (!saveResult.success) {
+        anySaveFailed = true
+        lastSaveError = { code: saveResult.errorCode, message: saveResult.errorMessage }
+      }
     }
   }
 
@@ -92,5 +104,8 @@ export async function POST(request: NextRequest) {
     sent: result.sent,
     failed: result.failed,
     results: result.results,
+    saveFailed: anySaveFailed,
+    saveErrorCode: lastSaveError?.code,
+    saveErrorMessage: lastSaveError?.message,
   })
 }

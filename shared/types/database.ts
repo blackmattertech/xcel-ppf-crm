@@ -577,6 +577,7 @@ export interface Database {
           direction: string
           body: string
           meta_message_id: string | null
+          status: 'sent' | 'delivered' | 'read' | null
           created_at: string
         }
         Insert: {
@@ -586,6 +587,7 @@ export interface Database {
           direction: string
           body: string
           meta_message_id?: string | null
+          status?: 'sent' | 'delivered' | 'read' | null
           created_at?: string
         }
         Update: {
@@ -595,6 +597,7 @@ export interface Database {
           direction?: string
           body?: string
           meta_message_id?: string | null
+          status?: 'sent' | 'delivered' | 'read' | null
           created_at?: string
         }
       }

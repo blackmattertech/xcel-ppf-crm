@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { saveIncomingMessage } from '@/backend/services/whatsapp-chat.service'
+import { saveIncomingMessage, updateMessageStatus } from '@/backend/services/whatsapp-chat.service'
 import { markMessageAsRead } from '@/backend/services/whatsapp.service'
 import { createServiceClient } from '@/lib/supabase/service'
 
-/** Meta WhatsApp webhook: GET for verification, POST for incoming messages. */
+/** Meta WhatsApp webhook: GET for verification, POST for incoming messages and status updates. */
 
 function normalizePhone(phone: string): string {
   const d = phone.replace(/\D/g, '')
   return d.length > 10 ? d : '91' + d.slice(-10)
 }
+
+type StatusValue = 'sent' | 'delivered' | 'read'
 
 export async function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get('hub.mode')
@@ -23,7 +25,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { object?: string; entry?: Array<{ id?: string; changes?: Array<{ value?: { messages?: Array<{ from: string; id: string; timestamp: string; type: string; text?: { body: string } }> } }> }> }
+    const body = await request.json() as {
+      object?: string
+      entry?: Array<{
+        id?: string
+        changes?: Array<{
+          value?: {
+            messages?: Array<{ from: string; id: string; timestamp: string; type: string; text?: { body: string } }>
+            statuses?: Array<{ id: string; status: string; recipient_id?: string; timestamp: string }>
+          }
+        }>
+      }>
+    }
     if (body.object !== 'whatsapp_business_account' || !body.entry?.length) {
       return NextResponse.json({ ok: true })
     }
@@ -32,7 +45,21 @@ export async function POST(request: NextRequest) {
       const changes = entry.changes ?? []
       for (const change of changes) {
         const value = change.value
-        if (!value?.messages) continue
+        if (!value) continue
+
+        // Handle status updates (sent, delivered, read)
+        const statuses = value.statuses ?? []
+        for (const st of statuses) {
+          const status = String(st.status ?? '').toLowerCase()
+          if (['sent', 'delivered', 'read'].includes(status)) {
+            updateMessageStatus(st.id, status as StatusValue).catch((err) =>
+              console.warn('[webhooks/whatsapp] updateMessageStatus failed:', err)
+            )
+          }
+        }
+
+        // Handle incoming messages
+        if (!value.messages) continue
         for (const msg of value.messages) {
           const from = String(msg.from ?? '')
           const textBody = msg.type === 'text' ? msg.text?.body : null
