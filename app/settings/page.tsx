@@ -114,19 +114,3 @@ export default function SettingsPage() {
     </Layout>
   )
 }
-
-export default function SettingsPage() {
-  return (
-    <Suspense fallback={
-      <Layout>
-        <div className="p-6">
-          <div className="flex items-center justify-center py-12">
-            <div className="text-gray-500">Loading...</div>
-          </div>
-        </div>
-      </Layout>
-    }>
-      <SettingsContent />
-    </Suspense>
-  )
-}

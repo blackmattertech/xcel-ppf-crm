@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { getInterestedProductFromMeta } from '@/shared/utils/lead-meta'
 
 export interface Product {
   id: string
@@ -106,40 +107,28 @@ function productMatchesLead(productTitle: string, leadRequirement: string | null
     }
   }
   
-  // Check meta_data for product/service fields
-  if (leadMetaData && typeof leadMetaData === 'object') {
-    const serviceFields = [
-      'what_services_are_you_looking_for?',
-      'what_services_are_you_looking_for',
-      'service',
-      'product',
-      'requirement'
-    ]
-    
-    for (const field of serviceFields) {
-      const value = leadMetaData[field]
-      if (value && typeof value === 'string') {
-        const normalizedValue = normalizeProductName(value)
-        
-        // Direct normalized match
-        if (normalizedValue === normalizedProduct) {
-          return true
-        }
-        
-        // Substring match
-        if (normalizedValue.includes(normalizedProduct) || normalizedProduct.includes(normalizedValue)) {
-          return true
-        }
-        
-        // Check if key words from product appear in the value
-        const valueKeyWords = extractKeyWords(value)
-        const matchingWords = productKeyWords.filter(word => 
-          valueKeyWords.some(vw => vw.includes(word) || word.includes(vw))
-        )
-        if (matchingWords.length >= Math.min(2, productKeyWords.length)) {
-          return true
-        }
-      }
+  // Check meta_data for product/service (direct keys + field_data array from Meta Lead Ads)
+  const interestedProduct = getInterestedProductFromMeta(leadMetaData)
+  if (interestedProduct) {
+    const normalizedValue = normalizeProductName(interestedProduct)
+
+    // Direct normalized match
+    if (normalizedValue === normalizedProduct) {
+      return true
+    }
+
+    // Substring match
+    if (normalizedValue.includes(normalizedProduct) || normalizedProduct.includes(normalizedValue)) {
+      return true
+    }
+
+    // Check if key words from product appear in the value
+    const valueKeyWords = extractKeyWords(interestedProduct)
+    const matchingWords = productKeyWords.filter(word =>
+      valueKeyWords.some(vw => vw.includes(word) || word.includes(vw))
+    )
+    if (matchingWords.length >= Math.min(2, productKeyWords.length)) {
+      return true
     }
   }
   

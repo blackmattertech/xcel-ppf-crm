@@ -42,7 +42,7 @@ export default function Sidebar() {
   useEffect(() => {
     if (userRole === 'tele_caller') {
       fetchFollowUpCount()
-      const interval = setInterval(fetchFollowUpCount, 5 * 60 * 1000)
+      const interval = setInterval(fetchFollowUpCount, 30 * 1000)
       return () => clearInterval(interval)
     }
   }, [userRole])
@@ -80,31 +80,24 @@ export default function Sidebar() {
   }
 
   // Filter menu items based on user role and permissions
-  const filteredMenuItems = SIDEBAR_MENU_ITEMS.filter((item) => {
-    // Super admin and admin can see all items
-    if (userRole === 'super_admin' || userRole === 'admin') {
-      return true
-    }
+  const filteredMenuItems = useMemo(() => {
+    return SIDEBAR_MENU_ITEMS.filter((item) => {
+      // Super admin and admin can see all items
+      if (userRole === 'super_admin' || userRole === 'admin') {
+        return true
+      }
 
-    // Items that don't require permissions are visible to all authenticated users
-    if (!item.requiresPermissions) {
-      return true
-    }
+      // Items that don't require permissions are visible to all authenticated users
+      if (!item.requiresPermissions) {
+        return true
+      }
 
-    // If item has specific roles, check if user role matches
-    if (item.roles && userRole && item.roles.includes(userRole)) {
-      return true
-    }
+      // If item has specific roles, check if user role matches
+      if (item.roles && userRole && item.roles.includes(userRole)) {
+        return true
+      }
 
-    // Check if user has required permissions
-    const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
-    const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
-    
-    if (hasReadPermission || hasManagePermission) {
-      return true
-    }
-
-      // Every item is gated by permission: user must have resource.read or resource.manage
+      // Check if user has required permissions
       const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
       const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
       return hasReadPermission || hasManagePermission

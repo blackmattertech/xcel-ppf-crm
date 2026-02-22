@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
+import { getInterestedProductFromMeta, getCarModelFromMeta } from '@/shared/utils/lead-meta'
 import { 
   LEAD_STATUS, 
   LEAD_STATUS_LABELS, 
@@ -502,6 +503,7 @@ export default function LeadDetailPage() {
   const [followUpNotes, setFollowUpNotes] = useState('')
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [deletingLead, setDeletingLead] = useState(false)
   const [showStatusUpdateModal, setShowStatusUpdateModal] = useState(false)
   const [showQuotationModal, setShowQuotationModal] = useState(false)
   const [products, setProducts] = useState<any[]>([])
@@ -648,6 +650,28 @@ export default function LeadDetailPage() {
       alert('Failed to update status')
     } finally {
       setUpdatingStatus(false)
+    }
+  }
+
+  async function handleDeleteLead() {
+    if (!confirm('Are you sure you want to delete this lead? This action cannot be undone.')) return
+
+    setDeletingLead(true)
+    try {
+      const response = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+      const data = await response.json()
+
+      if (response.ok) {
+        router.push('/leads')
+        alert('Lead deleted successfully')
+      } else {
+        alert(data.error || 'Failed to delete lead')
+      }
+    } catch (error) {
+      console.error('Failed to delete lead:', error)
+      alert('Failed to delete lead')
+    } finally {
+      setDeletingLead(false)
     }
   }
 
@@ -1378,20 +1402,12 @@ export default function LeadDetailPage() {
 
   const availableStatuses = getAvailableStatuses()
   const canUpdateStatus = userRole === 'tele_caller' || userRole === 'admin' || userRole === 'super_admin'
+  const canDeleteLead = userRole === 'admin' || userRole === 'super_admin'
 
-  // Raw product/interest string (requirement or meta) — may contain "| Car Model: X"
+  // Raw product/interest string (requirement or meta_data) — may contain "| Car Model: X"
   function getRawProductInterest(): string {
     if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
-    if (lead?.meta_data) {
-      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] ||
-                             lead.meta_data['what_services_are_you_looking_for'] ||
-                             lead.meta_data['What services are you looking for?'] ||
-                             lead.meta_data['product_interest'] ||
-                             lead.meta_data['service'] ||
-                             null
-      if (productInterest) return String(productInterest).replace(/_/g, ' ')
-    }
-    return ''
+    return getInterestedProductFromMeta(lead?.meta_data ?? null)
   }
 
   // Extract "Car Model: X" from string (e.g. "paint protection film | Car Model: nexon" -> "nexon")
@@ -1407,14 +1423,10 @@ export default function LeadDetailPage() {
     return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
   }
 
-  // Car model: from meta_data first, else from product string
+  // Car model: from meta_data (direct keys or field_data), else from product string
   function getLeadCarModel(): string {
-    if (lead?.meta_data) {
-      const carModel = lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
-                       lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
-                       lead.meta_data['vehicle'] || lead.meta_data['Vehicle'] || null
-      if (carModel) return String(carModel).replace(/_/g, ' ')
-    }
+    const fromMeta = getCarModelFromMeta(lead?.meta_data ?? null)
+    if (fromMeta) return fromMeta
     return extractCarModelFromString(getRawProductInterest())
   }
 
@@ -1423,23 +1435,15 @@ export default function LeadDetailPage() {
     return stripCarModelFromProductString(getRawProductInterest())
   }
 
-  // Get vehicle name from requirement or meta_data (for header: show car model when present)
+  // Get vehicle name from meta_data or product string
   function getVehicleName() {
-    const fromMeta = lead?.meta_data && (
-      lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
-      lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
-      lead.meta_data['vehicle'] || lead.meta_data['Vehicle']
-    )
-    if (fromMeta) return String(fromMeta).replace(/_/g, ' ')
+    const fromMeta = getCarModelFromMeta(lead?.meta_data ?? null)
+    if (fromMeta) return fromMeta
     const fromProduct = extractCarModelFromString(getRawProductInterest())
     if (fromProduct) return fromProduct
-    if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
-    if (lead?.meta_data) {
-      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] ||
-                     lead.meta_data['what_services_are_you_looking_for'] || null
-      if (vehicle) return String(vehicle).replace(/_/g, ' ')
-    }
-    return null
+    const fromRequirement = lead?.requirement ? lead.requirement.replace(/_/g, ' ') : ''
+    if (fromRequirement) return fromRequirement
+    return getInterestedProductFromMeta(lead?.meta_data ?? null) || ''
   }
 
   // Get estimated value from meta_data
@@ -1652,13 +1656,24 @@ export default function LeadDetailPage() {
               </div>
             </div>
             
-            {/* Close Button */}
-            <button
-              onClick={() => router.push('/leads')}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-            >
+            <div className="flex items-center gap-2">
+              {canDeleteLead && (
+                <button
+                  onClick={handleDeleteLead}
+                  disabled={deletingLead}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50 flex items-center gap-1"
+                  title="Delete lead"
+                >
+                  <Trash2 size={20} />
+                </button>
+              )}
+              <button
+                onClick={() => router.push('/leads')}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+              >
                 <X size={20} />
-            </button>
+              </button>
+            </div>
           </div>
         </div>
 

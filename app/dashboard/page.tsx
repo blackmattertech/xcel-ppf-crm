@@ -84,7 +84,7 @@ export default function DashboardPage() {
 
     if (roleName === 'tele_caller' || roleName === 'admin' || roleName === 'super_admin') {
       fetchFollowUpAlerts()
-      const interval = setInterval(fetchFollowUpAlerts, 5 * 60 * 1000)
+      const interval = setInterval(fetchFollowUpAlerts, 30 * 1000)
       return () => clearInterval(interval)
     }
   }

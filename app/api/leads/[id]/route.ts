@@ -3,6 +3,7 @@ import { requirePermission } from '@/backend/middleware/auth'
 import { getLeadById, updateLead, deleteLead } from '@/backend/services/lead.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
+import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { invalidateLeadCaches } from '@/lib/cache-invalidation'
 
 const updateLeadSchema = z.object({
@@ -138,6 +139,17 @@ export async function DELETE(
     
     if ('error' in authResult) {
       return authResult.error
+    }
+
+    const { user } = authResult
+    const userRole = user.role.name
+
+    // Only admin and super_admin can delete leads
+    if (userRole !== SYSTEM_ROLES.ADMIN && userRole !== SYSTEM_ROLES.SUPER_ADMIN) {
+      return NextResponse.json(
+        { error: 'Forbidden: Only administrators can delete leads' },
+        { status: 403 }
+      )
     }
 
     await deleteLead(id)

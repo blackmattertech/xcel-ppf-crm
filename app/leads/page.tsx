@@ -5,11 +5,12 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
-import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2, Check, MessageCircle, FileText } from 'lucide-react'
+import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2, Check, MessageCircle, FileText, RefreshCw } from 'lucide-react'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
+import { getInterestedProductFromMeta, getCarModelFromMeta } from '@/shared/utils/lead-meta'
 import { useAuthContext } from '@/components/AuthProvider'
 import MobileHeader from '@/components/MobileHeader'
 import MobileBottomNav from '@/components/MobileBottomNav'
@@ -135,7 +136,10 @@ function GridView({
   getLastContactedTime,
   formatStageName,
   getStageBadgeColor,
-  router
+  router,
+  onDeleteLead,
+  canDeleteLeads,
+  deletingLeadId,
 }: {
   leads: Lead[]
   getVehicleName: (lead: Lead) => string
@@ -144,6 +148,9 @@ function GridView({
   formatStageName: (status: string) => string
   getStageBadgeColor: (status: string) => string
   router: ReturnType<typeof useRouter>
+  onDeleteLead?: (leadId: string) => void
+  canDeleteLeads?: boolean
+  deletingLeadId?: string | null
 }) {
   // Get budget/amount from meta_data
   function getBudget(lead: Lead): string {
@@ -275,12 +282,24 @@ function GridView({
                     </p>
                   )}
                 </div>
-                {/* Red wavy line icon for hot leads */}
-                {isHot && (
-                  <div className="flex-shrink-0">
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {canDeleteLeads && onDeleteLead && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteLead(lead.id)
+                      }}
+                      disabled={deletingLeadId === lead.id}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
+                      title="Delete lead"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  {isHot && (
                     <TrendingUp className="w-4 h-4 text-[#ed1b24]" />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
               
               {/* Stage & Priority Badges */}
@@ -883,6 +902,13 @@ export default function LeadsPage() {
   const [bulkReassignModalOpen, setBulkReassignModalOpen] = useState(false)
   const [bulkReassignTeleCaller, setBulkReassignTeleCaller] = useState<string>('')
   const [bulkReassignLoading, setBulkReassignLoading] = useState(false)
+  
+  // Delete state
+  const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false)
+  const [metaSyncLoading, setMetaSyncLoading] = useState(false)
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -1701,23 +1727,12 @@ export default function LeadsPage() {
     }
   }
 
-  // Get raw product/interest string (requirement or meta) — may contain "| Car Model: X"
+  // Get raw product/interest string (requirement or meta_data) — may contain "| Car Model: X"
   function getRawProductInterest(lead: Lead): string {
     if (lead.requirement) {
       return lead.requirement.replace(/_/g, ' ')
     }
-    if (lead.meta_data) {
-      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] ||
-                             lead.meta_data['what_services_are_you_looking_for'] ||
-                             lead.meta_data['What services are you looking for?'] ||
-                             lead.meta_data['product_interest'] ||
-                             lead.meta_data['service'] ||
-                             null
-      if (productInterest) {
-        return String(productInterest).replace(/_/g, ' ')
-      }
-    }
-    return ''
+    return getInterestedProductFromMeta(lead.meta_data)
   }
 
   // Extract "Car Model: X" from a string (e.g. "paint protection film | Car Model: creta" -> "creta")
@@ -1733,22 +1748,11 @@ export default function LeadsPage() {
     return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
   }
 
-  // Get car model: from meta_data first, else from product string (e.g. "| Car Model: creta")
+  // Get car model: from meta_data (direct keys or field_data), else from product string
   function getVehicleName(lead: Lead): string {
-    if (lead.meta_data) {
-      const carModel = lead.meta_data['car_model'] ||
-                     lead.meta_data['Car Model'] ||
-                     lead.meta_data['vehicle_model'] ||
-                     lead.meta_data['Vehicle Model'] ||
-                     lead.meta_data['vehicle'] ||
-                     lead.meta_data['Vehicle'] ||
-                     null
-      if (carModel) {
-        return String(carModel).replace(/_/g, ' ')
-      }
-    }
-    const fromProduct = extractCarModelFromString(getRawProductInterest(lead))
-    return fromProduct || ''
+    const fromMeta = getCarModelFromMeta(lead.meta_data)
+    if (fromMeta) return fromMeta
+    return extractCarModelFromString(getRawProductInterest(lead))
   }
 
   // Get product/service interest only — car model is shown in Car model column
@@ -1943,6 +1947,128 @@ export default function LeadsPage() {
     }
   }
 
+  // Handle single lead delete
+  async function handleDeleteLead(leadId: string | null) {
+    if (!leadId) return
+    if (!confirm('Are you sure you want to delete this lead? This action cannot be undone.')) return
+
+    setDeleteLoading(true)
+    setDeletingLeadId(leadId)
+    try {
+      const response = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+      const data = await response.json()
+
+      if (response.ok) {
+        await fetchLeads()
+        setDeletingLeadId(null)
+        alert('Lead deleted successfully')
+      } else {
+        alert(data.error || 'Failed to delete lead')
+      }
+    } catch (error) {
+      console.error('Failed to delete lead:', error)
+      alert('Failed to delete lead')
+    } finally {
+      setDeleteLoading(false)
+      setDeletingLeadId(null)
+    }
+  }
+
+  // Handle bulk delete (confirmation is via modal)
+  async function handleBulkDelete() {
+    if (selectedLeadIds.size === 0) {
+      alert('Please select at least one lead to delete')
+      return
+    }
+
+    setBulkDeleteLoading(true)
+    try {
+      const response = await fetch('/api/leads/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_ids: Array.from(selectedLeadIds) }),
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success > 0) {
+        await fetchLeads()
+        setSelectedLeadIds(new Set())
+        setBulkDeleteModalOpen(false)
+        alert(`Successfully deleted ${data.success} lead(s)`)
+      } else {
+        alert(data.error || 'Failed to bulk delete leads')
+      }
+    } catch (error) {
+      console.error('Failed to bulk delete leads:', error)
+      alert('Failed to bulk delete leads')
+    } finally {
+      setBulkDeleteLoading(false)
+    }
+  }
+
+  async function handleSyncFromMeta() {
+    setMetaSyncLoading(true)
+    try {
+      const response = await fetch('/api/integrations/facebook/sync-leads', { method: 'POST' })
+      const contentType = response.headers.get('content-type') || ''
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        alert(data.error || 'Failed to sync leads from Meta')
+        return
+      }
+
+      // Handle non-streaming response (e.g. no forms found)
+      if (!contentType.includes('ndjson') || !response.body) {
+        const data = await response.json()
+        alert(data.message || `Synced ${data.synced || 0} lead(s) from Meta.`)
+        if (data.synced > 0) await fetchLeads()
+        return
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let finalSynced = 0
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const msg = JSON.parse(line)
+            if (msg.type === 'lead' && msg.data) {
+              setAllLeads((prev) => [msg.data as Lead, ...prev])
+            } else if (msg.type === 'done') {
+              finalSynced = msg.synced ?? 0
+              const parts = [`Synced ${finalSynced} lead(s) from Meta`]
+              if (msg.skipped) parts.push(`${msg.skipped} skipped (no phone)`)
+              if (msg.failed) parts.push(`${msg.failed} failed`)
+              alert(parts.join('. '))
+            } else if (msg.type === 'error') {
+              alert(msg.error || 'Sync failed')
+            }
+          } catch {
+            // ignore parse errors for partial lines
+          }
+        }
+      }
+
+      if (finalSynced > 0) await fetchLeads()
+    } catch (error) {
+      console.error('Failed to sync from Meta:', error)
+      alert('Failed to sync leads from Meta')
+    } finally {
+      setMetaSyncLoading(false)
+    }
+  }
+
   // Column customization handlers
   function toggleColumnVisibility(columnKey: string) {
     setColumns(prev => prev.map(col => 
@@ -1991,6 +2117,7 @@ export default function LeadsPage() {
   }
 
   const isAdmin = (userRole || userRoleState) === 'admin' || (userRole || userRoleState) === 'super_admin'
+  const canDeleteLeads = isAdmin
   
   // Helper function for search (safe version)
   const searchLeads = (leads: Lead[], query: string): Lead[] => {
@@ -3157,6 +3284,21 @@ export default function LeadsPage() {
               </Link>
               <button
                 type="button"
+                onClick={handleSyncFromMeta}
+                disabled={metaSyncLoading}
+                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all disabled:opacity-50"
+                style={{ 
+                  color: containerStyles.textColor,
+                  backgroundColor: containerStyles.backgroundColor,
+                  borderColor: containerStyles.textColor + '30',
+                }}
+                title="Sync leads from Meta (Facebook) Lead Ads"
+              >
+                <RefreshCw size={18} className={metaSyncLoading ? 'animate-spin' : ''} style={{ color: containerStyles.iconColor }} />
+                Sync from Meta
+              </button>
+              <button
+                type="button"
                 onClick={handleExportLeads}
                 className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
                 style={{ 
@@ -3316,12 +3458,17 @@ export default function LeadsPage() {
                     )}
                   </th>
                 ))}
+                {canDeleteLeads && (
+                  <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap" style={{ width: '80px' }}>
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {leads.length === 0 ? (
                 <tr>
-                  <td colSpan={(isAdmin ? 1 : 0) + columns.filter(col => col.visible).length} className="px-6 py-12 text-center text-base text-gray-500">
+                  <td colSpan={(isAdmin ? 1 : 0) + columns.filter(col => col.visible).length + (canDeleteLeads ? 1 : 0)} className="px-6 py-12 text-center text-base text-gray-500">
                     No leads found
                   </td>
                 </tr>
@@ -3473,6 +3620,21 @@ export default function LeadsPage() {
                           {renderCell(column)}
                     </td>
                       ))}
+                    {canDeleteLeads && (
+                      <td className="px-4 md:px-6 py-3 md:py-4 whitespace-nowrap" style={{ width: '80px' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteLead(lead.id)
+                          }}
+                          disabled={deletingLeadId === lead.id}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
+                          title="Delete lead"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                   )
                 })
@@ -3560,6 +3722,9 @@ export default function LeadsPage() {
                 formatStageName={formatStageName}
                 getStageBadgeColor={getStageBadgeColor}
                 router={router}
+                onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
+                canDeleteLeads={canDeleteLeads}
+                deletingLeadId={deletingLeadId}
               />
               {/* Pagination for Grid View */}
               {totalPages > 1 && (
@@ -3614,17 +3779,24 @@ export default function LeadsPage() {
             </>
           )}
 
-          {/* Bulk Reassign Button */}
+          {/* Bulk Actions: Reassign & Delete (admin only - only admins can select leads) */}
           {isAdmin && selectedLeadIds.size > 0 && (
-            <div className="fixed bottom-6 right-6">
+            <div className="fixed bottom-6 right-6 flex gap-3">
               <button
                 onClick={() => setBulkReassignModalOpen(true)}
                 className="bg-[#ed1b24] text-white px-6 py-3 rounded-md hover:bg-[#d11820] shadow-lg font-medium text-base"
               >
                 Bulk Reassign ({selectedLeadIds.size})
               </button>
-          </div>
-        )}
+              <button
+                onClick={() => setBulkDeleteModalOpen(true)}
+                className="bg-red-600 text-white px-6 py-3 rounded-md hover:bg-red-700 shadow-lg font-medium text-base flex items-center gap-2"
+              >
+                <Trash2 size={18} />
+                Bulk Delete ({selectedLeadIds.size})
+              </button>
+            </div>
+          )}
             </div>
           </div>
         </Layout>
@@ -3716,6 +3888,36 @@ export default function LeadsPage() {
                 className="px-4 py-2 text-white bg-[#ed1b24] rounded-md hover:bg-[#d11820] disabled:opacity-50"
               >
                 {bulkReassignLoading ? 'Reassigning...' : `Reassign ${selectedLeadIds.size} Lead(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Modal */}
+      {bulkDeleteModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold mb-4">
+              Bulk Delete Leads ({selectedLeadIds.size} selected)
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete {selectedLeadIds.size} lead(s)? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setBulkDeleteModalOpen(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleteLoading}
+                className="px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                <Trash2 size={16} />
+                {bulkDeleteLoading ? 'Deleting...' : `Delete ${selectedLeadIds.size} Lead(s)`}
               </button>
             </div>
           </div>
