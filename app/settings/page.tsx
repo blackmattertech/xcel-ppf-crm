@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Layout from '@/components/Layout'
 import FacebookIntegration from '@/components/FacebookIntegration'
 import { useAuthContext } from '@/components/AuthProvider'
 import { CheckCircle2, XCircle } from 'lucide-react'
 
-export default function SettingsPage() {
+function SettingsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAuthenticated, loading: authLoading } = useAuthContext()
@@ -112,5 +112,23 @@ export default function SettingsPage() {
         </div>
       </div>
     </Layout>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <Layout>
+          <div className="p-6">
+            <div className="flex items-center justify-center py-12">
+              <div className="text-gray-500">Loading...</div>
+            </div>
+          </div>
+        </Layout>
+      }
+    >
+      <SettingsContent />
+    </Suspense>
   )
 }

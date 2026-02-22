@@ -76,12 +76,13 @@ export async function POST(request: NextRequest) {
     const { user } = authResult
     const supabase = createServiceClient()
 
-    const { data: fbSettings, error: settingsError } = await supabase
+    const { data: fbData, error: settingsError } = await supabase
       .from('facebook_business_settings')
       .select('access_token, page_id, expires_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
       .maybeSingle()
+    const fbSettings = fbData as { access_token: string; page_id: string | null; expires_at: string | null } | null
 
     if (settingsError || !fbSettings) {
       return NextResponse.json(
@@ -161,10 +162,10 @@ export async function POST(request: NextRequest) {
       let url: string | null = `https://graph.facebook.com/v18.0/${form.id}/leads?fields=${fields}&access_token=${pageAccessToken}`
 
       while (url) {
-        const res = await fetch(url)
+        const res: Response = await fetch(url)
         if (!res.ok) break
 
-        const data = await res.json()
+        const data: { data?: MetaApiLead[]; paging?: { next?: string } } = await res.json()
         const leads = data.data || []
         allLeads.push(...leads)
 

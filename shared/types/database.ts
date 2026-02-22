@@ -487,6 +487,53 @@ export interface Database {
           assignment_count?: number
         }
       }
+      facebook_business_settings: {
+        Row: {
+          id: string
+          access_token: string
+          page_id: string | null
+          page_name: string | null
+          ad_account_id: string | null
+          ad_account_name: string | null
+          business_id: string | null
+          business_name: string | null
+          expires_at: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          access_token: string
+          page_id?: string | null
+          page_name?: string | null
+          ad_account_id?: string | null
+          ad_account_name?: string | null
+          business_id?: string | null
+          business_name?: string | null
+          expires_at?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          access_token?: string
+          page_id?: string | null
+          page_name?: string | null
+          ad_account_id?: string | null
+          ad_account_name?: string | null
+          business_id?: string | null
+          business_name?: string | null
+          expires_at?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          created_by?: string | null
+        }
+      }
     }
     Views: {
       [_ in never]: never
