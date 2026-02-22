@@ -3,6 +3,7 @@ import { requirePermission } from '@/backend/middleware/auth'
 import { getAllLeads, createLead } from '@/backend/services/lead.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
+import { getCache, setCache, invalidateCachePrefix, CACHE_KEYS, CACHE_TTL } from '@/lib/cache'
 
 const createLeadSchema = z.object({
   name: z.string().min(1),
@@ -48,8 +49,23 @@ export async function GET(request: NextRequest) {
       userRole: userRole, // Pass user role for filtering
     }
 
+    // Create cache key from filters
+    const cacheKey = `${CACHE_KEYS.LEADS_LIST}:${JSON.stringify(filters)}`
+    
+    // Check cache first
+    const cached = await getCache<{ leads: any[] }>(cacheKey)
+    if (cached) {
+      return NextResponse.json(cached)
+    }
+
+    // Fetch from database
     const leads = await getAllLeads(filters)
-    return NextResponse.json({ leads })
+    const result = { leads }
+    
+    // Cache result for 30 seconds (leads list changes frequently)
+    await setCache(cacheKey, result, CACHE_TTL.SHORT)
+    
+    return NextResponse.json(result)
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch leads' },
@@ -80,6 +96,11 @@ export async function POST(request: NextRequest) {
     }
 
     const lead = await createLead(leadData as any, true) // Auto-assign enabled
+
+    // Invalidate related caches when new lead is created
+    await invalidateCachePrefix(CACHE_KEYS.LEADS_LIST)
+    await invalidateCachePrefix(CACHE_KEYS.ANALYTICS)
+    await invalidateCachePrefix(CACHE_KEYS.DASHBOARD)
 
     return NextResponse.json({ lead }, { status: 201 })
   } catch (error) {

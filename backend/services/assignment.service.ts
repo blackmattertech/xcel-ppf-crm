@@ -1,7 +1,10 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import { Database } from '@/shared/types/database'
+import { LEAD_STATUS } from '@/shared/constants/lead-status'
 
-type LeadSource = 'meta' | 'manual' | 'form'
+const LEAD_SOURCES = ['meta', 'manual', 'form'] as const
+type LeadSource = (typeof LEAD_SOURCES)[number]
+
+const EPOCH_DATE = new Date(1970, 0, 1).toISOString()
 
 export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<string | null> {
   const supabase = createServiceClient()
@@ -18,7 +21,7 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
     return null
   }
 
-  // Get all users with tele_caller role only
+  // Get all users with tele_caller role
   const roleData = teleCallerRole as { id: string }
   const { data: users, error: usersError } = await supabase
     .from('users')
@@ -32,10 +35,10 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
 
   const userIds = (users as { id: string }[]).map((u) => u.id)
 
-  // Get or create assignment records for this source
-  const { data: assignments, error: assignmentsError } = await supabase
+  // Get ALL assignment rows for all tele_callers (any source) to see who is missing for THIS source
+  const { data: assignmentsForSource, error: assignmentsError } = await supabase
     .from('assignments')
-    .select('*')
+    .select('user_id')
     .eq('lead_source', leadSource)
     .in('user_id', userIds)
 
@@ -43,47 +46,176 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
     throw new Error(`Failed to fetch assignments: ${assignmentsError.message}`)
   }
 
-  // Create assignment records for users that don't have one
-  const existingUserIds = new Set((assignments as any[])?.map((a: any) => a.user_id) || [])
+  const existingUserIds = new Set((assignmentsForSource as { user_id: string }[])?.map((a) => a.user_id) || [])
   const missingUserIds = userIds.filter((id) => !existingUserIds.has(id))
 
+  // Create assignment rows for this source for any new tele_callers (so they get into the round-robin)
   if (missingUserIds.length > 0) {
-    const newAssignments = missingUserIds.map((userId) => ({
+    const newRows = missingUserIds.map((userId) => ({
       user_id: userId,
       lead_source: leadSource,
-      last_assigned_at: new Date(1970, 0, 1).toISOString(), // Very old date
+      last_assigned_at: EPOCH_DATE,
       assignment_count: 0,
     }))
 
-    await supabase.from('assignments').insert(newAssignments as any)
+    const { error: insertError } = await supabase.from('assignments').insert(newRows as any)
+
+    if (insertError) {
+      console.error(
+        `[assignLeadRoundRobin] Failed to create assignment rows for new tele_callers (source=${leadSource}):`,
+        insertError.message
+      )
+      // Continue: we may still have at least one assignable user from existing rows
+    }
   }
 
-  // Get all assignments for this source (including newly created ones)
-  const { data: allAssignments, error: allAssignmentsError } = await supabase
+  // Ensure every tele_caller has rows for ALL sources (so future leads for other sources also round-robin)
+  const { data: allAssignments } = await supabase
     .from('assignments')
-    .select('*')
+    .select('user_id, lead_source')
+    .in('user_id', userIds)
+    .in('lead_source', [...LEAD_SOURCES])
+
+  const existingByUserAndSource = new Set(
+    (allAssignments as { user_id: string; lead_source: string }[]).map((a) => `${a.user_id}:${a.lead_source}`)
+  )
+  const toInsert: { user_id: string; lead_source: string; last_assigned_at: string; assignment_count: number }[] = []
+  for (const userId of userIds) {
+    for (const source of LEAD_SOURCES) {
+      if (!existingByUserAndSource.has(`${userId}:${source}`)) {
+        toInsert.push({
+          user_id: userId,
+          lead_source: source,
+          last_assigned_at: EPOCH_DATE,
+          assignment_count: 0,
+        })
+      }
+    }
+  }
+  if (toInsert.length > 0) {
+    const { error: bulkInsertError } = await supabase.from('assignments').insert(toInsert as any)
+    if (bulkInsertError) {
+      console.error('[assignLeadRoundRobin] Failed to backfill assignment rows for all sources:', bulkInsertError.message)
+    }
+  }
+
+  // Get assignments for THIS source only, ordered by least recently assigned then by count
+  const { data: allAssignmentsForSource, error: allAssignmentsError } = await supabase
+    .from('assignments')
+    .select('id, user_id, assignment_count, last_assigned_at')
     .eq('lead_source', leadSource)
     .in('user_id', userIds)
     .order('last_assigned_at', { ascending: true })
     .order('assignment_count', { ascending: true })
     .limit(1)
 
-  if (allAssignmentsError || !allAssignments || allAssignments.length === 0) {
+  if (allAssignmentsError || !allAssignmentsForSource || allAssignmentsForSource.length === 0) {
     return null
   }
 
-  const selectedAssignment = (allAssignments as any[])[0]
-  const selectedUserId = selectedAssignment.user_id
+  const selected = allAssignmentsForSource[0] as {
+    id: string
+    user_id: string
+    assignment_count: number
+    last_assigned_at: string
+  }
 
-  // Update assignment record
   await supabase
     .from('assignments')
-    // @ts-ignore - Supabase type inference issue with dynamic updates
+    // @ts-expect-error - Supabase builder infers update payload as 'never'; assignments.Update is defined in database.ts
     .update({
       last_assigned_at: new Date().toISOString(),
-      assignment_count: (selectedAssignment.assignment_count || 0) + 1,
+      assignment_count: (selected.assignment_count || 0) + 1,
     })
-    .eq('id', selectedAssignment.id)
+    .eq('id', selected.id)
 
-  return selectedUserId
+  return selected.user_id
+}
+
+/**
+ * Redistribute existing leads with status "new" among all tele_callers in round-robin
+ * when a new tele_caller is added. Call this after creating or updating a user to tele_caller role.
+ * @param triggeredByUserId - Optional; if provided, used as changed_by for lead_status_history entries
+ * @returns Number of leads reassigned
+ */
+export async function redistributeNewLeadsAmongTeleCallers(
+  triggeredByUserId?: string | null
+): Promise<number> {
+  const supabase = createServiceClient()
+
+  const { data: teleCallerRole, error: roleError } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('name', 'tele_caller')
+    .single()
+
+  if (roleError || !teleCallerRole) {
+    console.error('[redistributeNewLeads] Tele caller role not found:', roleError)
+    return 0
+  }
+
+  const roleId = (teleCallerRole as { id: string }).id
+  const { data: users, error: usersError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('role_id', roleId)
+
+  if (usersError || !users || users.length === 0) {
+    return 0
+  }
+
+  const teleCallerIds = (users as { id: string }[]).map((u) => u.id)
+  if (teleCallerIds.length < 2) {
+    return 0
+  }
+
+  // All leads with status NEW that are assigned to any tele_caller
+  const { data: leads, error: leadsError } = await supabase
+    .from('leads')
+    .select('id, assigned_to, status')
+    .eq('status', LEAD_STATUS.NEW)
+    .not('assigned_to', 'is', null)
+    .in('assigned_to', teleCallerIds)
+    .order('created_at', { ascending: true })
+
+  if (leadsError || !leads || leads.length === 0) {
+    return 0
+  }
+
+  const leadRows = leads as { id: string; assigned_to: string; status: string }[]
+  const n = teleCallerIds.length
+  let reassigned = 0
+
+  for (let i = 0; i < leadRows.length; i++) {
+    const lead = leadRows[i]
+    const newAssigneeId = teleCallerIds[i % n]
+    if (lead.assigned_to === newAssigneeId) continue
+
+    const { error: updateError } = await supabase
+      .from('leads')
+      // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
+      .update({ assigned_to: newAssigneeId })
+      .eq('id', lead.id)
+
+    if (updateError) {
+      console.error(`[redistributeNewLeads] Failed to reassign lead ${lead.id}:`, updateError.message)
+      continue
+    }
+    reassigned++
+
+    if (triggeredByUserId) {
+      try {
+        await supabase.from('lead_status_history').insert({
+          lead_id: lead.id,
+          old_status: lead.status,
+          new_status: lead.status,
+          changed_by: triggeredByUserId,
+        } as any)
+      } catch {
+        // Non-fatal
+      }
+    }
+  }
+
+  return reassigned
 }

@@ -28,14 +28,13 @@ interface Quotation {
   created_at: string
   lead: {
     id: string
-    first_name: string
-    last_name: string | null
+    name: string
     phone: string
     email: string | null
   }
   created_by_user: {
     id: string
-    full_name: string | null
+    name: string
     email: string
   }
 }
@@ -136,7 +135,7 @@ export default function QuotationDetailPage() {
                       if (navigator.share) {
                         await navigator.share({
                           title: 'Quotation',
-                          text: `Check out this quotation for ${quotation.lead.first_name} ${quotation.lead.last_name || ''}`.trim(),
+                          text: `Check out this quotation for ${quotation.lead.name}`,
                           url: shareUrl
                         })
                       } else {
@@ -211,7 +210,7 @@ export default function QuotationDetailPage() {
                     To
                   </h3>
                   <div className="space-y-1 text-sm">
-                    <p className="font-medium text-gray-900">{quotation.lead.first_name} {quotation.lead.last_name || ''}</p>
+                    <p className="font-medium text-gray-900">{quotation.lead.name}</p>
                     <div className="flex items-center gap-2 text-gray-600">
                       <Phone size={14} />
                       <span>{quotation.lead.phone}</span>
@@ -341,7 +340,7 @@ export default function QuotationDetailPage() {
                   </span>
                 </div>
                 <div className="text-sm text-gray-600">
-                  Created by: {quotation.created_by_user.full_name || quotation.created_by_user.email}
+                  Created by: {quotation.created_by_user.name || quotation.created_by_user.email}
                 </div>
               </div>
             </div>

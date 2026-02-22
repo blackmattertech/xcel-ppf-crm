@@ -421,14 +421,15 @@ export default function TeamsPage() {
       const supabase = createClient()
       
       // Get first deal date (earliest converted lead)
-      const { data: firstDeal } = await supabase
+      const { data: firstDealData } = await supabase
         .from('leads')
         .select('created_at')
         .eq('assigned_to', userId)
         .in('status', ['converted', 'deal_won', 'fully_paid'])
         .order('created_at', { ascending: true })
         .limit(1)
-        .single()
+      
+      const firstDeal = firstDealData && firstDealData.length > 0 ? firstDealData[0] : null
       
       // Get total converted customers
       const { count: convertedCount } = await supabase
@@ -450,16 +451,42 @@ export default function TeamsPage() {
         ? Math.min(5, Math.max(0, conversionRate * 5))
         : 0
       
-      // Get total sales (from orders)
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('total_amount')
+      // Get total sales (from orders linked to converted leads)
+      // First get converted lead IDs for this user
+      const { data: convertedLeadsData } = await supabase
+        .from('leads')
+        .select('id')
         .eq('assigned_to', userId)
+        .in('status', ['converted', 'deal_won', 'fully_paid'])
       
-      const totalSales = (orders as any[])?.reduce((sum: number, order: any) => sum + (parseFloat(order.total_amount) || 0), 0) || 0
+      const convertedLeadIds = (convertedLeadsData as { id: string }[] | null)?.map(l => l.id) || []
+      
+      // Get orders for these leads with product prices (only if there are converted leads)
+      let totalSales = 0
+      if (convertedLeadIds.length > 0) {
+        const { data: orders } = await supabase
+          .from('orders')
+          .select(`
+            id,
+            lead_id,
+            lead:leads (
+              payment_amount
+            ),
+            product:products (
+              price
+            )
+          `)
+          .in('lead_id', convertedLeadIds)
+        
+        totalSales = (orders as any[])?.reduce((sum: number, order: any) => {
+          // Prefer payment_amount from lead, fallback to product price
+          const amount = order.lead?.payment_amount || order.product?.price || 0
+          return sum + (parseFloat(String(amount)) || 0)
+        }, 0) || 0
+      }
       
       setUserDetailStats({
-        firstDealDate: (firstDeal as any)?.[0]?.created_at || null,
+        firstDealDate: (firstDeal as any)?.created_at || null,
         totalConvertedCustomers: converted,
         rating: Math.round(rating * 10) / 10,
         totalSales,
@@ -726,7 +753,7 @@ export default function TeamsPage() {
 
   return (
     <Layout>
-      <div className="p-6 bg-gray-50 min-h-screen w-full" style={{ fontFamily: 'Poppins, sans-serif' }}>
+      <div className="p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen w-full" style={{ fontFamily: 'Poppins, sans-serif' }}>
         <div className="w-full">
           {/* Header */}
           <div className="flex justify-between items-start mb-6">

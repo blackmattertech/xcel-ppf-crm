@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -104,8 +104,12 @@ export default function Sidebar() {
       return true
     }
 
-    return false
-  })
+      // Every item is gated by permission: user must have resource.read or resource.manage
+      const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
+      const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
+      return hasReadPermission || hasManagePermission
+    })
+  }, [userRole, userPermissions])
 
   const sidebarWidth = isCollapsed ? 'w-16' : 'w-60'
 
@@ -115,36 +119,38 @@ export default function Sidebar() {
   const userProfileImage = profile?.profileImageUrl || null
 
   return (
-    <div className={`fixed left-0 top-0 h-screen bg-black flex flex-col z-50 overflow-y-auto transition-all duration-300 ${sidebarWidth} border-r border-gray-800`}>
+    <div className={`hidden md:flex fixed left-0 top-0 h-screen bg-black flex-col z-50 overflow-hidden transition-all duration-300 ${sidebarWidth} border-r border-gray-800`}>
       {/* Logo/Brand Section */}
-      <div className={`p-6 border-b border-gray-800 flex-shrink-0 flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'}`}>
+      <div className={`p-4 border-b border-gray-800 flex-shrink-0 flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'}`}>
         {isCollapsed ? (
-          <div className="w-12 h-12 flex items-center justify-center">
+          <div className="flex items-center justify-center">
             <Image
-              src="/assets/sidebar/public/assets/logo.png"
-              alt="Xcel Logo"
-              width={48}
-              height={48}
+              src="/image.png"
+              alt="XCEL Logo"
+              width={80}
+              height={49}
               className="object-contain"
-              style={{ width: 'auto', height: 'auto', maxWidth: '48px', maxHeight: '48px' }}
+              style={{ width: 'auto', height: 'auto' }}
+              priority
             />
           </div>
         ) : (
           <div className="flex items-center justify-start">
             <Image
-              src="/assets/sidebar/public/assets/logo.png"
-              alt="Xcel Logo"
-              width={48}
-              height={48}
+              src="/image.png"
+              alt="XCEL Logo"
+              width={180}
+              height={111}
               className="object-contain"
-              style={{ width: 'auto', height: 'auto', maxWidth: '48px', maxHeight: '48px' }}
+              style={{ width: 'auto', height: 'auto' }}
+              priority
             />
           </div>
         )}
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-2 space-y-1 overflow-y-auto scrollbar-hide">
         {loading ? (
           // Lightweight skeleton while auth/user data resolves.
           Array.from({ length: 6 }).map((_, index) => (

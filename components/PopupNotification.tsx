@@ -12,9 +12,10 @@ export default function PopupNotification() {
   const [lastNotificationTime, setLastNotificationTime] = useState<number>(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  const userRole = role?.name ?? null
+
   // Decide when to surface the popup based on shared notifications data.
   useEffect(() => {
-    const userRole = role?.name ?? null
     if (userRole !== 'tele_caller' || !notifications) return
 
     const hasOverdue = (notifications.overdue?.length || 0) > 0
@@ -39,7 +40,7 @@ export default function PopupNotification() {
         })
       }
     }
-  }, [role, notifications, lastNotificationTime])
+  }, [userRole, notifications, lastNotificationTime])
 
   // Play notification sound when popup shows
   useEffect(() => {
@@ -72,8 +73,6 @@ export default function PopupNotification() {
       }
     }
   }, [showPopup, notifications])
-
-  const userRole = role?.name ?? null
 
   // Only show for tele-callers with overdue follow-ups
   if (userRole !== 'tele_caller' || !showPopup || !notifications || notifications.overdue.length === 0) {

@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 
 type RoleInfo = {
@@ -36,6 +37,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
  * Supabase calls and keeps role/permission data consistent.
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient()
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [role, setRole] = useState<RoleInfo | null>(null)
@@ -125,10 +127,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Run once on mount.
     bootstrapAuth()
 
+    const supabase = createClient()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Re-bootstrap whenever auth changes so switching accounts updates UI without refresh.
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        bootstrapAuth()
+      }
+      if (event === 'SIGNED_OUT') {
+        queryClient.clear()
+      }
+    })
+
     return () => {
       isMounted = false
+      subscription.unsubscribe()
     }
-  }, [])
+  }, [queryClient])
 
   const value = useMemo<AuthContextValue>(
     () => ({

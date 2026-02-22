@@ -4,6 +4,7 @@ import { convertLeadToCustomer, createOrderFromLead } from '@/backend/services/c
 import { updateLeadStatus } from '@/backend/services/lead-journey.service'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
 import { createServiceClient } from '@/lib/supabase/service'
+import { invalidateAnalyticsCaches } from '@/lib/cache-invalidation'
 
 interface LeadStatusRow {
   status: string
@@ -62,6 +63,9 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
     const { assigned_team } = convertSchema.parse(body)
     const order = await createOrderFromLead(id, customer.id, assigned_team)
+
+    // Invalidate analytics/dashboard cache so conversion rate and metrics update
+    await invalidateAnalyticsCaches()
 
     return NextResponse.json({
       customer,

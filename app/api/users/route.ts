@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/backend/middleware/auth'
 import { getAllUsers, createUser } from '@/backend/services/user.service'
+import { redistributeNewLeadsAmongTeleCallers } from '@/backend/services/assignment.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
@@ -47,17 +48,30 @@ export async function POST(request: NextRequest) {
     const { email, password, name, phone, roleId, branchId, profileImageUrl, address, dob, doj } = createUserSchema.parse(body)
 
     const user = await createUser(
-      email, 
-      password, 
-      name, 
-      phone || null, 
-      roleId, 
+      email,
+      password,
+      name,
+      phone || null,
+      roleId,
       branchId || null,
       profileImageUrl || null,
       address || null,
       dob || null,
       doj || null
     )
+
+    // When a new tele_caller is created, redistribute existing "new" leads in round-robin
+    const roleName = (user as any).role?.name ?? (Array.isArray((user as any).role) ? (user as any).role?.[0]?.name : null)
+    if (roleName === 'tele_caller' && authResult && !('error' in authResult) && authResult.user?.id) {
+      try {
+        const count = await redistributeNewLeadsAmongTeleCallers(authResult.user.id)
+        if (count > 0) {
+          (user as any)._redistributedLeads = count
+        }
+      } catch (err) {
+        console.error('Failed to redistribute new leads after creating tele_caller:', err)
+      }
+    }
 
     return NextResponse.json({ user }, { status: 201 })
   } catch (error) {

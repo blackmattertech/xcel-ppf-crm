@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { login } from '@/backend/services/auth.service'
 import { z } from 'zod'
+import { rateLimitWrapper, RATE_LIMITS } from '@/lib/rate-limit'
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -8,6 +9,15 @@ const loginSchema = z.object({
 })
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 10 requests per 10 seconds per IP
+  const rateLimitResponse = await rateLimitWrapper(request, {
+    ...RATE_LIMITS.LOGIN,
+    errorMessage: 'Too many login attempts. Please try again later.',
+  })
+  if (rateLimitResponse) {
+    return rateLimitResponse
+  }
+
   try {
     const body = await request.json()
     const { email, password } = loginSchema.parse(body)
