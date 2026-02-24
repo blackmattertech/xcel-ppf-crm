@@ -1,11 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthContext } from '@/components/AuthProvider'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
+import { SYSTEM_ROLES } from '@/shared/constants/roles'
+
+interface AssignedUser {
+  id: string
+  name: string
+  email?: string
+}
 
 interface FollowUp {
   id: string
@@ -13,6 +20,8 @@ interface FollowUp {
   completed_at: string | null
   status: string
   notes: string | null
+  assigned_to?: string | null
+  assigned_user?: AssignedUser | null
   lead: {
     id: string
     name: string
@@ -28,6 +37,8 @@ export default function FollowUpsPage() {
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'overdue' | 'upcoming' | 'pending'>('all')
+  const [assignedUserFilter, setAssignedUserFilter] = useState<string>('') // For admins: filter by user id, '' = all
+  const [assignedUsersList, setAssignedUsersList] = useState<{ id: string; name: string }[]>([]) // Cached when loading all
   const [totalLeads, setTotalLeads] = useState(0)
 
   useEffect(() => {
@@ -43,7 +54,7 @@ export default function FollowUpsPage() {
   useEffect(() => {
     if (!isAuthenticated) return
     fetchFollowUps()
-  }, [filter, isAuthenticated])
+  }, [filter, isAuthenticated, assignedUserFilter])
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -102,10 +113,29 @@ export default function FollowUpsPage() {
         url += 'status=pending'
       }
 
+      // Admin/super_admin can filter by assigned user
+      if (assignedUserFilter) {
+        url += (url.includes('?') && !url.endsWith('?') ? '&' : '') + `assignedTo=${assignedUserFilter}`
+      }
+
       const response = await fetch(url)
       if (response.ok) {
         const data = await response.json()
-        setFollowUps(data.followUps || [])
+        const list = data.followUps || []
+        setFollowUps(list)
+        // Cache user list for admin dropdown when showing all (no filter)
+        if (!assignedUserFilter && list.length > 0) {
+          const seen = new Set<string>()
+          const users: { id: string; name: string }[] = []
+          for (const fu of list) {
+            if (fu.assigned_to && fu.assigned_user && !seen.has(fu.assigned_to)) {
+              seen.add(fu.assigned_to)
+              users.push({ id: fu.assigned_to, name: fu.assigned_user.name })
+            }
+          }
+          users.sort((a, b) => a.name.localeCompare(b.name))
+          setAssignedUsersList(users)
+        }
       }
     } catch (error) {
       console.error('Failed to fetch follow-ups:', error)
@@ -137,6 +167,128 @@ export default function FollowUpsPage() {
     }
   }
 
+  const now = new Date()
+  const overdueFollowUps = followUps.filter(
+    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) < now
+  )
+  const upcomingFollowUps = followUps.filter(
+    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) >= now
+  )
+  const completedFollowUps = followUps.filter((fu) => fu.status === 'done')
+
+  const isAdmin = userRole === SYSTEM_ROLES.ADMIN || userRole === SYSTEM_ROLES.SUPER_ADMIN
+
+  // For admins: group follow-ups by assigned user (profile)
+  const followUpsByUser = useMemo(() => {
+    if (!isAdmin || followUps.length === 0) return null
+    const groups: Record<string, { user: AssignedUser | null; items: FollowUp[] }> = {}
+    for (const fu of followUps) {
+      const key = fu.assigned_to ?? '__unassigned__'
+      if (!groups[key]) {
+        groups[key] = {
+          user: key === '__unassigned__' ? null : (fu.assigned_user ?? { id: fu.assigned_to!, name: 'Unknown', email: '' }),
+          items: [],
+        }
+      }
+      groups[key].items.push(fu)
+    }
+    // Sort groups: Unassigned first, then alphabetically by name
+    const entries = Object.entries(groups)
+    entries.sort((a, b) => {
+      if (a[0] === '__unassigned__') return -1
+      if (b[0] === '__unassigned__') return 1
+      const nameA = a[1].user?.name ?? ''
+      const nameB = b[1].user?.name ?? ''
+      return nameA.localeCompare(nameB)
+    })
+    return entries
+  }, [isAdmin, followUps])
+
+  // Users for admin filter dropdown (cached when loading all)
+  const assignedUsersForFilter = isAdmin ? assignedUsersList : []
+
+  const renderFollowUpCard = (followUp: FollowUp) => {
+    const scheduledDate = new Date(followUp.scheduled_at)
+    const isOverdue = followUp.status === 'pending' && scheduledDate < now
+    const isUpcoming = followUp.status === 'pending' && scheduledDate >= now
+
+    return (
+      <div
+        key={followUp.id}
+        className={`p-6 ${
+          isOverdue
+            ? 'bg-red-50 border-l-4 border-red-500'
+            : isUpcoming
+            ? 'bg-yellow-50 border-l-4 border-yellow-500'
+            : 'bg-white'
+        }`}
+      >
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <Link
+                href={`/leads/${followUp.lead?.id}`}
+                className="text-lg font-semibold text-gray-900 hover:text-indigo-600"
+              >
+                {followUp.lead?.name || 'Unknown Lead'}
+              </Link>
+              <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                followUp.status === 'done'
+                  ? 'bg-green-100 text-green-800'
+                  : isOverdue
+                  ? 'bg-red-100 text-red-800'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}>
+                {followUp.status === 'done'
+                  ? '✅ Completed'
+                  : isOverdue
+                  ? '⚠️ Overdue'
+                  : '📅 Upcoming'}
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 mb-1">
+              <span className="font-medium">Scheduled:</span>{' '}
+              {scheduledDate.toLocaleString()}
+            </p>
+            {followUp.completed_at && (
+              <p className="text-sm text-gray-600 mb-1">
+                <span className="font-medium">Completed:</span>{' '}
+                {new Date(followUp.completed_at).toLocaleString()}
+              </p>
+            )}
+            {followUp.lead?.phone && (
+              <p className="text-sm text-gray-600 mb-1">
+                <span className="font-medium">Phone:</span>{' '}
+                {followUp.lead.phone.replace(/^(p|tel|phone|mobile):/i, '').trim()}
+              </p>
+            )}
+            {followUp.notes && (
+              <p className="text-sm text-gray-700 mt-2 bg-gray-50 p-2 rounded">
+                {followUp.notes}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2 ml-4">
+            {followUp.status === 'pending' && (
+              <button
+                onClick={() => handleCompleteFollowUp(followUp.id)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
+              >
+                Mark Done
+              </button>
+            )}
+            <Link
+              href={`/leads/${followUp.lead?.id}`}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm"
+            >
+              View Lead
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <Layout>
@@ -146,15 +298,6 @@ export default function FollowUpsPage() {
       </Layout>
     )
   }
-
-  const now = new Date()
-  const overdueFollowUps = followUps.filter(
-    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) < now
-  )
-  const upcomingFollowUps = followUps.filter(
-    (fu) => fu.status === 'pending' && new Date(fu.scheduled_at) >= now
-  )
-  const completedFollowUps = followUps.filter((fu) => fu.status === 'done')
 
   return (
     <Layout>
@@ -180,47 +323,65 @@ export default function FollowUpsPage() {
 
           {/* Filter Tabs */}
           <div className="bg-white rounded-lg shadow mb-6 p-4">
-            <div className="flex gap-4">
-              <button
-                onClick={() => setFilter('all')}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  filter === 'all'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                All ({followUps.length})
-              </button>
-              <button
-                onClick={() => setFilter('overdue')}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  filter === 'overdue'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Overdue ({overdueFollowUps.length})
-              </button>
-              <button
-                onClick={() => setFilter('upcoming')}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  filter === 'upcoming'
-                    ? 'bg-yellow-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Upcoming ({upcomingFollowUps.length})
-              </button>
-              <button
-                onClick={() => setFilter('pending')}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  filter === 'pending'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Pending ({followUps.filter((fu) => fu.status === 'pending').length})
-              </button>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap gap-4">
+                <button
+                  onClick={() => setFilter('all')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    filter === 'all'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  All ({followUps.length})
+                </button>
+                <button
+                  onClick={() => setFilter('overdue')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    filter === 'overdue'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Overdue ({overdueFollowUps.length})
+                </button>
+                <button
+                  onClick={() => setFilter('upcoming')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    filter === 'upcoming'
+                      ? 'bg-yellow-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Upcoming ({upcomingFollowUps.length})
+                </button>
+                <button
+                  onClick={() => setFilter('pending')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    filter === 'pending'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Pending ({followUps.filter((fu) => fu.status === 'pending').length})
+                </button>
+              </div>
+              {/* Admin: Filter by assigned user */}
+              {isAdmin && assignedUsersForFilter.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700">Assigned to:</label>
+                  <select
+                    value={assignedUserFilter}
+                    onChange={(e) => setAssignedUserFilter(e.target.value)}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">All users</option>
+                    {assignedUsersForFilter.map((u) => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -230,89 +391,29 @@ export default function FollowUpsPage() {
               <div className="px-6 py-8 text-center text-sm text-gray-500">
                 No follow-ups found
               </div>
-            ) : (
+            ) : isAdmin && followUpsByUser && !assignedUserFilter ? (
+              /* Admin view: grouped by assigned user */
               <div className="divide-y divide-gray-200">
-                {followUps.map((followUp) => {
-                  const scheduledDate = new Date(followUp.scheduled_at)
-                  const isOverdue = followUp.status === 'pending' && scheduledDate < now
-                  const isUpcoming = followUp.status === 'pending' && scheduledDate >= now
-
-                  return (
-                    <div
-                      key={followUp.id}
-                      className={`p-6 ${
-                        isOverdue
-                          ? 'bg-red-50 border-l-4 border-red-500'
-                          : isUpcoming
-                          ? 'bg-yellow-50 border-l-4 border-yellow-500'
-                          : 'bg-white'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <Link
-                              href={`/leads/${followUp.lead?.id}`}
-                              className="text-lg font-semibold text-gray-900 hover:text-indigo-600"
-                            >
-                              {followUp.lead?.name || 'Unknown Lead'}
-                            </Link>
-                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                              followUp.status === 'done'
-                                ? 'bg-green-100 text-green-800'
-                                : isOverdue
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {followUp.status === 'done'
-                                ? '✅ Completed'
-                                : isOverdue
-                                ? '⚠️ Overdue'
-                                : '📅 Upcoming'}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-600 mb-1">
-                            <span className="font-medium">Scheduled:</span>{' '}
-                            {scheduledDate.toLocaleString()}
-                          </p>
-                          {followUp.completed_at && (
-                            <p className="text-sm text-gray-600 mb-1">
-                              <span className="font-medium">Completed:</span>{' '}
-                              {new Date(followUp.completed_at).toLocaleString()}
-                            </p>
-                          )}
-                          {followUp.lead?.phone && (
-                            <p className="text-sm text-gray-600 mb-1">
-                              <span className="font-medium">Phone:</span>{' '}
-                              {followUp.lead.phone.replace(/^(p|tel|phone|mobile):/i, '').trim()}
-                            </p>
-                          )}
-                          {followUp.notes && (
-                            <p className="text-sm text-gray-700 mt-2 bg-gray-50 p-2 rounded">
-                              {followUp.notes}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex gap-2 ml-4">
-                          {followUp.status === 'pending' && (
-                            <button
-                              onClick={() => handleCompleteFollowUp(followUp.id)}
-                              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
-                            >
-                              Mark Done
-                            </button>
-                          )}
-                          <Link
-                            href={`/leads/${followUp.lead?.id}`}
-                            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm"
-                          >
-                            View Lead
-                          </Link>
-                        </div>
-                      </div>
+                {followUpsByUser.map(([key, { user, items }]) => (
+                  <div key={key} className="p-4">
+                    <div className="mb-4 flex items-center gap-2">
+                      <h3 className="text-base font-semibold text-gray-900">
+                        {user ? user.name : 'Unassigned'}
+                      </h3>
+                      <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-800">
+                        {items.length} follow-up{items.length !== 1 ? 's' : ''}
+                      </span>
                     </div>
-                  )
-                })}
+                    <div className="space-y-2">
+                      {items.map((fu) => renderFollowUpCard(fu))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Tele-caller/Sales view: flat list */
+              <div className="divide-y divide-gray-200">
+                {followUps.map((fu) => renderFollowUpCard(fu))}
               </div>
             )}
           </div>

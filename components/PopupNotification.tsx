@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAuthContext } from './AuthProvider'
 import { useFollowupNotifications } from './FollowupNotificationsProvider'
+import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 
 export default function PopupNotification() {
   const { role } = useAuthContext()
@@ -13,10 +14,11 @@ export default function PopupNotification() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const userRole = role?.name ?? null
+  const showForRole = isAssignedOnlyFollowUpsRole(userRole)
 
   // Decide when to surface the popup based on shared notifications data.
   useEffect(() => {
-    if (userRole !== 'tele_caller' || !notifications) return
+    if (!showForRole || !notifications) return
 
     const hasOverdue = (notifications.overdue?.length || 0) > 0
     if (!hasOverdue) return
@@ -40,7 +42,7 @@ export default function PopupNotification() {
         })
       }
     }
-  }, [userRole, notifications, lastNotificationTime])
+  }, [showForRole, notifications, lastNotificationTime])
 
   // Play notification sound when popup shows
   useEffect(() => {
@@ -74,8 +76,8 @@ export default function PopupNotification() {
     }
   }, [showPopup, notifications])
 
-  // Only show for tele-callers with overdue follow-ups
-  if (userRole !== 'tele_caller' || !showPopup || !notifications || notifications.overdue.length === 0) {
+  // Only show for tele-callers/sales with overdue follow-ups
+  if (!showForRole || !showPopup || !notifications || notifications.overdue.length === 0) {
     return null
   }
 

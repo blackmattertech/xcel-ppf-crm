@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuthContext } from './AuthProvider'
+import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 
 type FollowUp = {
   id: string
@@ -44,10 +45,11 @@ export function FollowupNotificationsProvider({ children }: { children: React.Re
   const [data, setData] = useState<FollowUpNotifications | null>(null)
 
   useEffect(() => {
-    const isTeleCaller = role?.name === 'tele_caller'
-    const isAdmin = role?.name === 'admin' || role?.name === 'super_admin'
+    const roleName = role?.name ?? null
+    const isAssignedOnlyRole = isAssignedOnlyFollowUpsRole(roleName)
+    const isAdmin = roleName === 'admin' || roleName === 'super_admin'
 
-    if (!isAuthenticated || (!isTeleCaller && !isAdmin)) {
+    if (!isAuthenticated || (!isAssignedOnlyRole && !isAdmin)) {
       return
     }
 

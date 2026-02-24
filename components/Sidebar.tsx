@@ -40,7 +40,9 @@ export default function Sidebar() {
   }, [isCollapsed])
 
   useEffect(() => {
-    if (userRole === 'tele_caller') {
+    const roleLower = userRole?.toLowerCase() ?? ''
+    const shouldShowFollowUpBadge = ['tele_caller', 'telecaller', 'sales', 'sales_manager', 'sales_executive'].includes(roleLower)
+    if (shouldShowFollowUpBadge) {
       fetchFollowUpCount()
       const interval = setInterval(fetchFollowUpCount, 30 * 1000)
       return () => clearInterval(interval)
@@ -81,9 +83,12 @@ export default function Sidebar() {
 
   // Filter menu items based on user role and permissions
   const filteredMenuItems = useMemo(() => {
+    const roleLower = userRole?.toLowerCase() ?? ''
+    const isSuperAdminOrAdmin = roleLower === 'super_admin' || roleLower === 'admin'
+
     return SIDEBAR_MENU_ITEMS.filter((item) => {
-      // Super admin and admin can see all items
-      if (userRole === 'super_admin' || userRole === 'admin') {
+      // Only super_admin and admin can see all items (case-insensitive)
+      if (isSuperAdminOrAdmin) {
         return true
       }
 
@@ -92,12 +97,12 @@ export default function Sidebar() {
         return true
       }
 
-      // If item has specific roles, check if user role matches
-      if (item.roles && userRole && item.roles.includes(userRole)) {
+      // If item has specific roles, check if user role matches (case-insensitive)
+      if (item.roles && userRole && item.roles.some((r) => r.toLowerCase() === roleLower)) {
         return true
       }
 
-      // Check if user has required permissions
+      // Must have explicit read or manage permission for this resource
       const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
       const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
       return hasReadPermission || hasManagePermission
@@ -157,7 +162,9 @@ export default function Sidebar() {
           ))
         ) : filteredMenuItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
-          const showBadge = item.href === '/leads' && userRole === 'tele_caller' && followUpCount > 0
+          const roleLower = userRole?.toLowerCase() ?? ''
+          const shouldShowFollowUpBadge = ['tele_caller', 'telecaller', 'sales', 'sales_manager', 'sales_executive'].includes(roleLower)
+          const showBadge = item.href === '/leads' && shouldShowFollowUpBadge && followUpCount > 0
           
           return (
             <Link

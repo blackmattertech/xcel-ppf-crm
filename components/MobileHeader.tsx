@@ -30,14 +30,12 @@ export default function MobileHeader({
   const userPermissions = role?.permissions ?? []
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Filter menu items based on permissions
+  // Filter menu items based on permissions (same logic as Sidebar)
   const filteredMenuItems = SIDEBAR_MENU_ITEMS.filter((item) => {
-    if (userRole === 'super_admin' || userRole === 'admin') {
-      return true
-    }
-    if (item.roles && userRole && item.roles.includes(userRole)) {
-      return true
-    }
+    const roleLower = userRole?.toLowerCase() ?? ''
+    if (roleLower === 'super_admin' || roleLower === 'admin') return true
+    if (!item.requiresPermissions) return true
+    if (item.roles && userRole && item.roles.some((r) => r.toLowerCase() === roleLower)) return true
     const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
     const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
     return hasReadPermission || hasManagePermission

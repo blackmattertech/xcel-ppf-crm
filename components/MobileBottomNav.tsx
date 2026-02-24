@@ -1,51 +1,84 @@
 'use client'
 
+import { useMemo } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { useAuthContext } from './AuthProvider'
 
 interface NavItem {
   href: string
   label: string
   iconPath: string
   filledIconPath: string
+  resource: string
+  requiresPermissions?: boolean
+  roles?: string[]
 }
 
-const navItems: NavItem[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
   {
     href: '/dashboard',
     label: 'Dashboard',
     iconPath: '/mobileviewicons/bottomnav/dashboard.svg',
-    filledIconPath: '/mobileviewicons/filledicons/dashboardfilled.svg'
+    filledIconPath: '/mobileviewicons/filledicons/dashboardfilled.svg',
+    resource: 'dashboard',
+    requiresPermissions: false,
   },
   {
     href: '/followups',
     label: 'Tasks',
     iconPath: '/mobileviewicons/bottomnav/followuptask.svg',
-    filledIconPath: '/mobileviewicons/filledicons/tasksfilled.svg'
+    filledIconPath: '/mobileviewicons/filledicons/tasksfilled.svg',
+    resource: 'followups',
+    requiresPermissions: true,
   },
   {
     href: '/leads',
     label: 'Leads',
     iconPath: '/mobileviewicons/bottomnav/leads.svg',
-    filledIconPath: '/mobileviewicons/filledicons/Leadsfilled.svg'
+    filledIconPath: '/mobileviewicons/filledicons/Leadsfilled.svg',
+    resource: 'leads',
+    requiresPermissions: true,
   },
   {
     href: '/customers',
     label: 'Customers',
     iconPath: '/mobileviewicons/bottomnav/customers.svg',
-    filledIconPath: '/mobileviewicons/filledicons/customerfilled.svg'
+    filledIconPath: '/mobileviewicons/filledicons/customerfilled.svg',
+    resource: 'customers',
+    requiresPermissions: true,
   },
   {
     href: '/products',
     label: 'Products',
     iconPath: '/mobileviewicons/bottomnav/products.svg',
-    filledIconPath: '/mobileviewicons/filledicons/productsfilled.svg'
-  }
+    filledIconPath: '/mobileviewicons/filledicons/productsfilled.svg',
+    resource: 'products',
+    requiresPermissions: true,
+    roles: ['super_admin', 'admin', 'marketing'],
+  },
 ]
 
 export default function MobileBottomNav() {
   const pathname = usePathname()
   const router = useRouter()
+  const { role } = useAuthContext()
+  const userRole = role?.name ?? null
+  const userPermissions = role?.permissions ?? []
+
+  const filteredNavItems = useMemo(() => {
+    const roleLower = userRole?.toLowerCase() ?? ''
+    const isSuperAdminOrAdmin = roleLower === 'super_admin' || roleLower === 'admin'
+
+    return ALL_NAV_ITEMS.filter((item) => {
+      if (isSuperAdminOrAdmin) return true
+      if (!item.requiresPermissions) return true
+      if (item.roles && userRole && item.roles.some((r) => r.toLowerCase() === roleLower)) return true
+      const hasRead = userPermissions.includes(`${item.resource}.read`)
+      const hasManage = userPermissions.includes(`${item.resource}.manage`)
+      return hasRead || hasManage
+    })
+  }, [userRole, userPermissions])
 
   const handleNavigation = (href: string) => {
     router.push(href)
@@ -54,7 +87,7 @@ export default function MobileBottomNav() {
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-[2px] h-[98px] z-30">
       <div className="flex items-center justify-around h-full px-2">
-        {navItems.map((item) => {
+        {filteredNavItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
           
           return (
