@@ -98,7 +98,7 @@ export async function DELETE(request: NextRequest) {
     // Deactivate instead of deleting to preserve history
     const { error } = await supabase
       .from('facebook_business_settings')
-      // @ts-ignore - Supabase type inference issue
+      // @ts-expect-error - facebook_business_settings Update type not inferred correctly
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq('created_by', user.id)
       .eq('is_active', true)

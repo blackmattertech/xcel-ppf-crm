@@ -13,3 +13,21 @@ export const ROLE_LABELS: Record<SystemRole, string> = {
   [SYSTEM_ROLES.MARKETING]: 'Marketing',
   [SYSTEM_ROLES.TELE_CALLER]: 'Tele-caller',
 }
+
+/**
+ * Roles that only see follow-ups assigned to them (not all follow-ups in the system).
+ * Used for Tasks & Followups page and notifications.
+ */
+export const ROLES_WITH_ASSIGNED_ONLY_FOLLOWUPS = [
+  'tele_caller',
+  'telecaller',
+  'sales',
+  'sales_manager',
+  'sales_executive',
+] as const
+
+export function isAssignedOnlyFollowUpsRole(roleName: string | null): boolean {
+  if (!roleName) return false
+  const lower = roleName.toLowerCase()
+  return ROLES_WITH_ASSIGNED_ONLY_FOLLOWUPS.some((r) => r === lower)
+}

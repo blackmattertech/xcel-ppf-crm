@@ -150,7 +150,6 @@ export async function GET(request: NextRequest) {
       .eq('created_by', user.id)
       .eq('is_active', true)
       .maybeSingle()
-    
     const existing = existingData as { id: string } | null
 
     const settingsData = {
@@ -169,10 +168,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (existing) {
-      // Update existing connection
+      // Update existing connection (Supabase infers 'never' for untyped table)
       const { error: updateError } = await supabase
         .from('facebook_business_settings')
-        // @ts-ignore - Supabase type inference issue
+        // @ts-expect-error - facebook_business_settings Update type not inferred correctly
         .update(settingsData)
         .eq('id', existing.id)
 

@@ -53,7 +53,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: '📈',
     iconPath: '/assets/sidebar/sales-pipeline.svg',
     resource: 'sales',
-    requiresPermissions: false,
+    requiresPermissions: true,
   },
   {
     name: 'Communication',
@@ -61,7 +61,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: '💬',
     iconPath: '/assets/sidebar/communication.svg',
     resource: 'communication',
-    requiresPermissions: false,
+    requiresPermissions: true,
   },
   {
     name: 'Marketing',
@@ -69,7 +69,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: '📢',
     iconPath: '/assets/sidebar/marketing.svg',
     resource: 'marketing',
-    requiresPermissions: false,
+    requiresPermissions: true,
   },
   {
     name: 'Teams',
@@ -77,7 +77,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: '👥',
     iconPath: '/assets/sidebar/teams.svg',
     resource: 'teams',
-    requiresPermissions: false,
+    requiresPermissions: true,
   },
   {
     name: 'Reports',
@@ -85,7 +85,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: '📊',
     iconPath: '/assets/sidebar/reports.svg',
     resource: 'reports',
-    requiresPermissions: false,
+    requiresPermissions: true,
   },
   {
     name: 'Products',
@@ -102,7 +102,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     icon: '🔌',
     iconPath: '/assets/sidebar/integrations.svg',
     resource: 'integrations',
-    requiresPermissions: false,
+    requiresPermissions: true,
   },
   {
     name: 'Roles & Permissions',

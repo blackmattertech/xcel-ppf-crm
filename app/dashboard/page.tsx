@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import { Users, TrendingUp, CheckCircle, AlertTriangle } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { useAuthContext } from '@/components/AuthProvider'
+import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 import KPICard from '@/components/dashboard/KPICard'
 import DashboardCard from '@/components/dashboard/DashboardCard'
 import ViewSwitcher, { viewOptions, type ViewMode } from '@/components/dashboard/ViewSwitcher'
@@ -82,9 +83,11 @@ export default function DashboardPage() {
     const roleName = role?.name ?? null
     setUserRole(roleName)
 
-    if (roleName === 'tele_caller' || roleName === 'admin' || roleName === 'super_admin') {
+    const isAssignedOnlyRole = isAssignedOnlyFollowUpsRole(roleName)
+    const isAdmin = roleName === 'admin' || roleName === 'super_admin'
+    if (isAssignedOnlyRole || isAdmin) {
       fetchFollowUpAlerts()
-      const interval = setInterval(fetchFollowUpAlerts, 5 * 60 * 1000)
+      const interval = setInterval(fetchFollowUpAlerts, 30 * 1000)
       return () => clearInterval(interval)
     }
   }
@@ -217,8 +220,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Follow-up Alerts for Tele-callers */}
-          {userRole === 'tele_caller' && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
+          {/* Follow-up Alerts for Tele-callers and Sales */}
+          {isAssignedOnlyFollowUpsRole(userRole) && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}

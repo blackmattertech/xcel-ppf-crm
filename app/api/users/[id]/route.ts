@@ -129,19 +129,32 @@ export async function PUT(
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    const normalizedId = typeof id === 'string' ? id.trim().toLowerCase() : ''
+
+    if (!normalizedId || !UUID_REGEX.test(normalizedId)) {
+      return NextResponse.json(
+        { error: 'Invalid user ID format' },
+        { status: 400 }
+      )
+    }
+
     const authResult = await requirePermission(request, PERMISSIONS.USERS_DELETE)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    await deleteUser(id)
+    // Pass current user id to reassign records (quotations, etc.) before deletion
+    const reassignToUserId = authResult.user.id !== normalizedId ? authResult.user.id : undefined
+    await deleteUser(normalizedId, reassignToUserId)
     return NextResponse.json({ message: 'User deleted successfully' })
   } catch (error) {
     return NextResponse.json(

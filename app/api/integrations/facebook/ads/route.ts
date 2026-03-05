@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 
+type FbSettings = {
+  id: string
+  access_token: string
+  ad_account_id: string | null
+  expires_at: string | null
+}
+
 /**
  * GET /api/integrations/facebook/ads
  * Fetch ad performance data from Meta Ads
@@ -22,13 +29,14 @@ export async function GET(request: NextRequest) {
     const supabase = createServiceClient()
 
     // Get active Facebook Business connection
-    const { data: fbSettings, error: settingsError } = await supabase
+    const { data, error: settingsError } = await supabase
       .from('facebook_business_settings')
       .select('id, access_token, ad_account_id, expires_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
       .maybeSingle()
 
+    const fbSettings = data as FbSettings | null
     if (settingsError || !fbSettings) {
       return NextResponse.json(
         { error: 'Facebook Business account not connected. Please connect your account in Settings.' },
@@ -36,19 +44,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Type assertion needed because TypeScript can't infer the type from maybeSingle()
-    const settings = fbSettings as { id: string; access_token: string; ad_account_id: string | null; expires_at: string | null }
-
     // Check if token is expired
-    if (settings.expires_at && new Date(settings.expires_at) < new Date()) {
+    if (fbSettings.expires_at && new Date(fbSettings.expires_at) < new Date()) {
       return NextResponse.json(
         { error: 'Facebook access token has expired. Please reconnect your account.' },
         { status: 401 }
       )
     }
 
-    const accessToken = settings.access_token
-    const accountId = adAccountId || settings.ad_account_id
+    const accessToken = fbSettings.access_token
+    const accountId = adAccountId || fbSettings.ad_account_id
 
     if (!accountId) {
       return NextResponse.json(

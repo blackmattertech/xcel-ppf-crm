@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuthContext } from './AuthProvider'
+import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 
 type FollowUp = {
   id: string
@@ -36,8 +37,7 @@ const FollowupContext = createContext<FollowupContextValue | undefined>(undefine
  * banner notifications, and popup alerts consume the same data without
  * duplicating network calls or timers.
  *
- * Behaviour: tele_callers and admins will still see the same notifications,
- * refreshed roughly every 2 minutes.
+ * Polls every 30 seconds for on-time follow-up alerts without delay.
  */
 export function FollowupNotificationsProvider({ children }: { children: React.ReactNode }) {
   const { role, isAuthenticated } = useAuthContext()
@@ -45,10 +45,11 @@ export function FollowupNotificationsProvider({ children }: { children: React.Re
   const [data, setData] = useState<FollowUpNotifications | null>(null)
 
   useEffect(() => {
-    const isTeleCaller = role?.name === 'tele_caller'
-    const isAdmin = role?.name === 'admin' || role?.name === 'super_admin'
+    const roleName = role?.name ?? null
+    const isAssignedOnlyRole = isAssignedOnlyFollowUpsRole(roleName)
+    const isAdmin = roleName === 'admin' || roleName === 'super_admin'
 
-    if (!isAuthenticated || (!isTeleCaller && !isAdmin)) {
+    if (!isAuthenticated || (!isAssignedOnlyRole && !isAdmin)) {
       return
     }
 
@@ -85,9 +86,9 @@ export function FollowupNotificationsProvider({ children }: { children: React.Re
       }
     }
 
-    // Initial load and 2‑minute polling (matches the most eager existing consumer).
+    // Initial load and 30-second polling for on-time follow-up alerts
     load()
-    intervalId = window.setInterval(load, 2 * 60 * 1000)
+    intervalId = window.setInterval(load, 30 * 1000)
 
     return () => {
       isMounted = false

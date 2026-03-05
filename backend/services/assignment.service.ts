@@ -219,3 +219,82 @@ export async function redistributeNewLeadsAmongTeleCallers(
 
   return reassigned
 }
+
+/**
+ * Reassign all leads from a deleted user to other users.
+ * Prefers round-robin among tele_callers; falls back to reassignToUserId or any other user.
+ * @param deletedUserId - The user being deleted
+ * @param reassignToUserId - Optional admin performing the delete; used as fallback assignee
+ * @returns Number of leads reassigned
+ */
+export async function reassignLeadsFromDeletedUser(
+  deletedUserId: string,
+  reassignToUserId: string | null
+): Promise<number> {
+  const supabase = createServiceClient()
+
+  const { data: leads, error: leadsError } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('assigned_to', deletedUserId)
+
+  if (leadsError || !leads || leads.length === 0) {
+    return 0
+  }
+
+  const leadIds = (leads as { id: string }[]).map((l) => l.id)
+
+  // Prefer tele_callers for round-robin; exclude the deleted user
+  const { data: teleCallerRole } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('name', 'tele_caller')
+    .single()
+
+  let assigneeIds: string[] = []
+  if (teleCallerRole) {
+    const { data: teleCallers } = await supabase
+      .from('users')
+      .select('id')
+      .eq('role_id', (teleCallerRole as { id: string }).id)
+      .neq('id', deletedUserId)
+    assigneeIds = (teleCallers as { id: string }[] || []).map((u) => u.id)
+  }
+
+  if (assigneeIds.length === 0 && reassignToUserId && reassignToUserId !== deletedUserId) {
+    assigneeIds = [reassignToUserId]
+  }
+
+  if (assigneeIds.length === 0) {
+    const { data: anyUser } = await supabase
+      .from('users')
+      .select('id')
+      .neq('id', deletedUserId)
+      .limit(1)
+      .maybeSingle()
+    if (anyUser) {
+      assigneeIds = [(anyUser as { id: string }).id]
+    }
+  }
+
+  if (assigneeIds.length === 0) {
+    return 0
+  }
+
+  const n = assigneeIds.length
+  let reassigned = 0
+  for (let i = 0; i < leadIds.length; i++) {
+    const newAssigneeId = assigneeIds[i % n]
+    const { error: updateError } = await supabase
+      .from('leads')
+      // @ts-expect-error - Supabase builder infers update payload as 'never'
+      .update({ assigned_to: newAssigneeId })
+      .eq('id', leadIds[i])
+
+    if (!updateError) {
+      reassigned++
+    }
+  }
+
+  return reassigned
+}

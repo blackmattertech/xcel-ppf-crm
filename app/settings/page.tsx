@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Layout from '@/components/Layout'
 import FacebookIntegration from '@/components/FacebookIntegration'
@@ -86,7 +86,7 @@ function SettingsContent() {
   if (authLoading) {
     return (
       <Layout>
-        <div className="p-4 md:p-6 lg:p-8">
+        <div className="p-6">
           <div className="flex items-center justify-center py-12">
             <div className="text-gray-500">Loading...</div>
           </div>
@@ -97,9 +97,9 @@ function SettingsContent() {
 
   return (
     <Layout>
-      <div className="p-4 md:p-6 lg:p-8 space-y-4 md:space-y-6 w-full">
+      <div className="p-6 space-y-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Settings</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Settings</h1>
           <p className="text-gray-600">Manage your integrations and account settings</p>
         </div>
 
@@ -142,15 +142,17 @@ function SettingsContent() {
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={
-      <Layout>
-        <div className="p-6">
-          <div className="flex items-center justify-center py-12">
-            <div className="text-gray-500">Loading...</div>
+    <Suspense
+      fallback={
+        <Layout>
+          <div className="p-6">
+            <div className="flex items-center justify-center py-12">
+              <div className="text-gray-500">Loading...</div>
+            </div>
           </div>
-        </div>
-      </Layout>
-    }>
+        </Layout>
+      }
+    >
       <SettingsContent />
     </Suspense>
   )
