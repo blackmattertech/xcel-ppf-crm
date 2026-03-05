@@ -27,18 +27,13 @@ export default function Layout({
   showMobileAddButton = false,
   onMobileAddClick 
 }: LayoutProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('sidebar-collapsed') === 'true'
+  })
   const pathname = usePathname()
 
-  // Load collapsed state from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebar-collapsed')
-      if (saved === 'true') {
-        setIsCollapsed(true)
-      }
-    }
-  }, [])
+  // Initial collapsed state is derived from localStorage via lazy initializer
 
   // Listen for sidebar collapse changes via custom event
   useEffect(() => {

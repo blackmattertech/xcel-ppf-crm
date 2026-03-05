@@ -76,8 +76,32 @@ function extractKeyWords(text: string): string[] {
 }
 
 /**
+ * Get a string value from meta_data: top-level key or from field_data array (Meta sync stores in field_data)
+ */
+function getMetaDataFieldValue(leadMetaData: any, ...fieldNames: string[]): string | null {
+  if (!leadMetaData || typeof leadMetaData !== 'object') return null
+  for (const fieldName of fieldNames) {
+    if (leadMetaData[fieldName] != null) {
+      const v = String(leadMetaData[fieldName]).trim()
+      if (v) return v
+    }
+    const arr = leadMetaData.field_data
+    if (Array.isArray(arr)) {
+      const item = arr.find((e: { name?: string }) => e && e.name === fieldName)
+      const val = (item as { values?: string[] })?.values?.[0]
+      if (val != null) {
+        const v = String(val).trim()
+        if (v) return v
+      }
+    }
+  }
+  return null
+}
+
+/**
  * Check if a product name matches a lead's requirement or meta_data
  * Handles variations like "Paint Protection Film (PPF)" matching "paint_protection_film"
+ * Reads from meta_data top-level or from meta_data.field_data (Meta Lead Ads sync)
  */
 function productMatchesLead(productTitle: string, leadRequirement: string | null, leadMetaData: any): boolean {
   const normalizedProduct = normalizeProductName(productTitle)

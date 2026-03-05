@@ -29,7 +29,8 @@ export function parseMetaWebhook(payload: MetaWebhookPayload): ParsedMetaLead[] 
   return leads
 }
 
-function parseMetaLeadValue(value: MetaLeadValue): ParsedMetaLead {
+/** Exported for use by meta-leads.service when fetching leads via Graph API */
+export function parseMetaLeadValue(value: MetaLeadValue): ParsedMetaLead {
   // Extract fields from field_data array
   let name = ''
   let email: string | null = null

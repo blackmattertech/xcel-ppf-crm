@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Layout from '@/components/Layout'
 import FacebookIntegration from '@/components/FacebookIntegration'
+import WhatsAppIntegration from '@/components/WhatsAppIntegration'
 import { useAuthContext } from '@/components/AuthProvider'
 import { CheckCircle2, XCircle } from 'lucide-react'
 
@@ -25,11 +26,20 @@ function SettingsContent() {
     const integration = searchParams.get('integration')
 
     if (success && integration === 'facebook') {
-      setNotification({
-        type: 'success',
-        message: 'Facebook Business account connected successfully!',
-      })
-      // Clear URL params
+      setTimeout(() => {
+        setNotification({
+          type: 'success',
+          message: 'Facebook Business account connected successfully!',
+        })
+      }, 0)
+      router.replace('/settings', { scroll: false })
+    } else if (success && integration === 'whatsapp') {
+      setTimeout(() => {
+        setNotification({
+          type: 'success',
+          message: 'WhatsApp Business account linked successfully!',
+        })
+      }, 0)
       router.replace('/settings', { scroll: false })
     } else if (error && integration === 'facebook') {
       const errorMessages: Record<string, string> = {
@@ -40,11 +50,25 @@ function SettingsContent() {
         callback_failed: 'Failed to process Facebook callback. Please try again.',
         facebook_not_configured: 'Facebook integration is not configured. Please contact your administrator.',
       }
-      setNotification({
-        type: 'error',
-        message: errorMessages[error] || 'An error occurred while connecting Facebook.',
-      })
+      setTimeout(() => {
+        setNotification({
+          type: 'error',
+          message: errorMessages[error] || 'An error occurred while connecting Facebook.',
+        })
+      }, 0)
       // Clear URL params
+      router.replace('/settings', { scroll: false })
+    } else if (error && integration === 'whatsapp') {
+      const errorMessages: Record<string, string> = {
+        save_failed: 'Failed to save WhatsApp connection. Please try again.',
+        update_failed: 'Failed to update WhatsApp connection. Please try again.',
+      }
+      setTimeout(() => {
+        setNotification({
+          type: 'error',
+          message: errorMessages[error] || 'An error occurred while linking WhatsApp.',
+        })
+      }, 0)
       router.replace('/settings', { scroll: false })
     }
   }, [isAuthenticated, authLoading, router, searchParams])
@@ -107,6 +131,7 @@ function SettingsContent() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Integrations</h2>
             <div className="space-y-4">
               <FacebookIntegration />
+              <WhatsAppIntegration />
             </div>
           </div>
         </div>

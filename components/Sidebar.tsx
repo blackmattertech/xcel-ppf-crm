@@ -6,29 +6,26 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
-import { ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
+import { Bell, ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
 import { useAuthContext } from './AuthProvider'
+import { usePushNotification } from './PushNotificationProvider'
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { loading, userId, role, profile } = useAuthContext()
+  const pushNotification = usePushNotification()
   const userRole = role?.name ?? null
   const userPermissions = role?.permissions ?? []
   const [followUpCount, setFollowUpCount] = useState(0)
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('sidebar-collapsed') === 'true'
+  })
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
 
-  // Load collapsed state from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebar-collapsed')
-      if (saved === 'true') {
-        setIsCollapsed(true)
-      }
-    }
-  }, [])
+  // Initial collapsed state is derived from localStorage via lazy state initializer
 
   // Save collapsed state to localStorage and notify Layout
   useEffect(() => {
@@ -60,6 +57,14 @@ export default function Sidebar() {
       console.error('Failed to fetch follow-up count:', error)
     }
   }
+
+  useEffect(() => {
+    if (userRole === 'tele_caller') {
+      ;(async () => { await fetchFollowUpCount() })()
+      const interval = setInterval(() => { void fetchFollowUpCount() }, 5 * 60 * 1000)
+      return () => clearInterval(interval)
+    }
+  }, [userRole])
 
   // Close profile menu when clicking outside
   useEffect(() => {
@@ -331,6 +336,32 @@ export default function Sidebar() {
                     <User size={16} className="mr-3 text-gray-500" />
                     <span>Edit Profile</span>
                   </Link>
+                  {userId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowProfileMenu(false)
+                        if (!pushNotification) {
+                          alert('Notifications are not available.')
+                          return
+                        }
+                        if (pushNotification.pushSupported) {
+                          if (pushNotification.pushPermission === 'granted') {
+                            alert('Push notifications are already enabled for this device.')
+                            return
+                          }
+                          pushNotification.requestEnablePush()
+                          return
+                        }
+                        const reason = pushNotification.pushUnavailableReason || 'Notifications are not available for this browser or environment.'
+                        alert(reason)
+                      }}
+                      className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors text-left"
+                    >
+                      <Bell size={16} className="mr-3 text-gray-500" />
+                      <span>{pushNotification?.pushSupported && pushNotification?.pushPermission === 'granted' ? 'Push notifications' : 'Enable push notifications'}</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setShowProfileMenu(false)

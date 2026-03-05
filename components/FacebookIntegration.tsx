@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { CheckCircle2, XCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { CheckCircle2, XCircle, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 
 interface FacebookConfig {
   id: string
@@ -22,6 +22,8 @@ export default function FacebookIntegration() {
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; failed: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -54,8 +56,9 @@ export default function FacebookIntegration() {
       // Get auth URL
       const response = await fetch('/api/integrations/facebook/connect')
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to initiate connection')
+        const errorData = await response.json().catch(() => ({})) as { error?: string; detail?: string }
+        const msg = errorData.detail ? `${errorData.error}: ${errorData.detail}` : (errorData.error || 'Failed to initiate connection')
+        throw new Error(msg)
       }
 
       const { authUrl } = await response.json()
@@ -101,6 +104,28 @@ export default function FacebookIntegration() {
       console.error('Failed to connect Facebook:', error)
       setError(error instanceof Error ? error.message : 'Failed to connect Facebook account')
       setConnecting(false)
+    }
+  }
+
+  async function handleSyncLeads() {
+    try {
+      setSyncing(true)
+      setError(null)
+      setSyncResult(null)
+      const response = await fetch('/api/integrations/facebook/leads/sync', { method: 'POST' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to sync leads from Meta')
+      }
+      setSyncResult({
+        synced: data.synced ?? 0,
+        skipped: data.skipped ?? 0,
+        failed: data.failed ?? 0,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync leads from Meta')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -222,7 +247,33 @@ export default function FacebookIntegration() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
+          {syncResult && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+              <p className="text-sm text-green-800">
+                Sync complete: <strong>{syncResult.synced}</strong> new lead(s) imported, {syncResult.skipped} already in CRM.
+                {syncResult.failed > 0 && ` ${syncResult.failed} failed.`}
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 pt-4 border-t border-gray-200 flex-wrap">
+            <button
+              onClick={handleSyncLeads}
+              disabled={syncing || config.isExpired}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Syncing from Meta...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  Sync leads from Meta
+                </>
+              )}
+            </button>
             <button
               onClick={handleDisconnect}
               disabled={disconnecting}

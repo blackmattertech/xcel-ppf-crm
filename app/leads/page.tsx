@@ -61,8 +61,8 @@ function SourceIcon({ platform, source }: { platform?: string | null; source: st
       alt={platform || source}
       width={32}
       height={32}
-      className="w-8 h-8 object-contain"
-      style={{ width: 'auto', height: 'auto' }}
+      className="object-contain"
+      style={{ width: 24, height: 24 }}
       onError={() => setImgError(true)}
     />
   )
@@ -322,7 +322,9 @@ function GridView({
               {/* Platform/Instagram */}
               {platform && (
                 <div className="flex items-center gap-2 text-xs text-[#717d8a]">
-                  {platformIcon}
+                  <span className="flex items-center justify-center" style={{ fontSize: 28, lineHeight: 1 }}>
+                    {platformIcon}
+                  </span>
                   <span className="uppercase">{String(platform).toUpperCase()}</span>
                 </div>
               )}

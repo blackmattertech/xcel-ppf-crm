@@ -123,7 +123,7 @@ export default function UsersPage() {
   async function handleCreateUser(e: React.FormEvent) {
     e.preventDefault()
     try {
-      let profileImageUrl: string | null = null
+      const profileImageUrl: string | null = null
 
       // Upload profile image if provided
       if (profileImage) {

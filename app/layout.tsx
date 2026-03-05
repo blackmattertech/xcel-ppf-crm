@@ -40,6 +40,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Register FCM service worker as early as possible so it receives push when app is background/killed (before next-pwa's SW) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){if(typeof navigator!=='undefined'&&'serviceWorker'in navigator){navigator.serviceWorker.register('/api/push/sw',{scope:'/'}).catch(function(){});}})();`,
+          }}
+        />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#000000" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

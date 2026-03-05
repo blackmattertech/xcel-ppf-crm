@@ -108,7 +108,7 @@ function ResetPasswordForm() {
 
       // Get tokens from URL hash or query params
       const hashParams = new URLSearchParams(window.location.hash.substring(1))
-      let accessToken = hashParams.get('access_token') || searchParams.get('access_token') || searchParams.get('token')
+      const accessToken = hashParams.get('access_token') || searchParams.get('access_token') || searchParams.get('token')
       const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token')
 
       // If no token in hash or query, check if Supabase has already set the session

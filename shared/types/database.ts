@@ -298,6 +298,32 @@ export interface Database {
           updated_at?: string
         }
       }
+      user_push_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          fcm_token: string
+          device_label: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          fcm_token: string
+          device_label?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          fcm_token?: string
+          device_label?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       quotations: {
         Row: {
           id: string
@@ -487,51 +513,92 @@ export interface Database {
           assignment_count?: number
         }
       }
-      facebook_business_settings: {
+      whatsapp_templates: {
         Row: {
           id: string
-          access_token: string
-          page_id: string | null
-          page_name: string | null
-          ad_account_id: string | null
-          ad_account_name: string | null
-          business_id: string | null
-          business_name: string | null
-          expires_at: string | null
-          is_active: boolean
+          name: string
+          language: string
+          category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+          body_text: string
+          header_text: string | null
+          footer_text: string | null
+          header_format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+          header_media_url: string | null
+          buttons: Json | null
+          status: 'draft' | 'pending' | 'approved' | 'rejected'
+          meta_id: string | null
+          rejection_reason: string | null
+          created_by: string | null
           created_at: string
           updated_at: string
-          created_by: string | null
         }
         Insert: {
           id?: string
-          access_token: string
-          page_id?: string | null
-          page_name?: string | null
-          ad_account_id?: string | null
-          ad_account_name?: string | null
-          business_id?: string | null
-          business_name?: string | null
-          expires_at?: string | null
-          is_active?: boolean
+          name: string
+          language: string
+          category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+          body_text: string
+          header_text?: string | null
+          footer_text?: string | null
+          header_format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+          header_media_url?: string | null
+          buttons?: Json | null
+          status?: 'draft' | 'pending' | 'approved' | 'rejected'
+          meta_id?: string | null
+          rejection_reason?: string | null
+          created_by?: string | null
           created_at?: string
           updated_at?: string
-          created_by?: string | null
         }
         Update: {
           id?: string
-          access_token?: string
-          page_id?: string | null
-          page_name?: string | null
-          ad_account_id?: string | null
-          ad_account_name?: string | null
-          business_id?: string | null
-          business_name?: string | null
-          expires_at?: string | null
-          is_active?: boolean
+          name?: string
+          language?: string
+          category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+          body_text?: string
+          header_text?: string | null
+          footer_text?: string | null
+          header_format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+          header_media_url?: string | null
+          buttons?: Json | null
+          status?: 'draft' | 'pending' | 'approved' | 'rejected'
+          meta_id?: string | null
+          rejection_reason?: string | null
+          created_by?: string | null
           created_at?: string
           updated_at?: string
-          created_by?: string | null
+        }
+      }
+      whatsapp_messages: {
+        Row: {
+          id: string
+          lead_id: string | null
+          phone: string
+          direction: string
+          body: string
+          meta_message_id: string | null
+          status: 'sent' | 'delivered' | 'read' | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          phone: string
+          direction: string
+          body: string
+          meta_message_id?: string | null
+          status?: 'sent' | 'delivered' | 'read' | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          phone?: string
+          direction?: string
+          body?: string
+          meta_message_id?: string | null
+          status?: 'sent' | 'delivered' | 'read' | null
+          created_at?: string
         }
       }
     }

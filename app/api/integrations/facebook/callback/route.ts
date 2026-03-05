@@ -82,14 +82,17 @@ export async function GET(request: NextRequest) {
       ? new Date(Date.now() + expiresIn * 1000).toISOString()
       : null
 
-    // Fetch user's pages and ad accounts
+    // Fetch user's pages (with Page Access Token for each) and ad accounts
     const [pagesResponse, adAccountsResponse] = await Promise.all([
-      fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`),
-      fetch(`https://graph.facebook.com/v18.0/me/adaccounts?access_token=${accessToken}&fields=id,name,account_id`),
+      fetch(`https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(accessToken)}`),
+      fetch(`https://graph.facebook.com/v18.0/me/adaccounts?access_token=${encodeURIComponent(accessToken)}&fields=id,name,account_id`),
     ])
 
     let pageId: string | null = null
     let pageName: string | null = null
+    /** Page Access Token – required for leadgen API; User token cannot be used for /page/leadgen_forms or /form/leads */
+    let pageAccessToken: string | null = null
+
     let adAccountId: string | null = null
     let adAccountName: string | null = null
     let businessId: string | null = null
@@ -98,8 +101,10 @@ export async function GET(request: NextRequest) {
     if (pagesResponse.ok) {
       const pagesData = await pagesResponse.json()
       if (pagesData.data && pagesData.data.length > 0) {
-        pageId = pagesData.data[0].id
-        pageName = pagesData.data[0].name
+        const firstPage = pagesData.data[0] as { id: string; name: string; access_token?: string }
+        pageId = firstPage.id
+        pageName = firstPage.name
+        pageAccessToken = firstPage.access_token || null
       }
     }
 
@@ -149,6 +154,7 @@ export async function GET(request: NextRequest) {
 
     const settingsData = {
       access_token: accessToken,
+      page_access_token: pageAccessToken,
       page_id: pageId,
       page_name: pageName,
       ad_account_id: adAccountId,

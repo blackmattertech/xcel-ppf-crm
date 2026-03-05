@@ -12,6 +12,7 @@ export default function PopupNotification() {
   const [showPopup, setShowPopup] = useState(false)
   const [lastNotificationTime, setLastNotificationTime] = useState<number>(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const hasPlayedSoundRef = useRef(false)
 
   const userRole = role?.name ?? null
   const showForRole = isAssignedOnlyFollowUpsRole(userRole)
@@ -25,15 +26,14 @@ export default function PopupNotification() {
 
     const currentTime = Date.now()
     if (currentTime - lastNotificationTime > 10 * 60 * 1000) {
-      setShowPopup(true)
-      setLastNotificationTime(currentTime)
+      // Defer state updates to avoid calling setState synchronously inside the effect
+      setTimeout(() => {
+        setShowPopup(true)
+        setLastNotificationTime(currentTime)
+      }, 0)
 
-      // Request browser notification permission
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission()
-      }
-
-      // Show browser notification if permission granted
+      // Show browser notification only if user already granted (do NOT call requestPermission here –
+      // it must be from a user gesture; use sidebar "Enable push notifications" instead)
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Overdue Follow-ups', {
           body: `You have ${notifications.overdue.length} overdue follow-up${notifications.overdue.length > 1 ? 's' : ''} that need attention.`,
@@ -44,30 +44,16 @@ export default function PopupNotification() {
     }
   }, [showForRole, notifications, lastNotificationTime])
 
-  // Play notification sound when popup shows
+  // Prepare audio for playback. Don't auto-play: browsers block audio unless triggered by user gesture (NotAllowedError).
+  // Sound can be played on first user click on the popup (see onClick on the container below).
   useEffect(() => {
     if (showPopup && notifications && notifications.overdue.length > 0) {
-      try {
-        // Create audio element with your custom notification sound
-        // Place your audio file in the public folder (e.g., public/notification.wav)
-        // Supported formats: .mp3, .wav, .ogg
-        audioRef.current = new Audio('/notification.wav')
-        audioRef.current.loop = true // Loop continuously
-        audioRef.current.volume = 0.7 // Set volume (0.0 to 1.0)
-        
-        // Play the sound
-        audioRef.current.play().catch((error) => {
-          console.error('Failed to play notification sound:', error)
-          // Some browsers require user interaction before playing audio
-          // The sound will play once user interacts with the page
-        })
-      } catch (error) {
-        console.error('Failed to create audio element:', error)
-      }
+      audioRef.current = new Audio('/notification.wav')
+      audioRef.current.loop = true
+      audioRef.current.volume = 0.7
     }
-    
     return () => {
-      // Cleanup: stop and remove audio when popup is dismissed
+      hasPlayedSoundRef.current = false
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current.currentTime = 0
@@ -81,9 +67,19 @@ export default function PopupNotification() {
     return null
   }
 
+  function playSoundOnce() {
+    if (hasPlayedSoundRef.current || !audioRef.current) return
+    hasPlayedSoundRef.current = true
+    audioRef.current.play().catch(() => {})
+  }
+
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-md">
-      <div className="bg-white rounded-lg shadow-2xl border-2 border-red-500 p-6 animate-slide-up animate-blink-alert">
+      <div
+        role="dialog"
+        className="bg-white rounded-lg shadow-2xl border-2 border-red-500 p-6 animate-slide-up animate-blink-alert"
+        onClick={playSoundOnce}
+      >
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">

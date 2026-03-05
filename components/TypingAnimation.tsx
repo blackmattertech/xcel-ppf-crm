@@ -59,11 +59,13 @@ export default function TypingAnimation({
           setCurrentCharIndex(currentCharIndex - 1)
         }, deletingSpeed)
       } else {
-        // Finished deleting, move to next text
-        setIsDeleting(false)
-        setCurrentTextIndex((prev) => (prev + 1) % texts.length)
-        setCurrentCharIndex(0)
-        setDisplayedText('')
+        // Finished deleting, move to next text — defer state updates to avoid sync setState in effect
+        setTimeout(() => {
+          setIsDeleting(false)
+          setCurrentTextIndex((prev) => (prev + 1) % texts.length)
+          setCurrentCharIndex(0)
+          setDisplayedText('')
+        }, 0)
       }
     }
 

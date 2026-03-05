@@ -24,6 +24,19 @@ export async function POST(request: NextRequest) {
 
     const followUp = await createFollowUp(followUpData)
 
+    // Send push notification to assigned user (no-op if FCM not configured or no tokens)
+    try {
+      const lead = (followUp as any)?.lead
+      await sendFollowUpAssignedNotification(followUpData.assigned_to, {
+        leadName: lead?.name ?? undefined,
+        scheduledAt: followUpData.scheduled_at,
+        followUpId: (followUp as any).id,
+        leadId: followUpData.lead_id,
+      })
+    } catch (_) {
+      // Don't fail the request if push fails
+    }
+
     return NextResponse.json({ followUp }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
