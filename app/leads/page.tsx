@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
-import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2, Check, MessageCircle, FileText, RefreshCw } from 'lucide-react'
+import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2, Check, MessageCircle, FileText, RefreshCw, GripVertical } from 'lucide-react'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
@@ -102,6 +102,8 @@ interface Lead {
   status: string
   interest_level: string | null
   requirement: string | null
+  ad_name: string | null
+  campaign_name: string | null
   meta_data: Record<string, any> | null
   assigned_user: {
     id: string
@@ -563,6 +565,8 @@ function KanbanBoard({
       case 'interest_level': return lead.interest_level
       case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
+      case 'ad_name': return lead.ad_name ?? null
+      case 'campaign_name': return lead.campaign_name ?? null
       default: return null
     }
   }
@@ -930,6 +934,8 @@ export default function LeadsPage() {
     { key: 'status', label: 'Lead stage', visible: true, width: 130 },
     { key: 'interest_level', label: 'Lead type', visible: true, width: 120 },
     { key: 'source', label: 'Source', visible: true, width: 120 },
+    { key: 'ad_name', label: 'ad_name', visible: true, width: 160 },
+    { key: 'campaign_name', label: 'campaign_name', visible: true, width: 160 },
     { key: 'assigned_to', label: 'Assigned to', visible: true, width: 180 },
     { key: 'last_contacted', label: 'Last contacted', visible: true, width: 140 },
     { key: 'phone', label: 'Mobile number', visible: true, width: 160 },
@@ -941,25 +947,20 @@ export default function LeadsPage() {
       if (saved) {
         try {
           const savedColumns = JSON.parse(saved)
-          // Filter to only include columns that are in defaultColumns
           const validColumnKeys = new Set(defaultColumns.map(col => col.key))
-          const filteredColumns = savedColumns.filter((col: ColumnConfig) => validColumnKeys.has(col.key))
-          
-          // Merge with defaultColumns to ensure all default columns are present with correct properties
-          const mergedColumns = defaultColumns.map(defaultCol => {
-            const savedCol = filteredColumns.find((col: ColumnConfig) => col.key === defaultCol.key)
-            if (savedCol) {
-              // Use saved column but ensure it has all required properties
-              return {
-                ...defaultCol,
-                visible: savedCol.visible !== undefined ? savedCol.visible : defaultCol.visible,
-                width: savedCol.width || defaultCol.width
-              }
-            }
-            return defaultCol
-          })
-          
-          return mergedColumns
+          const defaultByKey = Object.fromEntries(defaultColumns.map(col => [col.key, col]))
+          // Preserve saved column order; only include valid keys; merge with defaults for visible/width
+          const filteredInOrder = savedColumns
+            .filter((col: ColumnConfig) => validColumnKeys.has(col.key))
+            .map((col: ColumnConfig) => {
+              const d = defaultByKey[col.key]
+              return d ? { ...d, visible: col.visible !== undefined ? col.visible : d.visible, width: col.width || d.width } : null
+            })
+            .filter(Boolean) as ColumnConfig[]
+          // Append any default column not in saved order
+          const haveKeys = new Set(filteredInOrder.map(c => c.key))
+          const missing = defaultColumns.filter(d => !haveKeys.has(d.key))
+          return [...filteredInOrder, ...missing]
         } catch (e) {
           return defaultColumns
         }
@@ -971,6 +972,8 @@ export default function LeadsPage() {
   const [customizeModalOpen, setCustomizeModalOpen] = useState(false)
   const [customizeMode, setCustomizeMode] = useState<'select' | 'adjust-width' | null>(null)
   const [resizingColumn, setResizingColumn] = useState<string | null>(null)
+  const [draggedColumnKey, setDraggedColumnKey] = useState<string | null>(null)
+  const [dragOverColumnKey, setDragOverColumnKey] = useState<string | null>(null)
   const [resizeStartX, setResizeStartX] = useState(0)
   const [resizeStartWidth, setResizeStartWidth] = useState(0)
 
@@ -1150,26 +1153,24 @@ export default function LeadsPage() {
     setCurrentPage(1)
   }, [filterConditions, sortColumn, sortDirection, activeQuickFilter])
 
-  // Clean up columns on mount to ensure only valid columns are shown
+  // Clean up columns on mount to ensure only valid columns are shown; preserve column order
   useEffect(() => {
     const validColumnKeys = new Set(defaultColumns.map(col => col.key))
     const hasInvalidColumns = columns.some(col => !validColumnKeys.has(col.key))
     const hasMissingColumns = defaultColumns.some(defaultCol => !columns.find(col => col.key === defaultCol.key))
     
     if (hasInvalidColumns || hasMissingColumns) {
-      // Filter to only include valid columns and merge with defaults
-      const validColumns = defaultColumns.map(defaultCol => {
-        const existingCol = columns.find(col => col.key === defaultCol.key)
-        if (existingCol) {
-          return {
-            ...defaultCol,
-            visible: existingCol.visible !== undefined ? existingCol.visible : defaultCol.visible,
-            width: existingCol.width || defaultCol.width
-          }
-        }
-        return defaultCol
-      })
-      setColumns(validColumns)
+      const defaultByKey = Object.fromEntries(defaultColumns.map(col => [col.key, col]))
+      const validOrdered = columns
+        .filter(col => validColumnKeys.has(col.key))
+        .map(col => {
+          const d = defaultByKey[col.key]
+          return d ? { ...d, visible: col.visible !== undefined ? col.visible : d.visible, width: col.width || d.width } : null
+        })
+        .filter(Boolean) as ColumnConfig[]
+      const haveKeys = new Set(validOrdered.map(c => c.key))
+      const missing = defaultColumns.filter(d => !haveKeys.has(d.key))
+      setColumns([...validOrdered, ...missing])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run on mount
@@ -1402,6 +1403,8 @@ export default function LeadsPage() {
       case 'interest_level': return lead.interest_level
       case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
+      case 'ad_name': return lead.ad_name ?? null
+      case 'campaign_name': return lead.campaign_name ?? null
       case 'created_at': return lead.created_at
       case 'updated_at': return lead.updated_at
       case 'first_contact_at': return lead.first_contact_at
@@ -2114,6 +2117,41 @@ export default function LeadsPage() {
 
   function resetColumns() {
     setColumns(defaultColumns)
+  }
+
+  // Column reorder: drag and drop in customize modal
+  function handleColumnDragStart(e: React.DragEvent, columnKey: string) {
+    setDraggedColumnKey(columnKey)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', columnKey)
+  }
+  function handleColumnDragOver(e: React.DragEvent, columnKey: string) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (draggedColumnKey && draggedColumnKey !== columnKey) setDragOverColumnKey(columnKey)
+  }
+  function handleColumnDragLeave() {
+    setDragOverColumnKey(null)
+  }
+  function handleColumnDrop(e: React.DragEvent, targetKey: string) {
+    e.preventDefault()
+    setDraggedColumnKey(null)
+    setDragOverColumnKey(null)
+    const sourceKey = e.dataTransfer.getData('text/plain')
+    if (!sourceKey || sourceKey === targetKey) return
+    setColumns(prev => {
+      const from = prev.findIndex(c => c.key === sourceKey)
+      const to = prev.findIndex(c => c.key === targetKey)
+      if (from === -1 || to === -1) return prev
+      const next = [...prev]
+      const [removed] = next.splice(from, 1)
+      next.splice(to, 0, removed)
+      return next
+    })
+  }
+  function handleColumnDragEnd() {
+    setDraggedColumnKey(null)
+    setDragOverColumnKey(null)
   }
 
   const isAdmin = (userRole || userRoleState) === 'admin' || (userRole || userRoleState) === 'super_admin'
@@ -3409,20 +3447,17 @@ export default function LeadsPage() {
                 {columns.filter(col => col.visible).map((column) => (
                   <th
                     key={column.key}
-                    className={`px-4 md:px-6 py-3 md:py-4 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider relative ${column.key === 'name' ? '' : 'whitespace-nowrap'}`}
-                    style={column.key === 'name' ? {
-                      width: `${column.width}px`,
-                      minWidth: `${column.width}px`,
-                    } : {
+                    className="px-4 md:px-6 py-3 md:py-4 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider relative truncate"
+                    style={{
                       width: `${column.width}px`,
                       minWidth: `${column.width}px`,
                       maxWidth: `${column.width}px`
                     }}
                   >
-                    <div className="flex items-center">
+                    <div className="flex items-center truncate min-w-0">
                       {column.label}
                       {(column.key === 'date' || column.key === 'status' || column.key === 'last_contacted' || column.key === 'phone' || column.key === 'car_model') && (
-                        <ChevronDown size={16} className="inline ml-1" />
+                        <ChevronDown size={16} className="inline ml-1 shrink-0" />
                       )}
                     </div>
                     {customizeMode === 'adjust-width' && (
@@ -3469,56 +3504,56 @@ export default function LeadsPage() {
                     switch (column.key) {
                       case 'date':
                         return (
-                          <span className="text-base text-gray-700">
+                          <span className="text-base text-gray-700 truncate block">
                             {lead.created_at ? new Date(lead.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
                           </span>
                         )
                       case 'name':
                         return (
-                          <div className="text-base font-medium text-gray-900 break-words">
+                          <div className="text-base font-medium text-gray-900 truncate">
                             {lead.name}
                           </div>
                         )
                       case 'car_model':
                         return (
-                          <div className="text-base text-gray-900">
+                          <div className="text-base text-gray-900 truncate">
                             {vehicleName || '-'}
                           </div>
                         )
                       case 'interest':
                         return (
-                          <div className="text-base text-gray-900">
+                          <div className="text-base text-gray-900 truncate">
                             {productInterest || '-'}
                           </div>
                         )
                       case 'status':
                         return (
-                          <span className={`px-3 py-1.5 text-sm font-semibold rounded-full ${getStageBadgeColor(lead.status)}`}>
+                          <span className={`px-3 py-1.5 text-sm font-semibold rounded-full truncate inline-block max-w-full ${getStageBadgeColor(lead.status)}`}>
                             {formatStageName(lead.status)}
                           </span>
                         )
                       case 'interest_level':
                         return (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 truncate min-w-0">
                             {isHot ? (
                               <>
-                                <TrendingUp size={16} className="text-[#ed1b24]" />
-                                <span className="text-base text-gray-900">Hot</span>
+                                <TrendingUp size={16} className="text-[#ed1b24] shrink-0" />
+                                <span className="text-base text-gray-900 truncate">Hot</span>
                               </>
                             ) : (
                               <>
-                                <span className="text-base">❄️</span>
-                                <span className="text-base text-gray-900">Cold</span>
+                                <span className="text-base shrink-0">❄️</span>
+                                <span className="text-base text-gray-900 truncate">Cold</span>
                               </>
                             )}
                           </div>
                         )
                       case 'source':
                         return (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 truncate min-w-0">
                             <SourceIcon platform={lead.meta_data?.platform || lead.meta_data?.Platform} source={lead.source} />
                             {(lead.meta_data?.platform || lead.meta_data?.Platform) && (
-                              <span className="text-base text-gray-900 capitalize">
+                              <span className="text-base text-gray-900 capitalize truncate">
                                 {String(lead.meta_data?.platform || lead.meta_data?.Platform).toUpperCase()}
                               </span>
                             )}
@@ -3526,40 +3561,52 @@ export default function LeadsPage() {
                         )
                       case 'assigned_to':
                         return lead.assigned_user ? (
-                          <div className="flex items-center gap-2">
-                            <div className="relative">
+                          <div className="flex items-center gap-2 truncate min-w-0">
+                            <div className="relative shrink-0">
                               <UserAvatar 
                                 profileImageUrl={lead.assigned_user.profile_image_url}
                                 name={lead.assigned_user.name}
                               />
                               <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                             </div>
-                            <div>
-                              <div className="text-base font-bold text-gray-900">{lead.assigned_user.name}</div>
-                              <div className="text-sm text-gray-500">Sales Executive</div>
+                            <div className="min-w-0 truncate">
+                              <div className="text-base font-bold text-gray-900 truncate">{lead.assigned_user.name}</div>
+                              <div className="text-sm text-gray-500 truncate">Sales Executive</div>
                             </div>
                           </div>
                         ) : (
-                          <span className="text-base text-gray-500">Unassigned</span>
+                          <span className="text-base text-gray-500 truncate block">Unassigned</span>
                         )
                       case 'last_contacted':
                         return (
-                          <span className="text-base text-gray-500">
+                          <span className="text-base text-gray-500 truncate block">
                             {getTimeAgo(getLastContactedTime(lead))}
                           </span>
                         )
                       case 'phone':
                         return (
-                          <div className="flex items-center gap-1.5 text-base text-gray-500">
-                            <Phone size={16} />
-                            <span className="break-all">{lead.phone}</span>
+                          <div className="flex items-center gap-1.5 text-base text-gray-500 truncate min-w-0">
+                            <Phone size={16} className="shrink-0" />
+                            <span className="truncate">{lead.phone}</span>
                           </div>
                         )
                       case 'email':
                         return (
-                          <div className="flex items-center gap-1.5 text-base text-gray-500">
-                            <Mail size={16} />
-                            <span className="break-all">{lead.email || '-'}</span>
+                          <div className="flex items-center gap-1.5 text-base text-gray-500 truncate min-w-0">
+                            <Mail size={16} className="shrink-0" />
+                            <span className="truncate">{lead.email || '-'}</span>
+                          </div>
+                        )
+                      case 'ad_name':
+                        return (
+                          <div className="text-base text-gray-900 truncate">
+                            {lead.ad_name || '-'}
+                          </div>
+                        )
+                      case 'campaign_name':
+                        return (
+                          <div className="text-base text-gray-900 truncate">
+                            {lead.campaign_name || '-'}
                           </div>
                         )
                       default:
@@ -3594,11 +3641,8 @@ export default function LeadsPage() {
                       {columns.filter(col => col.visible).map((column) => (
                         <td
                           key={column.key}
-                          className={`px-4 md:px-6 py-3 md:py-4 ${column.key === 'name' ? '' : 'whitespace-nowrap'}`}
-                          style={column.key === 'name' ? {
-                            width: `${column.width}px`,
-                            minWidth: `${column.width}px`,
-                          } : {
+                          className="px-4 md:px-6 py-3 md:py-4 truncate align-top"
+                          style={{
                             width: `${column.width}px`,
                             minWidth: `${column.width}px`,
                             maxWidth: `${column.width}px`
@@ -3984,24 +4028,35 @@ export default function LeadsPage() {
 
                   <div className="mb-4">
                     <p className="text-sm text-gray-600 mb-4">
-                      Select which columns to display in the table.
+                      Select which columns to display and drag to reorder. Order here sets the table column sequence.
                     </p>
                     
                     <div className="space-y-3">
                       {columns.map((column) => (
                         <div
                           key={column.key}
-                          className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+                          draggable
+                          onDragStart={(e) => handleColumnDragStart(e, column.key)}
+                          onDragOver={(e) => handleColumnDragOver(e, column.key)}
+                          onDragLeave={handleColumnDragLeave}
+                          onDrop={(e) => handleColumnDrop(e, column.key)}
+                          onDragEnd={handleColumnDragEnd}
+                          className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors ${
+                            draggedColumnKey === column.key ? 'opacity-50' : ''
+                          } ${dragOverColumnKey === column.key ? 'border-[#ed1b24] bg-red-50/50' : 'border-gray-200'}`}
                         >
-                          <div className="flex items-center gap-3 flex-1">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <span className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600" title="Drag to reorder">
+                              <GripVertical size={18} />
+                            </span>
                             <input
                               type="checkbox"
                               checked={column.visible}
                               onChange={() => toggleColumnVisibility(column.key)}
-                              className="rounded border-gray-300 text-[#ed1b24] focus:ring-[#ed1b24] w-4 h-4"
+                              className="rounded border-gray-300 text-[#ed1b24] focus:ring-[#ed1b24] w-4 h-4 shrink-0"
                             />
                             <label 
-                              className="text-base font-medium text-gray-900 cursor-pointer flex-1" 
+                              className="text-base font-medium text-gray-900 cursor-pointer flex-1 truncate" 
                               onClick={() => toggleColumnVisibility(column.key)}
                             >
                               {column.label}
