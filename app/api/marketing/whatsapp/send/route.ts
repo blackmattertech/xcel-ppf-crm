@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { sendWhatsAppBulk, sendWhatsAppText, getWhatsAppConfig } from '@/backend/services/whatsapp.service'
+import { sendWhatsAppBulk, sendWhatsAppText } from '@/backend/services/whatsapp.service'
+import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
 import { z } from 'zod'
 
@@ -17,12 +18,13 @@ export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
-  const config = getWhatsAppConfig()
+  const { user } = authResult
+  const { config } = await getResolvedWhatsAppConfig(user.id)
   if (!config) {
     return NextResponse.json(
       {
         error: 'WhatsApp API not configured',
-        detail: 'Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN in environment (e.g. .env.local).',
+        detail: 'Link WhatsApp in Settings → Integrations, or set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN in .env.local.',
       },
       { status: 503 }
     )
@@ -78,7 +80,7 @@ export async function POST(request: NextRequest) {
   const result = await sendWhatsAppBulk(
     recipients.map((r) => ({ phone: r.phone })),
     message,
-    { delayMs: 250, defaultCountryCode }
+    { delayMs: 250, defaultCountryCode, config }
   )
 
   let anySaveFailed = false

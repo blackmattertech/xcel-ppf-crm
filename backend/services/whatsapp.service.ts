@@ -363,6 +363,9 @@ export async function sendWhatsAppText(
     if (err?.code === 130429) {
       errorMessage += ' Throughput exceeded (default up to 80 messages/sec). Wait and retry, or check WhatsApp Manager for your number’s throughput.'
     }
+    if (/does not exist|cannot be loaded due to missing permissions|does not support this operation/i.test(errorMessage)) {
+      errorMessage += ` Ensure WHATSAPP_PHONE_NUMBER_ID (or DB phone_number_id) is the Phone Number ID from Meta, not the WABA ID or App ID. Verify in Meta Business Suite → WhatsApp Manager → your number, or call GET /api/marketing/whatsapp/verify to check IDs.`
+    }
     return {
       success: false,
       error: errorMessage,
@@ -403,9 +406,9 @@ export interface BulkSendResult {
 export async function sendWhatsAppBulk(
   recipients: Array<{ phone: string }>,
   message: string,
-  options?: { delayMs?: number; defaultCountryCode?: string }
+  options?: { delayMs?: number; defaultCountryCode?: string; config?: WhatsAppConfig | null }
 ): Promise<BulkSendResult> {
-  const config = getWhatsAppConfig()
+  const config = options?.config ?? getWhatsAppConfig()
   const delayMs = options?.delayMs ?? 300
   const defaultCountryCode = options?.defaultCountryCode ?? '91'
 
@@ -1096,16 +1099,21 @@ export async function sendTemplateMessage(
     body: JSON.stringify(payload),
   })
   const data = await res.json().catch(() => ({})) as { messages?: Array<{ id: string }>; error?: { message: string; code?: number; error_data?: unknown } }
+  const messageId = data?.messages?.[0]?.id
   console.log('[WhatsApp send template] Meta API response:', {
     status: res.status,
     ok: res.ok,
-    body: data,
+    messageId: messageId ?? '(none)',
   })
+  console.log('[WhatsApp send template] Meta API full response body:', JSON.stringify(data, null, 2))
 
   if (!res.ok) {
     let errMsg = data?.error?.message ?? `HTTP ${res.status}`
     if (data?.error?.code === 130429) {
       errMsg += ' Throughput exceeded. Wait and retry, or check WhatsApp Manager for your number’s throughput.'
+    }
+    if (/does not exist|cannot be loaded due to missing permissions|does not support this operation/i.test(errMsg)) {
+      errMsg += ' Ensure WHATSAPP_PHONE_NUMBER_ID (or DB phone_number_id) is the Phone Number ID from Meta, not the WABA ID or App ID. Verify in Meta Business Suite → WhatsApp Manager, or GET /api/marketing/whatsapp/verify.'
     }
     return {
       success: false,
@@ -1114,7 +1122,7 @@ export async function sendTemplateMessage(
     }
   }
 
-  return { success: true, messageId: data?.messages?.[0]?.id }
+  return { success: true, messageId: messageId ?? undefined }
 }
 
 /**
@@ -1125,7 +1133,7 @@ export async function sendTemplateBulk(
   recipients: Array<{ phone: string; bodyParameters?: string[] }>,
   templateName: string,
   templateLanguage: string,
-  options?: { delayMs?: number; defaultCountryCode?: string; headerParameters?: string[] }
+  options?: { delayMs?: number; defaultCountryCode?: string; headerParameters?: string[]; config?: WhatsAppConfig | null }
 ): Promise<BulkSendResult> {
   const delayMs = options?.delayMs ?? 300
   const defaultCountryCode = options?.defaultCountryCode ?? '91'
@@ -1144,6 +1152,7 @@ export async function sendTemplateBulk(
         bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
         headerParameters: headerParams && headerParams.length > 0 ? headerParams : undefined,
         defaultCountryCode,
+        config: options?.config ?? undefined,
       }
     )
     results.push({

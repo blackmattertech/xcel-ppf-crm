@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { getWhatsAppConfig, sendTemplateBulk, listMessageTemplatesWithDetails } from '@/backend/services/whatsapp.service'
+import { sendTemplateBulk, listMessageTemplatesWithDetails } from '@/backend/services/whatsapp.service'
+import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
 import { getTemplateById, getTemplateByName } from '@/backend/services/whatsapp-template.service'
 import { z } from 'zod'
@@ -37,9 +38,11 @@ export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
-  if (!getWhatsAppConfig()) {
+  const { user } = authResult
+  const { config, wabaConfig } = await getResolvedWhatsAppConfig(user.id)
+  if (!config || !wabaConfig) {
     return NextResponse.json(
-      { error: 'WhatsApp API not configured' },
+      { error: 'WhatsApp API not configured. Link in Settings → Integrations or set env vars.' },
       { status: 503 }
     )
   }
@@ -90,7 +93,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Avoid #132001: ensure this template name+language exists in Meta (or suggest correct name)
-  const metaList = await listMessageTemplatesWithDetails()
+  const metaList = await listMessageTemplatesWithDetails(wabaConfig)
   const norm = (s: string) => (s ?? '').trim().replace(/-/g, '_').toLowerCase()
   const existsInMeta = metaList.templates?.some(
     (m) => m.name === templateName && norm(m.language ?? '') === norm(templateLanguage)
@@ -137,6 +140,7 @@ export async function POST(request: NextRequest) {
       delayMs: 250,
       defaultCountryCode: parsed.data.defaultCountryCode,
       headerParameters: parsed.data.headerParameters && parsed.data.headerParameters.length > 0 ? parsed.data.headerParameters : undefined,
+      config,
     }
   )
 

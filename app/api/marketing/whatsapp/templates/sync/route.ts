@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { listTemplates, updateTemplateMetaStatus, updateTemplateMetaLanguage } from '@/backend/services/whatsapp-template.service'
-import { listMessageTemplatesFromMeta, getWhatsAppWabaConfig } from '@/backend/services/whatsapp.service'
+import { listMessageTemplatesFromMeta } from '@/backend/services/whatsapp.service'
+import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 
 /**
  * Sync template status from Meta (pending → approved/rejected).
@@ -11,7 +12,8 @@ export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
-  const wabaConfig = getWhatsAppWabaConfig()
+  const { user } = authResult
+  const { wabaConfig } = await getResolvedWhatsAppConfig(user.id)
   if (!wabaConfig) {
     return NextResponse.json(
       { error: 'WhatsApp Business Account not configured' },

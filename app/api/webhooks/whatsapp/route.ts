@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { saveIncomingMessage, updateMessageStatus } from '@/backend/services/whatsapp-chat.service'
 import { markMessageAsRead } from '@/backend/services/whatsapp.service'
+import { getWhatsAppConfigByWabaId } from '@/backend/services/whatsapp-config.service'
+import { getWhatsAppConfig } from '@/backend/services/whatsapp.service'
 import { createServiceClient } from '@/lib/supabase/service'
 
 /** Meta WhatsApp webhook: GET for verification, POST for incoming messages and status updates. */
@@ -42,6 +44,9 @@ export async function POST(request: NextRequest) {
     }
 
     for (const entry of body.entry) {
+      const wabaId = entry.id
+      const waConfig = wabaId ? await getWhatsAppConfigByWabaId(wabaId) : null
+      const config = waConfig ?? getWhatsAppConfig()
       const changes = entry.changes ?? []
       for (const change of changes) {
         const value = change.value
@@ -87,7 +92,7 @@ export async function POST(request: NextRequest) {
             metaMessageId: msg.id,
             leadId,
           })
-          markMessageAsRead(msg.id).catch((err) => console.warn('[webhooks/whatsapp] mark read failed:', err))
+          markMessageAsRead(msg.id, config).catch((err) => console.warn('[webhooks/whatsapp] mark read failed:', err))
         }
       }
     }

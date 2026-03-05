@@ -4,10 +4,10 @@ import { getTemplateById, updateTemplateMetaStatus } from '@/backend/services/wh
 import {
   createMessageTemplateAtMeta,
   getTemplateBodyVariableCount,
-  getWhatsAppWabaConfig,
   uploadMediaToMeta,
   type MetaTemplateComponent,
 } from '@/backend/services/whatsapp.service'
+import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 
 export async function POST(
   request: NextRequest,
@@ -16,16 +16,14 @@ export async function POST(
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
+  const { user } = authResult
   const { id } = await params
-  const wabaConfig = getWhatsAppWabaConfig()
+  const { wabaConfig } = await getResolvedWhatsAppConfig(user.id)
   if (!wabaConfig) {
-    const hasToken = !!process.env.WHATSAPP_ACCESS_TOKEN?.trim()
     return NextResponse.json(
       {
         error: 'WhatsApp Business Account not configured',
-        detail: hasToken
-          ? 'Add WHATSAPP_BUSINESS_ACCOUNT_ID to .env.local. Find it in Meta for Developers → Your App → WhatsApp → API Setup (Business Account ID).'
-          : 'Add WHATSAPP_BUSINESS_ACCOUNT_ID and WHATSAPP_ACCESS_TOKEN to .env.local. Find WABA ID in Meta for Developers → Your App → WhatsApp → API Setup.',
+        detail: 'Link WhatsApp in Settings → Integrations, or add WHATSAPP_BUSINESS_ACCOUNT_ID and WHATSAPP_ACCESS_TOKEN to .env.local.',
       },
       { status: 503 }
     )

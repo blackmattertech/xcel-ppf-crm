@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { getWhatsAppWabaConfig, uploadMediaBufferToMeta } from '@/backend/services/whatsapp.service'
+import { uploadMediaBufferToMeta } from '@/backend/services/whatsapp.service'
+import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 
 const MAX_FILE_SIZE = 16 * 1024 * 1024 // 16 MB (Meta limit for template media)
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
@@ -16,7 +17,8 @@ export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
-  const wabaConfig = getWhatsAppWabaConfig()
+  const { user } = authResult
+  const { wabaConfig } = await getResolvedWhatsAppConfig(user.id)
   if (!wabaConfig) {
     return NextResponse.json(
       { error: 'WhatsApp Business Account not configured' },

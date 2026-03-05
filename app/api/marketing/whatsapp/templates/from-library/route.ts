@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { createMessageTemplateFromLibrary, getWhatsAppWabaConfig } from '@/backend/services/whatsapp.service'
+import { createMessageTemplateFromLibrary } from '@/backend/services/whatsapp.service'
+import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { z } from 'zod'
 
 const bodySchema = z.object({
@@ -18,7 +19,8 @@ export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
-  const wabaConfig = getWhatsAppWabaConfig()
+  const { user } = authResult
+  const { wabaConfig } = await getResolvedWhatsAppConfig(user.id)
   if (!wabaConfig) {
     return NextResponse.json(
       { error: 'WhatsApp Business Account not configured' },
