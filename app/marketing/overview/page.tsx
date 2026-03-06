@@ -270,7 +270,7 @@ export default function OverviewPage() {
                           <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => [v, 'Messages']} />
+                      <Tooltip formatter={(v) => [v ?? 0, 'Messages']} />
                       <Legend layout="vertical" align="right" verticalAlign="middle" />
                     </PieChart>
                   </ResponsiveContainer>
@@ -307,7 +307,7 @@ export default function OverviewPage() {
                           <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => [v, 'Messages']} />
+                      <Tooltip formatter={(v) => [v ?? 0, 'Messages']} />
                       <Legend layout="vertical" align="right" verticalAlign="middle" />
                     </PieChart>
                   </ResponsiveContainer>
@@ -356,7 +356,7 @@ export default function OverviewPage() {
                     <Tooltip
                       contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       labelFormatter={(_, payload) => payload?.[0]?.payload?.date}
-                      formatter={(value: number, name: string) => [value, name === 'sent' ? 'Sent' : 'Received']}
+                      formatter={(value, name) => [value ?? 0, name === 'sent' ? 'Sent' : 'Received']}
                     />
                     <Legend formatter={(v) => (v === 'sent' ? 'Sent' : 'Received')} />
                     <Area type="monotone" dataKey="sent" stroke="#25D366" fill="url(#sentGrad)" strokeWidth={2} name="sent" />
@@ -400,7 +400,7 @@ export default function OverviewPage() {
                     />
                     <Tooltip
                       contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      formatter={(value: number) => [value, 'Messages']}
+                      formatter={(value) => [value ?? 0, 'Messages']}
                       labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName}
                     />
                     <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48} name="Messages" animationBegin={300} animationDuration={700}>

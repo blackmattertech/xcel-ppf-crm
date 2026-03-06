@@ -146,7 +146,8 @@ export async function POST(request: NextRequest) {
     } else {
       const { error: insertError } = await supabase
         .from('whatsapp_business_settings')
-        .insert(settingsData as Record<string, unknown>)
+        // @ts-expect-error - Supabase generated types may not include this table
+        .insert(settingsData)
 
       if (insertError) {
         console.error('Error saving WhatsApp settings:', insertError)

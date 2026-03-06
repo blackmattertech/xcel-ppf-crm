@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createFollowUp, getFollowUps } from '@/backend/services/followup.service'
+import { sendFollowUpAssignedNotification } from '@/backend/services/push-notification.service'
 import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 import { z } from 'zod'
 
