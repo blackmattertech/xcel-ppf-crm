@@ -52,7 +52,7 @@ export function getInterestedProductFromMeta(metaData: Record<string, any> | nul
 export function getCarModelFromMeta(metaData: Record<string, any> | null): string {
   if (!metaData || typeof metaData !== 'object') return ''
 
-  // Direct keys
+  // Direct keys (including Meta form question-style keys)
   const directKeys = [
     'car_model',
     'Car Model',
@@ -60,16 +60,29 @@ export function getCarModelFromMeta(metaData: Record<string, any> | null): strin
     'Vehicle Model',
     'vehicle',
     'Vehicle',
+    'which_car_do_you_have?',
+    'which_car_do_you_have',
+    'Which car do you have?',
   ]
   for (const key of directKeys) {
     const val = metaData[key]
     if (val && typeof val === 'string') return String(val).replace(/_/g, ' ')
   }
 
-  // Extract from field_data array
+  // Extract from field_data array (Meta Lead Ads: full_name, phone, which_car_do_you_have?, etc.)
   const fieldData = metaData.field_data
   if (Array.isArray(fieldData)) {
-    const carFieldNames = ['car_model', 'car model', 'vehicle_model', 'vehicle model', 'vehicle']
+    const carFieldNames = [
+      'car_model',
+      'car model',
+      'vehicle_model',
+      'vehicle model',
+      'vehicle',
+      'which_car_do_you_have',
+      'which car do you have',
+      'which_car',
+      'which car',
+    ]
     for (const field of fieldData) {
       const name = (field?.name || '').toLowerCase()
       const value = field?.values?.[0]
