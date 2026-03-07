@@ -1059,16 +1059,6 @@ export interface SendTemplateResult {
 }
 
 /**
- * When headerMediaId is set we send image: { id }; otherwise we send link (URL).
- * Meta upload API returns a handle that is valid as media attachment id when sending.
- */
-function useLinkForHeaderMedia(value: string, headerMediaId?: string | null): boolean {
-  if (headerMediaId?.trim()) return false
-  const t = (value ?? '').trim()
-  return t.startsWith('http://') || t.startsWith('https://') || t.startsWith('www.')
-}
-
-/**
  * Send a single template message. Use approved template name/language.
  * bodyParameters: array of strings for {{1}}, {{2}}, ... in order (positional format per Meta Utility templates).
  * headerFormat: TEXT | IMAGE | VIDEO | DOCUMENT — must match template so Meta gets correct format (#132012).
@@ -1092,48 +1082,60 @@ export async function sendTemplateMessage(
   type HeaderParam = { type: string; text?: string; image?: { link?: string; id?: string }; video?: { link?: string; id?: string }; document?: { link?: string; id?: string; filename?: string } }
   const components: Array<{ type: string; parameters?: HeaderParam[] }> = []
 
-  if (options.bodyParameters && options.bodyParameters.length > 0) {
-    components.push({
-      type: 'body',
-      parameters: options.bodyParameters.map((text) => ({ type: 'text', text })),
-    })
-  }
-
   const headerFormat = options.headerFormat ?? 'TEXT'
   const headerParams = options.headerParameters ?? []
 
+  // Meta expects components in order: header, then body. Sending body first can cause "expected IMAGE, received UNKNOWN" (#132012).
   if (headerFormat === 'TEXT' && headerParams.length > 0) {
     components.push({
       type: 'header',
       parameters: headerParams.map((text) => ({ type: 'text', text })),
     })
   } else if ((headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT') && headerParams.length > 0) {
-    // #132012: Meta expects type "image" / "video" / "document" with link or id.
-    // Prefer headerMediaId (from Meta upload) so we send id; else send link (URL).
+    // Resumable Upload handle is only valid for template creation, not for sending. When sending we must use link (URL).
+    // So: if value is a URL use it; else try to resolve handle/id to a temporary URL via Meta GET /{id}; else fail.
     let value = headerParams[0].trim()
-    const useLink = useLinkForHeaderMedia(value, options.headerMediaId)
-    if (useLink && !value.startsWith('http://') && !value.startsWith('https://') && (value.includes('.') || value.includes('/'))) {
-      value = 'https://' + value.replace(/^\/+/, '')
+    let linkUrl: string | null = null
+    if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('www.')) {
+      linkUrl = value.startsWith('www.') ? 'https://' + value : value
+    } else if (value.includes('.') || value.includes('/')) {
+      linkUrl = value.includes('://') ? value : 'https://' + value.replace(/^\/+/, '')
+    } else {
+      const resolved = await getMediaUrlFromMeta(value, cfg)
+      if (resolved.url) linkUrl = resolved.url
+    }
+    if (!linkUrl) {
+      return {
+        success: false,
+        error: 'Template has a media header but the stored media could not be used for sending. Resumable Upload handles are only for template creation. Set header_media_url to a public image URL (https://...) in the template, or re-upload and use a template created with that media.',
+      }
     }
     if (headerFormat === 'IMAGE') {
       components.push({
         type: 'header',
-        parameters: [useLink ? { type: 'image', image: { link: value } } : { type: 'image', image: { id: value } }],
+        parameters: [{ type: 'image', image: { link: linkUrl } }],
       })
     } else if (headerFormat === 'VIDEO') {
       components.push({
         type: 'header',
-        parameters: [useLink ? { type: 'video', video: { link: value } } : { type: 'video', video: { id: value } }],
+        parameters: [{ type: 'video', video: { link: linkUrl } }],
       })
     } else {
       const filename = headerParams[1]?.trim()
       components.push({
         type: 'header',
-        parameters: [useLink ? { type: 'document', document: filename ? { link: value, filename } : { link: value } } : { type: 'document', document: { id: value } }],
+        parameters: [{ type: 'document', document: filename ? { link: linkUrl, filename } : { link: linkUrl } }],
       })
     }
   }
   // If template has IMAGE/VIDEO/DOCUMENT header but no headerParams, skip header (static media defined in template)
+
+  if (options.bodyParameters && options.bodyParameters.length > 0) {
+    components.push({
+      type: 'body',
+      parameters: options.bodyParameters.map((text) => ({ type: 'text', text })),
+    })
+  }
 
   const code = normalizeTemplateLanguageCode(templateLanguage || 'en')
   const payload = {
@@ -1176,7 +1178,7 @@ export async function sendTemplateMessage(
       errMsg += ' Throughput exceeded. Wait and retry, or check WhatsApp Manager for your number’s throughput.'
     }
     if (data?.error?.code === 100 && /media attachment ID|template.*parameters/i.test(errMsg)) {
-      errMsg += ' Use a public image URL (https://...) in header_media_url or headerParameters. The media id must be from Meta’s upload API only.'
+      errMsg += ' When sending, use a public image URL (https://...) in the template’s header_media_url. The upload handle is only for template creation, not for sending.'
     }
     if (data?.error?.code === 132012 || /parameter format does not match|format mismatch.*expected (IMAGE|VIDEO|DOCUMENT)/i.test(errMsg)) {
       errMsg += ' This template has a media header (IMAGE/VIDEO/DOCUMENT). Pass one URL or media ID in headerParameters; the app now sends it with the correct type.'

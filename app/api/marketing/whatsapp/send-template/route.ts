@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { sendTemplateBulk, listMessageTemplatesWithDetails } from '@/backend/services/whatsapp.service'
+import { sendTemplateBulk, listMessageTemplatesWithDetails, getTemplateBodyVariableCount } from '@/backend/services/whatsapp.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
 import { getTemplateById, getTemplateByName, getTemplateByNameAndLanguage } from '@/backend/services/whatsapp-template.service'
@@ -131,19 +131,43 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const bodyParams = parsed.data.bodyParameters ?? []
+  // #132000: template body may have {{1}}, {{2}} etc.; we must send that many parameters
+  const bodyText = dbTemplate?.body_text ?? metaTemplate?.body_text ?? ''
+  const expectedBodyCount = getTemplateBodyVariableCount(bodyText)
+  let bodyParams = parsed.data.bodyParameters ?? []
+  if (expectedBodyCount > 0 && bodyParams.length < expectedBodyCount) {
+    const placeholders = ['Customer', 'Offer', 'Code', 'Value', 'Details']
+    bodyParams = [...bodyParams]
+    while (bodyParams.length < expectedBodyCount) {
+      bodyParams.push(placeholders[bodyParams.length] ?? `Param${bodyParams.length + 1}`)
+    }
+  }
   const recipients = parsed.data.recipients.map((r) => ({
     phone: r.phone,
     bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
   }))
 
-  // #132012: use DB template info; prefer Meta upload ID (header_media_id) when sending
+  // When sending, we must use link (URL). Resumable Upload handle is not valid as id for send.
   const headerFormat = dbTemplate?.header_format ?? metaTemplate?.header_format ?? undefined
   const requestHeaderParams = parsed.data.headerParameters && parsed.data.headerParameters.length > 0 ? parsed.data.headerParameters : undefined
+  const headerMediaUrl = dbTemplate?.header_media_url?.trim()
   const headerMediaId = (dbTemplate as { header_media_id?: string | null } | undefined)?.header_media_id?.trim()
+  const hasUrl = headerMediaUrl && /^https?:\/\//i.test(headerMediaUrl)
   const headerParameters =
     requestHeaderParams ??
-    (headerMediaId ? [headerMediaId] : headerFormat && headerFormat !== 'TEXT' && dbTemplate?.header_media_url ? [dbTemplate.header_media_url] : undefined)
+    (headerFormat && headerFormat !== 'TEXT'
+      ? (hasUrl ? [headerMediaUrl!] : headerMediaId ? [headerMediaId] : undefined)
+      : undefined)
+
+  if (headerFormat && headerFormat !== 'TEXT' && (!headerParameters || headerParameters.length === 0)) {
+    return NextResponse.json(
+      {
+        error: 'This template has an image/video/document header. Add a public URL in the template (header_media_url) or pass headerParameters with one URL in the request.',
+        code: 'MISSING_HEADER_MEDIA',
+      },
+      { status: 400 }
+    )
+  }
 
   const result = await sendTemplateBulk(
     recipients,

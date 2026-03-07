@@ -98,7 +98,7 @@ export async function POST(
       }
       headerHandle = upload.handle
     } else {
-      headerHandle = headerMediaUrl
+      headerHandle = headerMediaUrl ?? null
     }
   }
 
