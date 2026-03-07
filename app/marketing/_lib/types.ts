@@ -47,6 +47,7 @@ export interface WhatsAppTemplate {
   footer_text: string | null
   header_format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
   header_media_url?: string | null
+  header_media_id?: string | null
   buttons?: Array<{ type: string; text: string; example?: string }> | null
   status: 'draft' | 'pending' | 'approved' | 'rejected'
   meta_id: string | null

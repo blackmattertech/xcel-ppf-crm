@@ -555,6 +555,27 @@ export async function uploadMediaToMeta(
   return uploadMediaBufferToMeta(buffer, mimeType ?? 'application/octet-stream', { ...options, fileName })
 }
 
+/**
+ * Get a temporary URL for a Meta media ID (for preview). GET /{media-id} returns { url }.
+ * @see https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media
+ */
+export async function getMediaUrlFromMeta(
+  mediaId: string,
+  config?: WhatsAppConfig | null
+): Promise<{ url?: string; error?: string }> {
+  const cfg = config ?? getWhatsAppConfig()
+  if (!cfg?.accessToken?.trim()) return { error: 'WhatsApp API not configured' }
+  const id = (mediaId ?? '').trim()
+  if (!id) return { error: 'Media ID required' }
+  const res = await fetch(`${META_GRAPH_BASE}/${id}`, {
+    headers: { Authorization: `Bearer ${cfg.accessToken}` },
+  })
+  const data = await res.json().catch(() => ({})) as { url?: string; error?: { message?: string } }
+  if (!res.ok) return { error: data?.error?.message ?? `HTTP ${res.status}` }
+  if (!data?.url) return { error: 'Meta did not return a URL' }
+  return { url: data.url }
+}
+
 // ---------- Message templates (design → submit to Meta → bulk send) ----------
 
 export interface MetaTemplateComponent {
@@ -1038,15 +1059,27 @@ export interface SendTemplateResult {
 }
 
 /**
+ * When headerMediaId is set we send image: { id }; otherwise we send link (URL).
+ * Meta upload API returns a handle that is valid as media attachment id when sending.
+ */
+function useLinkForHeaderMedia(value: string, headerMediaId?: string | null): boolean {
+  if (headerMediaId?.trim()) return false
+  const t = (value ?? '').trim()
+  return t.startsWith('http://') || t.startsWith('https://') || t.startsWith('www.')
+}
+
+/**
  * Send a single template message. Use approved template name/language.
  * bodyParameters: array of strings for {{1}}, {{2}}, ... in order (positional format per Meta Utility templates).
+ * headerFormat: TEXT | IMAGE | VIDEO | DOCUMENT — must match template so Meta gets correct format (#132012).
+ * For IMAGE/VIDEO/DOCUMENT, headerParameters[0] is the media URL or Meta media ID.
  * @see https://developers.facebook.com/docs/whatsapp/utility-templates#send-a-utility-template
  */
 export async function sendTemplateMessage(
   to: string,
   templateName: string,
   templateLanguage: string,
-  options: { bodyParameters?: string[]; headerParameters?: string[]; defaultCountryCode?: string; config?: WhatsAppConfig | null }
+  options: { bodyParameters?: string[]; headerParameters?: string[]; headerFormat?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'; headerMediaId?: string | null; defaultCountryCode?: string; config?: WhatsAppConfig | null }
 ): Promise<SendTemplateResult> {
   const cfg = options.config ?? getWhatsAppConfig()
   if (!cfg) {
@@ -1056,7 +1089,8 @@ export async function sendTemplateMessage(
   const digits = toE164Digits(to, options.defaultCountryCode ?? '91')
   if (digits.length < 10) return { success: false, error: 'Invalid phone number' }
 
-  const components: Array<{ type: string; parameters?: Array<{ type: string; text: string }> }> = []
+  type HeaderParam = { type: string; text?: string; image?: { link?: string; id?: string }; video?: { link?: string; id?: string }; document?: { link?: string; id?: string; filename?: string } }
+  const components: Array<{ type: string; parameters?: HeaderParam[] }> = []
 
   if (options.bodyParameters && options.bodyParameters.length > 0) {
     components.push({
@@ -1065,12 +1099,41 @@ export async function sendTemplateMessage(
     })
   }
 
-  if (options.headerParameters && options.headerParameters.length > 0) {
+  const headerFormat = options.headerFormat ?? 'TEXT'
+  const headerParams = options.headerParameters ?? []
+
+  if (headerFormat === 'TEXT' && headerParams.length > 0) {
     components.push({
       type: 'header',
-      parameters: options.headerParameters.map((text) => ({ type: 'text', text })),
+      parameters: headerParams.map((text) => ({ type: 'text', text })),
     })
+  } else if ((headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT') && headerParams.length > 0) {
+    // #132012: Meta expects type "image" / "video" / "document" with link or id.
+    // Prefer headerMediaId (from Meta upload) so we send id; else send link (URL).
+    let value = headerParams[0].trim()
+    const useLink = useLinkForHeaderMedia(value, options.headerMediaId)
+    if (useLink && !value.startsWith('http://') && !value.startsWith('https://') && (value.includes('.') || value.includes('/'))) {
+      value = 'https://' + value.replace(/^\/+/, '')
+    }
+    if (headerFormat === 'IMAGE') {
+      components.push({
+        type: 'header',
+        parameters: [useLink ? { type: 'image', image: { link: value } } : { type: 'image', image: { id: value } }],
+      })
+    } else if (headerFormat === 'VIDEO') {
+      components.push({
+        type: 'header',
+        parameters: [useLink ? { type: 'video', video: { link: value } } : { type: 'video', video: { id: value } }],
+      })
+    } else {
+      const filename = headerParams[1]?.trim()
+      components.push({
+        type: 'header',
+        parameters: [useLink ? { type: 'document', document: filename ? { link: value, filename } : { link: value } } : { type: 'document', document: { id: value } }],
+      })
+    }
   }
+  // If template has IMAGE/VIDEO/DOCUMENT header but no headerParams, skip header (static media defined in template)
 
   const code = normalizeTemplateLanguageCode(templateLanguage || 'en')
   const payload = {
@@ -1112,6 +1175,12 @@ export async function sendTemplateMessage(
     if (data?.error?.code === 130429) {
       errMsg += ' Throughput exceeded. Wait and retry, or check WhatsApp Manager for your number’s throughput.'
     }
+    if (data?.error?.code === 100 && /media attachment ID|template.*parameters/i.test(errMsg)) {
+      errMsg += ' Use a public image URL (https://...) in header_media_url or headerParameters. The media id must be from Meta’s upload API only.'
+    }
+    if (data?.error?.code === 132012 || /parameter format does not match|format mismatch.*expected (IMAGE|VIDEO|DOCUMENT)/i.test(errMsg)) {
+      errMsg += ' This template has a media header (IMAGE/VIDEO/DOCUMENT). Pass one URL or media ID in headerParameters; the app now sends it with the correct type.'
+    }
     if (/does not exist|cannot be loaded due to missing permissions|does not support this operation/i.test(errMsg)) {
       errMsg += ' Ensure WHATSAPP_PHONE_NUMBER_ID (or DB phone_number_id) is the Phone Number ID from Meta, not the WABA ID or App ID. Verify in Meta Business Suite → WhatsApp Manager, or GET /api/marketing/whatsapp/verify.'
     }
@@ -1127,17 +1196,20 @@ export async function sendTemplateMessage(
 
 /**
  * Send the same template to multiple recipients. bodyParameters can be per-recipient (array of arrays) or same for all (single array).
- * headerParameters optional, applied to all recipients (for templates with TEXT header variables).
+ * headerParameters optional: for TEXT header use array of strings; for IMAGE/VIDEO/DOCUMENT use single URL or media ID in array.
+ * headerFormat from template (TEXT | IMAGE | VIDEO | DOCUMENT) so we send correct parameter format and avoid #132012.
  */
 export async function sendTemplateBulk(
   recipients: Array<{ phone: string; bodyParameters?: string[] }>,
   templateName: string,
   templateLanguage: string,
-  options?: { delayMs?: number; defaultCountryCode?: string; headerParameters?: string[]; config?: WhatsAppConfig | null }
+  options?: { delayMs?: number; defaultCountryCode?: string; headerParameters?: string[]; headerFormat?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'; headerMediaId?: string | null; config?: WhatsAppConfig | null }
 ): Promise<BulkSendResult> {
   const delayMs = options?.delayMs ?? 300
   const defaultCountryCode = options?.defaultCountryCode ?? '91'
   const headerParams = options?.headerParameters
+  const headerFormat = options?.headerFormat
+  const headerMediaId = options?.headerMediaId
   const results: BulkSendResult['results'] = []
   let sent = 0
   let failed = 0
@@ -1151,6 +1223,8 @@ export async function sendTemplateBulk(
       {
         bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
         headerParameters: headerParams && headerParams.length > 0 ? headerParams : undefined,
+        headerFormat,
+        headerMediaId,
         defaultCountryCode,
         config: options?.config ?? undefined,
       }

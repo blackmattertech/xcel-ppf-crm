@@ -7,7 +7,6 @@ import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/u
 
 export default function BulkWhatsAppPage() {
   const [source, setSource] = useState<'leads' | 'customers' | 'paste'>('leads')
-  const [message, setMessage] = useState('')
   const [leads, setLeads] = useState<LeadRecipient[]>([])
   const [customers, setCustomers] = useState<CustomerRecipient[]>([])
   const [pastedText, setPastedText] = useState('')
@@ -18,7 +17,7 @@ export default function BulkWhatsAppPage() {
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<SendResult | null>(null)
-  const [broadcastMode, setBroadcastMode] = useState<'free-text' | 'template'>('free-text')
+  // Bulk broadcast is template-only
   const [approvedTemplates, setApprovedTemplates] = useState<WhatsAppTemplate[]>([])
   const [metaTemplates, setMetaTemplates] = useState<MetaTemplateOption[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
@@ -158,62 +157,6 @@ export default function BulkWhatsAppPage() {
 
   const clearSelection = () => setSelectedIds(new Set())
   const clearSendResult = () => setSendResult(null)
-
-  const sendViaApi = async () => {
-    if (!message.trim() || selectedRecipients.length === 0) return
-    setSending(true)
-    setSendResult(null)
-    const BATCH_SIZE = 100
-    const recipients = selectedRecipients.map((r) => ({ phone: r.phone, name: r.name }))
-    let totalSent = 0
-    let totalFailed = 0
-    const allResults: SendResult['results'] = []
-    try {
-      for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-        const batch = recipients.slice(i, i + BATCH_SIZE)
-        const res = await fetch('/api/marketing/whatsapp/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recipients: batch,
-            message: message.trim(),
-            defaultCountryCode: '91',
-          }),
-        })
-        const data = await res.json()
-        if (!res.ok) {
-          batch.forEach((r) => {
-            allResults.push({ phone: r.phone, success: false, error: data?.error || data?.detail || `HTTP ${res.status}` })
-            totalFailed++
-          })
-          continue
-        }
-        totalSent += data.sent ?? 0
-        totalFailed += data.failed ?? 0
-        if (Array.isArray(data.results)) allResults.push(...data.results)
-      }
-      setSendResult({ sent: totalSent, failed: totalFailed, results: allResults })
-    } catch (e) {
-      setSendResult({
-        sent: 0,
-        failed: selectedRecipients.length,
-        results: selectedRecipients.map((r) => ({
-          phone: r.phone,
-          success: false,
-          error: e instanceof Error ? e.message : 'Request failed',
-        })),
-      })
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const openFirstInWhatsApp = () => {
-    const first = selectedRecipients[0]
-    if (!first) return
-    const url = buildWhatsAppUrl(first.phone, message)
-    if (url) window.open(url, '_blank')
-  }
 
   const copyAllNumbers = () => {
     const nums = selectedRecipients.map((r) => normalizePhone(r.phone)).filter(Boolean)
@@ -418,25 +361,7 @@ export default function BulkWhatsAppPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
-        {apiConfigured && (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => { setBroadcastMode('free-text'); clearSendResult() }}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium ${broadcastMode === 'free-text' ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              Free text message
-            </button>
-            <button
-              type="button"
-              onClick={() => { setBroadcastMode('template'); clearSendResult() }}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium ${broadcastMode === 'template' ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              Template broadcast
-            </button>
-          </div>
-        )}
-        {broadcastMode === 'template' && apiConfigured ? (
+        {apiConfigured ? (
           <>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Approved template</label>
@@ -511,18 +436,9 @@ export default function BulkWhatsAppPage() {
             )}
           </>
         ) : (
-          <>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {apiConfigured ? 'Message (required for sending via API)' : 'Message (optional — pre-fill when opening WhatsApp)'}
-            </label>
-            <textarea
-              value={message}
-              onChange={(e) => { setMessage(e.target.value); clearSendResult() }}
-              placeholder={apiConfigured ? 'Type your message. It will be sent via Meta WhatsApp API.' : 'Type your message here. It will open in WhatsApp with this text pre-filled.'}
-              rows={4}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#ed1b24] focus:outline-none focus:ring-1 focus:ring-[#ed1b24]"
-            />
-          </>
+          <p className="text-sm text-amber-600">
+            Configure WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to use template broadcast.
+          </p>
         )}
       </div>
 
@@ -581,37 +497,17 @@ export default function BulkWhatsAppPage() {
             Copy numbers
           </button>
           {apiConfigured ? (
-            broadcastMode === 'template' ? (
-              <button
-                type="button"
-                onClick={sendTemplateViaApi}
-                disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) || (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))}
-                className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sending ? 'Sending…' : 'Send template broadcast'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={sendViaApi}
-                disabled={count === 0 || !message.trim() || sending}
-                className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sending ? 'Sending…' : 'Send via WhatsApp API'}
-              </button>
-            )
-          ) : (
             <button
               type="button"
-              onClick={openFirstInWhatsApp}
-              disabled={count === 0}
+              onClick={sendTemplateViaApi}
+              disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) || (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))}
               className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
             >
-              <Send className="h-4 w-4" />
-              Open first in WhatsApp
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {sending ? 'Sending…' : 'Send template broadcast'}
             </button>
+          ) : (
+            <span className="text-sm text-gray-500">Configure WhatsApp API to send template broadcasts.</span>
           )}
         </div>
       </div>
@@ -628,7 +524,7 @@ export default function BulkWhatsAppPage() {
         </summary>
         <ul className="px-4 pb-3 pt-1 text-sm text-gray-600 space-y-1 list-disc list-inside">
           <li><strong>Development mode:</strong> Add the recipient&apos;s number to the allowlist in Meta for Developers → WhatsApp → API Setup.</li>
-          <li><strong>Free text</strong> only works if the recipient messaged you in the last 24 hours. Otherwise use <strong>Template broadcast</strong>.</li>
+          <li>Bulk broadcast uses <strong>approved templates only</strong>. Create and approve templates in Message templates.</li>
           <li>Use full number with country code. In .env use the <strong>Phone number ID</strong> from API Setup.</li>
         </ul>
       </details>
@@ -637,11 +533,11 @@ export default function BulkWhatsAppPage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <h3 className="text-sm font-medium text-gray-900">Open individual chats</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Click to open each contact in WhatsApp (with message pre-filled)</p>
+            <p className="text-xs text-gray-500 mt-0.5">Click to open each contact in WhatsApp</p>
           </div>
           <ul className="max-h-[240px] overflow-y-auto divide-y divide-gray-100">
             {selectedRecipients.map((r) => {
-              const url = buildWhatsAppUrl(r.phone, message)
+              const url = buildWhatsAppUrl(r.phone, '')
               return (
                 <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-gray-50">
                   <span className="truncate text-sm text-gray-900">{r.name}</span>

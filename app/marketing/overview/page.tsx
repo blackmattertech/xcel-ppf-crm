@@ -135,9 +135,9 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      {/* Template stats (existing) */}
+      {/* Template stats */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">WhatsApp broadcasting</div>
+        <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">Template stats</div>
         <div className="p-4">
           {error && (
             <p className="text-sm text-amber-600 mb-4">{error}</p>
@@ -201,10 +201,10 @@ export default function OverviewPage() {
         </div>
       </section>
 
-      {/* Campaign analytics */}
+      {/* Campaign-wise metrics (template-based sends) */}
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
-          <span className="font-medium text-gray-900">Campaign analytics</span>
+          <span className="font-medium text-gray-900">Campaign-wise metrics</span>
           <div className="flex gap-2">
             {PERIOD_OPTIONS.map((opt) => (
               <button
@@ -223,6 +223,9 @@ export default function OverviewPage() {
           </div>
         </div>
         <div className="p-4 space-y-6">
+          <p className="text-xs text-gray-500 -mt-2">
+            Metrics below are for template-based broadcasts and conversations in the selected period.
+          </p>
           {/* Summary cards */}
           {analytics && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -231,11 +234,11 @@ export default function OverviewPage() {
                 <p className="text-2xl font-bold text-gray-900">{analytics.totals.total}</p>
               </div>
               <div className="rounded-lg border border-green-200 bg-green-50/50 p-4">
-                <p className="text-sm font-medium text-green-700">Sent</p>
+                <p className="text-sm font-medium text-green-700">Sent (outgoing)</p>
                 <p className="text-2xl font-bold text-green-800">{analytics.totals.sent}</p>
               </div>
               <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
-                <p className="text-sm font-medium text-blue-700">Received</p>
+                <p className="text-sm font-medium text-blue-700">Received (incoming)</p>
                 <p className="text-2xl font-bold text-blue-800">{analytics.totals.received}</p>
               </div>
             </div>
@@ -374,7 +377,7 @@ export default function OverviewPage() {
             transition={{ delay: 0.15 }}
             className="rounded-2xl border border-gray-200/80 bg-white p-6 shadow-sm"
           >
-            <h3 className="mb-4 text-lg font-semibold text-slate-900">Messages by template (campaigns)</h3>
+            <h3 className="mb-4 text-lg font-semibold text-slate-900">Messages by template (campaign-wise)</h3>
             {templateBarData.length === 0 ? (
               <div className="h-[280px] flex items-center justify-center text-slate-500 text-sm">No template messages in this period</div>
             ) : (

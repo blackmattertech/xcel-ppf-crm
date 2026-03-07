@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Layout from '@/components/Layout'
 import { TemplatePreview } from '@/app/marketing/_components/TemplatePreview'
-import { MessageCircle, Megaphone, Search, Loader2, Send, Users, UserCheck, ListOrdered, FileText, RefreshCw, CheckCircle, Clock, XCircle, FileEdit, MessageSquare, BookOpen, Eye, Trash2, Upload } from 'lucide-react'
+import { MessageCircle, Megaphone, Search, Loader2, Send, Users, UserCheck, ListOrdered, FileText, RefreshCw, CheckCircle, Clock, XCircle, FileEdit, BookOpen, Eye, Trash2, Upload } from 'lucide-react'
 
-type MarketingTab = 'overview' | 'bulk-whatsapp' | 'templates' | 'chat'
+type MarketingTab = 'overview' | 'bulk-whatsapp' | 'templates'
 
 /** True if two template names are likely the same (e.g. typo: welcom vs welcome). Hides local when Meta has similar name to avoid #132001. */
 function templateNameSimilar(a: string, b: string): boolean {
@@ -144,22 +144,9 @@ export default function MarketingPage() {
             <MessageCircle className="h-4 w-4" />
             Bulk WhatsApp
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('chat')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === 'chat'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <MessageSquare className="h-4 w-4" />
-            Chat with leads
-          </button>
         </div>
 
         {activeTab === 'overview' && <OverviewTab />}
-        {activeTab === 'chat' && <ChatWithLeadsTab />}
 
         {activeTab === 'templates' && <TemplatesTab />}
         {activeTab === 'bulk-whatsapp' && <BulkWhatsAppTab />}
@@ -295,7 +282,6 @@ function OverviewTab() {
 
 function BulkWhatsAppTab() {
   const [source, setSource] = useState<'leads' | 'customers' | 'paste'>('leads')
-  const [message, setMessage] = useState('')
   const [leads, setLeads] = useState<LeadRecipient[]>([])
   const [customers, setCustomers] = useState<CustomerRecipient[]>([])
   const [pastedText, setPastedText] = useState('')
@@ -306,7 +292,7 @@ function BulkWhatsAppTab() {
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<SendResult | null>(null)
-  const [broadcastMode, setBroadcastMode] = useState<'free-text' | 'template'>('free-text')
+  // Bulk broadcast is template-only (no free-text)
   const [approvedTemplates, setApprovedTemplates] = useState<WhatsAppTemplate[]>([])
   const [metaTemplates, setMetaTemplates] = useState<Array<{ name: string; language: string; category?: string; body_text?: string; header_text?: string | null }>>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
@@ -454,65 +440,6 @@ function BulkWhatsAppTab() {
 
   const clearSelection = () => setSelectedIds(new Set())
   const clearSendResult = () => setSendResult(null)
-
-  const sendViaApi = async () => {
-    if (!message.trim() || count === 0) return
-    setSending(true)
-    setSendResult(null)
-    const BATCH_SIZE = 100
-    const recipients = selectedRecipients.map((r) => ({ phone: r.phone, name: r.name }))
-    const batches: typeof recipients[] = []
-    for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-      batches.push(recipients.slice(i, i + BATCH_SIZE))
-    }
-    let totalSent = 0
-    let totalFailed = 0
-    const allResults: SendResult['results'] = []
-    try {
-      for (const batch of batches) {
-        const res = await fetch('/api/marketing/whatsapp/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recipients: batch,
-            message: message.trim(),
-            defaultCountryCode: '91',
-          }),
-        })
-        const data = await res.json()
-        if (!res.ok) {
-          batch.forEach((r) => {
-            allResults.push({ phone: r.phone, success: false, error: data?.error || data?.detail || `HTTP ${res.status}` })
-            totalFailed++
-          })
-          continue
-        }
-        totalSent += data.sent ?? 0
-        totalFailed += data.failed ?? 0
-        if (Array.isArray(data.results)) allResults.push(...data.results)
-      }
-      setSendResult({ sent: totalSent, failed: totalFailed, results: allResults })
-    } catch (e) {
-      setSendResult({
-        sent: 0,
-        failed: count,
-        results: selectedRecipients.map((r) => ({
-          phone: r.phone,
-          success: false,
-          error: e instanceof Error ? e.message : 'Request failed',
-        })),
-      })
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const openFirstInWhatsApp = () => {
-    const first = selectedRecipients[0]
-    if (!first) return
-    const url = buildWhatsAppUrl(first.phone, message)
-    if (url) window.open(url, '_blank')
-  }
 
   const copyAllNumbers = () => {
     const nums = selectedRecipients.map((r) => normalizePhone(r.phone)).filter(Boolean)
@@ -724,27 +651,9 @@ function BulkWhatsAppTab() {
         )}
       </div>
 
-      {/* Message or template */}
+      {/* Template only (no free-text) */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
-        {apiConfigured && (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => { setBroadcastMode('free-text'); clearSendResult() }}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium ${broadcastMode === 'free-text' ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              Free text message
-            </button>
-            <button
-              type="button"
-              onClick={() => { setBroadcastMode('template'); clearSendResult() }}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium ${broadcastMode === 'template' ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              Template broadcast
-            </button>
-          </div>
-        )}
-        {broadcastMode === 'template' && apiConfigured ? (
+        {apiConfigured ? (
           <>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Approved template</label>
@@ -821,18 +730,9 @@ function BulkWhatsAppTab() {
             )}
           </>
         ) : (
-          <>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {apiConfigured ? 'Message (required for sending via API)' : 'Message (optional — pre-fill when opening WhatsApp)'}
-            </label>
-            <textarea
-              value={message}
-              onChange={(e) => { setMessage(e.target.value); clearSendResult() }}
-              placeholder={apiConfigured ? 'Type your message. It will be sent via Meta WhatsApp API.' : 'Type your message here. It will open in WhatsApp with this text pre-filled.'}
-              rows={4}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#ed1b24] focus:outline-none focus:ring-1 focus:ring-[#ed1b24]"
-            />
-          </>
+          <p className="text-sm text-amber-600">
+            Configure WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to use template broadcast.
+          </p>
         )}
       </div>
 
@@ -871,9 +771,9 @@ function BulkWhatsAppTab() {
                 )}
                 {hasReengagementError && (
                   <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-                    <p className="font-medium">Use a template message</p>
+                    <p className="font-medium">Template required</p>
                     <p className="mt-1 text-amber-700">
-                      The recipient has not messaged you in the last 24 hours. Use <strong>Template broadcast</strong> with an approved template instead of free text.
+                      The recipient has not messaged you in the last 24 hours. Only approved templates can be used for broadcast.
                     </p>
                   </div>
                 )}
@@ -923,44 +823,24 @@ function BulkWhatsAppTab() {
             Copy numbers
           </button>
           {apiConfigured ? (
-            broadcastMode === 'template' ? (
-              <button
-                type="button"
-                onClick={sendTemplateViaApi}
-                disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) || (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))}
-                className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sending ? 'Sending…' : 'Send template broadcast'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={sendViaApi}
-                disabled={count === 0 || !message.trim() || sending}
-                className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sending ? 'Sending…' : 'Send via WhatsApp API'}
-              </button>
-            )
-          ) : (
             <button
               type="button"
-              onClick={openFirstInWhatsApp}
-              disabled={count === 0}
+              onClick={sendTemplateViaApi}
+              disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) || (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))}
               className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
             >
-              <Send className="h-4 w-4" />
-              Open first in WhatsApp
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {sending ? 'Sending…' : 'Send template broadcast'}
             </button>
+          ) : (
+            <span className="text-sm text-gray-500">Configure WhatsApp API to send template broadcasts.</span>
           )}
         </div>
       </div>
 
       {apiConfigured === false && (
         <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
-          Meta WhatsApp API is not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN in your server environment to send messages via API. Until then, use &quot;Open first in WhatsApp&quot; or the links below.
+          Meta WhatsApp API is not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN in your server environment to send template broadcasts.
         </p>
       )}
 
@@ -971,7 +851,7 @@ function BulkWhatsAppTab() {
         </summary>
         <ul className="px-4 pb-3 pt-1 text-sm text-gray-600 space-y-1 list-disc list-inside">
           <li><strong>Development mode:</strong> Add the recipient&apos;s number to the allowlist in Meta for Developers → WhatsApp → API Setup (&quot;To&quot;).</li>
-          <li><strong>Free text</strong> only works if the recipient messaged you in the last 24 hours. Otherwise use <strong>Template broadcast</strong> with an approved template.</li>
+          <li>Bulk broadcast uses <strong>approved templates only</strong>. Create and approve templates in Message templates, then select one above.</li>
           <li><strong>Phone number:</strong> Use full number with country code (e.g. 91 for India). In .env use the <strong>Phone number ID</strong> from API Setup (e.g. 1038327846024239), not the business account ID.</li>
           <li>If the UI shows &quot;X failed&quot;, expand the list above and fix the error (allowlist, template, or number format).</li>
         </ul>
@@ -982,11 +862,11 @@ function BulkWhatsAppTab() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <h3 className="text-sm font-medium text-gray-900">Open individual chats</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Click to open each contact in WhatsApp (with message pre-filled)</p>
+            <p className="text-xs text-gray-500 mt-0.5">Click to open each contact in WhatsApp</p>
           </div>
           <ul className="max-h-[240px] overflow-y-auto divide-y divide-gray-100">
             {selectedRecipients.map((r) => {
-              const url = buildWhatsAppUrl(r.phone, message)
+              const url = buildWhatsAppUrl(r.phone, '')
               return (
                 <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-gray-50">
                   <span className="truncate text-sm text-gray-900">{r.name}</span>
@@ -1011,273 +891,6 @@ function BulkWhatsAppTab() {
 }
 
 // ---------- Message templates (design → submit to Meta → use in broadcast) ----------
-
-function normalizePhoneForChat(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length >= 10) return digits.slice(-10)
-  return digits
-}
-
-interface ChatMessage {
-  id: string
-  lead_id: string | null
-  phone: string
-  direction: 'out' | 'in'
-  body: string
-  meta_message_id: string | null
-  created_at: string
-}
-
-function ChatWithLeadsTab() {
-  const [leads, setLeads] = useState<LeadRecipient[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedLead, setSelectedLead] = useState<LeadRecipient | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [loadingMessages, setLoadingMessages] = useState(false)
-  const [message, setMessage] = useState('')
-  const [sending, setSending] = useState(false)
-  const [sendStatus, setSendStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const [search, setSearch] = useState('')
-  const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
-  const [messagesError, setMessagesError] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  useEffect(() => {
-    fetch('/api/marketing/whatsapp/config')
-      .then((res) => (res.ok ? res.json() : { configured: false }))
-      .then((data) => setApiConfigured(!!data?.configured))
-      .catch(() => setApiConfigured(false))
-  }, [])
-
-  useEffect(() => {
-    setLoading(true)
-    fetch('/api/leads')
-      .then((res) => {
-        if (!res.ok) throw new Error(res.status === 403 ? 'You don’t have access to leads.' : 'Failed to load leads')
-        return res.json()
-      })
-      .then((data) => {
-        const list: LeadRecipient[] = (data.leads || []).map((l: any) => ({
-          id: l.id,
-          name: l.name || '—',
-          phone: l.phone || '',
-          type: 'lead',
-        })).filter((r: LeadRecipient) => normalizePhoneForChat(r.phone).length >= 10)
-        setLeads(list)
-      })
-      .catch(() => setLeads([]))
-      .finally(() => setLoading(false))
-  }, [])
-
-  const fetchMessages = useCallback((leadId: string, phone: string) => {
-    setLoadingMessages(true)
-    setMessagesError(null)
-    const params = new URLSearchParams({ leadId, phone })
-    fetch(`/api/marketing/whatsapp/chat?${params}`, { credentials: 'include' })
-      .then((res) => {
-        if (!res.ok) return res.json().then((d) => { throw new Error(d?.error || res.statusText) })
-        return res.json()
-      })
-      .then((data) => setMessages(data.messages || []))
-      .catch((err) => {
-        setMessages([])
-        setMessagesError(err?.message || 'Could not load messages')
-      })
-      .finally(() => setLoadingMessages(false))
-  }, [])
-
-  useEffect(() => {
-    if (!selectedLead) {
-      setMessages([])
-      return
-    }
-    fetchMessages(selectedLead.id, selectedLead.phone)
-  }, [selectedLead?.id, selectedLead?.phone, fetchMessages])
-
-  const filteredLeads = useMemo(() => {
-    if (!search.trim()) return leads
-    const q = search.toLowerCase()
-    return leads.filter((l) => l.name.toLowerCase().includes(q) || l.phone.includes(q))
-  }, [leads, search])
-
-  const handleSend = async () => {
-    if (!selectedLead || !message.trim() || sending) return
-    const text = message.trim()
-    setSending(true)
-    setSendStatus('idle')
-    setMessage('')
-    const lastIncoming = [...messages].filter((m) => m.direction === 'in').pop()
-    const contextMessageId = lastIncoming?.meta_message_id ?? undefined
-    try {
-      const res = await fetch('/api/marketing/whatsapp/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          recipients: [{ phone: selectedLead.phone, name: selectedLead.name }],
-          message: text,
-          defaultCountryCode: '91',
-          leadId: selectedLead.id,
-          ...(contextMessageId && { contextMessageId }),
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setSendStatus('error')
-        setMessage(text)
-        return
-      }
-      setSendStatus('success')
-      if (data.message) setMessages((prev) => [...prev, data.message])
-      fetchMessages(selectedLead.id, selectedLead.phone)
-    } catch {
-      setSendStatus('error')
-      setMessage(text)
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex flex-col md:flex-row h-[calc(100vh-14rem)] min-h-[420px]">
-        {/* Lead list */}
-        <div className="w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50/50">
-          <div className="p-3 border-b border-gray-200">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search leads..."
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:ring-2 focus:ring-[#25D366]/30 focus:border-[#25D366] outline-none transition"
-              />
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-[#25D366]" />
-              </div>
-            ) : filteredLeads.length === 0 ? (
-              <div className="p-4 text-center text-sm text-gray-500">No leads with valid phone numbers.</div>
-            ) : (
-              <ul className="divide-y divide-gray-100">
-                {filteredLeads.map((lead) => (
-                  <li key={lead.id}>
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedLead(lead); setSendStatus('idle'); setMessagesError(null) }}
-                      className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
-                        selectedLead?.id === lead.id ? 'bg-[#25D366]/10 border-l-2 border-[#25D366]' : 'hover:bg-gray-100'
-                      }`}
-                    >
-                      <div className="w-10 h-10 rounded-full bg-[#25D366]/20 flex items-center justify-center shrink-0">
-                        <Users className="h-5 w-5 text-[#25D366]" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 truncate">{lead.name}</p>
-                        <p className="text-xs text-gray-500 truncate">{lead.phone}</p>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-        {/* Chat area */}
-        <div className="flex-1 flex flex-col bg-[#e5ddd5]/30 min-h-[280px]">
-          {!apiConfigured ? (
-            <div className="flex-1 flex items-center justify-center p-6 text-center text-gray-500 text-sm">
-              WhatsApp API is not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to chat with leads.
-            </div>
-          ) : !selectedLead ? (
-            <div className="flex-1 flex items-center justify-center p-6 text-center">
-              <div>
-                <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 text-sm">Select a lead to start chatting</p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="px-4 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-[#25D366]/20 flex items-center justify-center shrink-0">
-                  <Users className="h-4 w-4 text-[#25D366]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900 truncate">{selectedLead.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{selectedLead.phone}</p>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 min-h-0">
-                {loadingMessages ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-[#25D366]" />
-                  </div>
-                ) : messagesError ? (
-                  <p className="text-xs text-amber-600 text-center py-4">{messagesError}. Ensure database migration 019 (whatsapp_messages) has been run.</p>
-                ) : messages.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-4">No messages yet. Say hi — messages you send and lead replies will appear here.</p>
-                ) : (
-                  <>
-                    {messages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div
-                          className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${
-                            msg.direction === 'out'
-                              ? 'bg-[#D9FDD3] text-gray-900 rounded-br-md'
-                              : 'bg-white text-gray-900 rounded-bl-md border border-gray-200'
-                          }`}
-                        >
-                          <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
-                          <p className={`text-[10px] mt-0.5 ${msg.direction === 'out' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </>
-                )}
-              </div>
-              <div className="p-3 bg-white border-t border-gray-200">
-                <div className="flex gap-2">
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-                    placeholder="Type a message..."
-                    rows={2}
-                    className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm resize-none focus:ring-2 focus:ring-[#25D366]/30 focus:border-[#25D366] outline-none transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={!message.trim() || sending}
-                    className="shrink-0 rounded-xl bg-[#25D366] text-white p-2.5 hover:bg-[#20bd5a] disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center"
-                  >
-                    {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                  </button>
-                </div>
-                {sendStatus === 'success' && <p className="text-xs text-green-600 mt-1">Sent</p>}
-                {sendStatus === 'error' && <p className="text-xs text-red-600 mt-1">Failed to send. Check WhatsApp config and phone number.</p>}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 interface WhatsAppTemplate {
   id: string

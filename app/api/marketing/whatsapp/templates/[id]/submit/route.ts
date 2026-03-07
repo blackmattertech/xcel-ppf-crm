@@ -43,10 +43,11 @@ export async function POST(
   }
 
   const headerFormat = (template as { header_format?: string }).header_format || 'TEXT'
+  const headerMediaId = (template as { header_media_id?: string }).header_media_id?.trim()
   const headerMediaUrl = (template as { header_media_url?: string }).header_media_url?.trim()
   const isMediaUrl = headerMediaUrl && /^https?:\/\//i.test(headerMediaUrl)
 
-  if (headerFormat !== 'TEXT' && !headerMediaUrl) {
+  if (headerFormat !== 'TEXT' && !headerMediaId && !headerMediaUrl) {
     return NextResponse.json(
       {
         error: 'Sample media is required for Image/Video/Document headers. Upload an image/video/document in the template form.',
@@ -77,8 +78,10 @@ export async function POST(
   }
 
   let headerHandle: string | null = null
-  if (headerFormat !== 'TEXT' && headerMediaUrl) {
-    if (isMediaUrl) {
+  if (headerFormat !== 'TEXT' && (headerMediaId || headerMediaUrl)) {
+    if (headerMediaId) {
+      headerHandle = headerMediaId
+    } else if (isMediaUrl) {
       const upload = await uploadMediaToMeta(headerMediaUrl, {
         accessToken: wabaConfig.accessToken,
         appId: process.env.FACEBOOK_APP_ID || process.env.META_APP_ID,

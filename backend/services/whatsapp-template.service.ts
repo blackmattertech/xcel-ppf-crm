@@ -24,6 +24,8 @@ export interface WhatsAppTemplateRow {
   footer_text: string | null
   header_format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
   header_media_url: string | null
+  /** Meta media attachment ID from Resumable Upload API; use when sending template. */
+  header_media_id: string | null
   buttons: TemplateButton[] | null
   status: TemplateStatus
   meta_id: string | null
@@ -42,6 +44,8 @@ export interface CreateTemplateInput {
   footer_text?: string | null
   header_format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
   header_media_url?: string | null
+  /** Meta upload handle/ID from POST /upload-media; stored and used when sending template. */
+  header_media_id?: string | null
   buttons?: TemplateButton[] | null
 }
 
@@ -74,6 +78,7 @@ export async function createTemplate(input: CreateTemplateInput, userId: string)
     footer_text: input.footer_text || null,
     header_format: input.header_format || 'TEXT',
     header_media_url: input.header_media_url || null,
+    header_media_id: input.header_media_id || null,
     buttons: input.buttons && input.buttons.length > 0 ? input.buttons : [],
     status: 'draft' as const,
     created_by: userId,
@@ -150,6 +155,27 @@ export async function getTemplateByName(name: string): Promise<WhatsAppTemplateR
   return data as WhatsAppTemplateRow | null
 }
 
+/** Get template by name and language (for send: use DB header_format and header_media_url). */
+export async function getTemplateByNameAndLanguage(
+  name: string,
+  language: string
+): Promise<WhatsAppTemplateRow | null> {
+  const supabase = createServiceClient()
+  const normalized = sanitizeTemplateName(name)
+  const lang = (language || 'en').trim().replace(/-/g, '_').slice(0, 10)
+  const { data, error } = await supabase
+    .from('whatsapp_templates')
+    .select('*')
+    .eq('name', normalized)
+    .eq('language', lang)
+    .maybeSingle()
+  if (error) {
+    if (isTableMissingError(error)) return null
+    throw new Error(error.message)
+  }
+  return data as WhatsAppTemplateRow | null
+}
+
 export async function updateTemplateMetaStatus(
   id: string,
   metaId: string | null,
@@ -192,6 +218,111 @@ export async function updateTemplateMetaLanguage(
   }
 }
 
+/** Input shape from Meta listMessageTemplatesWithDetails for upsert. */
+export interface MetaTemplateDetailInput {
+  id: string
+  name: string
+  language: string
+  status: string
+  category: string
+  body_text: string
+  header_format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+  header_text: string | null
+  footer_text: string | null
+  buttons: Array<{ type: string; text: string; example?: string }>
+}
+
+function metaCategoryToLocal(cat: string): TemplateCategory {
+  const c = (cat || '').toUpperCase()
+  if (c === 'MARKETING' || c === 'UTILITY' || c === 'AUTHENTICATION') return c as TemplateCategory
+  return 'UTILITY'
+}
+
+function metaStatusToLocal(metaStatus: string): TemplateStatus {
+  const s = (metaStatus || '').toLowerCase()
+  if (s === 'approved' || s === 'active') return 'approved'
+  if (s === 'rejected') return 'rejected'
+  return 'pending'
+}
+
+/**
+ * Upsert a template from Meta full details (sync). Stores all template info in DB so send can use header_format, body_text, etc.
+ * If a row exists for (name, language), updates it. Otherwise inserts (for templates that exist only on Meta).
+ */
+export async function upsertTemplateFromMeta(
+  meta: MetaTemplateDetailInput,
+  userId: string
+): Promise<WhatsAppTemplateRow> {
+  const supabase = createServiceClient()
+  const name = sanitizeTemplateName(meta.name)
+  const language = (meta.language || 'en').replace(/-/g, '_').trim().slice(0, 10)
+  const status = metaStatusToLocal(meta.status)
+  const category = metaCategoryToLocal(meta.category)
+  const buttons: TemplateButton[] = (meta.buttons || []).map((b) => ({
+    type: (b.type === 'URL' || b.type === 'PHONE_NUMBER' || b.type === 'COPY_CODE' ? b.type : 'QUICK_REPLY') as TemplateButton['type'],
+    text: b.text ?? '',
+    example: b.example,
+  }))
+
+  const { data: existing } = await supabase
+    .from('whatsapp_templates')
+    .select('id, header_media_url')
+    .eq('name', name)
+    .eq('language', language)
+    .maybeSingle()
+
+  const now = new Date().toISOString()
+  if (existing) {
+    const row = existing as { id: string; header_media_url: string | null }
+    const { data: updated, error } = await supabase
+      .from('whatsapp_templates')
+      .update({
+        body_text: meta.body_text || '',
+        header_text: meta.header_text ?? null,
+        footer_text: meta.footer_text ?? null,
+        header_format: meta.header_format ?? 'TEXT',
+        buttons: buttons.length > 0 ? buttons : [],
+        status,
+        meta_id: meta.id,
+        updated_at: now,
+      } as never)
+      .eq('id', row.id)
+      .select()
+      .single()
+    if (error) {
+      if (isTableMissingError(error)) throw new Error(TABLE_MISSING_MESSAGE)
+      throw new Error(error.message)
+    }
+    return updated as WhatsAppTemplateRow
+  }
+
+  const { data: inserted, error } = await supabase
+    .from('whatsapp_templates')
+    .insert({
+      name,
+      language,
+      category,
+      body_text: meta.body_text || '',
+      header_text: meta.header_text ?? null,
+      footer_text: meta.footer_text ?? null,
+      header_format: meta.header_format ?? 'TEXT',
+      header_media_url: null,
+      header_media_id: null,
+      buttons: buttons.length > 0 ? buttons : [],
+      status,
+      meta_id: meta.id,
+      created_by: userId,
+      updated_at: now,
+    } as never)
+    .select()
+    .single()
+  if (error) {
+    if (isTableMissingError(error)) throw new Error(TABLE_MISSING_MESSAGE)
+    throw new Error(error.message)
+  }
+  return inserted as WhatsAppTemplateRow
+}
+
 /** Delete a template by id. Only removes from DB; call Meta delete separately if meta_id is set. */
 export async function deleteTemplate(id: string): Promise<void> {
   const supabase = createServiceClient()
@@ -219,7 +350,8 @@ export async function updateTemplate(id: string, input: CreateTemplateInput): Pr
     header_text: input.header_text || null,
     footer_text: input.footer_text || null,
     header_format: input.header_format ?? 'TEXT',
-    header_media_url: input.header_media_url || null,
+    header_media_url: input.header_media_url ?? null,
+    header_media_id: input.header_media_id ?? null,
     buttons: input.buttons && input.buttons.length > 0 ? input.buttons : [],
     updated_at: new Date().toISOString(),
   }

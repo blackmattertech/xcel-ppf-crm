@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success: true,
     handle: result.handle,
-    message: 'Uploaded to Meta. Use this template and submit for review; the handle is stored as header media.',
+    id: result.handle,
+    message: 'Uploaded to Meta. The ID is stored and used when sending this template.',
   })
 }

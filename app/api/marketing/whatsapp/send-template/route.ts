@@ -3,7 +3,7 @@ import { requireAuth } from '@/backend/middleware/auth'
 import { sendTemplateBulk, listMessageTemplatesWithDetails } from '@/backend/services/whatsapp.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
-import { getTemplateById, getTemplateByName } from '@/backend/services/whatsapp-template.service'
+import { getTemplateById, getTemplateByName, getTemplateByNameAndLanguage } from '@/backend/services/whatsapp-template.service'
 import { z } from 'zod'
 
 /** True if two names are likely the same (e.g. welcom vs welcome). */
@@ -64,6 +64,8 @@ export async function POST(request: NextRequest) {
 
   let templateName: string
   let templateLanguage: string
+  /** Resolved from DB when using templateId or templateName (used for header_format, header_media_url). */
+  let dbTemplate: Awaited<ReturnType<typeof getTemplateById>> = null
 
   if (parsed.data.templateId) {
     const template = await getTemplateById(parsed.data.templateId)
@@ -76,17 +78,19 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    dbTemplate = template
     templateName = template.name
     templateLanguage = template.language
   } else if (parsed.data.templateName) {
     templateName = parsed.data.templateName
-    const providedLang = (parsed.data.templateLanguage ?? '').trim()
+    const providedLang = (parsed.data.templateLanguage ?? '').trim().replace(/-/g, '_')
     if (providedLang) {
       templateLanguage = providedLang
+      dbTemplate = await getTemplateByNameAndLanguage(templateName, templateLanguage)
     } else {
       const localTemplate = await getTemplateByName(templateName)
-      // Use exact language code from DB so it matches Meta (en vs en_US must match template creation)
       templateLanguage = (localTemplate?.language ?? 'en').trim().replace(/-/g, '_') || 'en'
+      dbTemplate = localTemplate ?? (await getTemplateByNameAndLanguage(templateName, templateLanguage))
     }
   } else {
     return NextResponse.json({ error: 'Provide templateId or templateName' }, { status: 400 })
@@ -95,9 +99,10 @@ export async function POST(request: NextRequest) {
   // Avoid #132001: ensure this template name+language exists in Meta (or suggest correct name)
   const metaList = await listMessageTemplatesWithDetails(wabaConfig)
   const norm = (s: string) => (s ?? '').trim().replace(/-/g, '_').toLowerCase()
-  const existsInMeta = metaList.templates?.some(
+  const metaTemplate = metaList.templates?.find(
     (m) => m.name === templateName && norm(m.language ?? '') === norm(templateLanguage)
   )
+  const existsInMeta = !!metaTemplate
   if (!existsInMeta) {
     // Check Meta list for a similar template name (e.g. welcome vs welcom)
     const similar = metaList.templates?.find((m) => templateNameSimilar(templateName, m.name))
@@ -132,6 +137,14 @@ export async function POST(request: NextRequest) {
     bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
   }))
 
+  // #132012: use DB template info; prefer Meta upload ID (header_media_id) when sending
+  const headerFormat = dbTemplate?.header_format ?? metaTemplate?.header_format ?? undefined
+  const requestHeaderParams = parsed.data.headerParameters && parsed.data.headerParameters.length > 0 ? parsed.data.headerParameters : undefined
+  const headerMediaId = (dbTemplate as { header_media_id?: string | null } | undefined)?.header_media_id?.trim()
+  const headerParameters =
+    requestHeaderParams ??
+    (headerMediaId ? [headerMediaId] : headerFormat && headerFormat !== 'TEXT' && dbTemplate?.header_media_url ? [dbTemplate.header_media_url] : undefined)
+
   const result = await sendTemplateBulk(
     recipients,
     templateName,
@@ -139,7 +152,9 @@ export async function POST(request: NextRequest) {
     {
       delayMs: 250,
       defaultCountryCode: parsed.data.defaultCountryCode,
-      headerParameters: parsed.data.headerParameters && parsed.data.headerParameters.length > 0 ? parsed.data.headerParameters : undefined,
+      headerParameters,
+      headerFormat,
+      headerMediaId: headerMediaId || undefined,
       config,
     }
   )

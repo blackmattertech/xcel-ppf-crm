@@ -3,13 +3,12 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { Megaphone, FileText, MessageCircle, MessageSquare } from 'lucide-react'
+import { Megaphone, FileText, MessageCircle } from 'lucide-react'
 
 const tabs = [
   { path: '/marketing/overview', label: 'Overview', icon: Megaphone },
   { path: '/marketing/templates', label: 'Message templates', icon: FileText },
   { path: '/marketing/bulk-whatsapp', label: 'Bulk WhatsApp', icon: MessageCircle },
-  { path: '/marketing/chat', label: 'Chat with leads', icon: MessageSquare },
 ] as const
 
 export default function MarketingLayout({

@@ -16,6 +16,7 @@ export default function ChatWithLeadsPage() {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [sendStatus, setSendStatus] = useState<'idle' | 'success' | 'error' | 'save_failed'>('idle')
+  const [sendError, setSendError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
@@ -117,6 +118,7 @@ export default function ChatWithLeadsPage() {
     const text = message.trim()
     setSending(true)
     setSendStatus('idle')
+    setSendError(null)
     setMessage('')
     const contextMessageId = lastIncomingMetaId
     try {
@@ -134,6 +136,15 @@ export default function ChatWithLeadsPage() {
       const data = await res.json()
       if (!res.ok) {
         setSendStatus('error')
+        setSendError(data?.error || data?.detail || `Request failed (${res.status})`)
+        setMessage(text)
+        return
+      }
+      const firstResult = data.results?.[0]
+      const sendSucceeded = data.sent === 1 && firstResult?.success !== false
+      if (!sendSucceeded && firstResult?.error) {
+        setSendStatus('error')
+        setSendError(firstResult.error)
         setMessage(text)
         return
       }
@@ -145,8 +156,9 @@ export default function ChatWithLeadsPage() {
           return [...prev, data.message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
         })
       } else fetchMessages(selectedLead.id, selectedLead.phone)
-    } catch {
+    } catch (e) {
       setSendStatus('error')
+      setSendError(e instanceof Error ? e.message : 'Network or server error')
       setMessage(text)
     } finally {
       sendingRef.current = false
@@ -183,7 +195,7 @@ export default function ChatWithLeadsPage() {
                   <li key={lead.id}>
                     <button
                       type="button"
-                      onClick={() => { setSelectedLead(lead); setSendStatus('idle'); setMessagesError(null); setSaveError(null) }}
+                      onClick={() => { setSelectedLead(lead); setSendStatus('idle'); setSendError(null); setMessagesError(null); setSaveError(null) }}
                       className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
                         selectedLead?.id === lead.id ? 'bg-[#25D366]/10 border-l-2 border-[#25D366]' : 'hover:bg-gray-100'
                       }`}
@@ -296,7 +308,11 @@ export default function ChatWithLeadsPage() {
                     {!saveError && ' Run migration 019 (whatsapp_messages) on your Supabase project.'}
                   </p>
                 )}
-                {sendStatus === 'error' && <p className="text-xs text-red-600 mt-1">Failed to send. Check WhatsApp config and phone number.</p>}
+                {sendStatus === 'error' && (
+                  <p className="text-xs text-red-600 mt-1">
+                    {sendError || 'Failed to send. Check WhatsApp config and phone number.'}
+                  </p>
+                )}
               </div>
             </>
           )}

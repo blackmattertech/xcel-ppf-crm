@@ -25,6 +25,7 @@ const updateSchema = z.object({
   footer_text: z.string().max(60).optional().nullable(),
   header_format: z.enum(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT']).optional(),
   header_media_url: z.string().max(2000).optional().nullable(),
+  header_media_id: z.string().max(500).optional().nullable(),
   buttons: z.array(buttonSchema).max(10).optional(),
 })
 
@@ -87,6 +88,7 @@ export async function PATCH(
     footer_text: d.footer_text !== undefined ? d.footer_text : template.footer_text,
     header_format: d.header_format ?? (template.header_format as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') ?? 'TEXT',
     header_media_url: d.header_media_url !== undefined ? d.header_media_url : template.header_media_url,
+    header_media_id: d.header_media_id !== undefined ? d.header_media_id : (template as { header_media_id?: string | null }).header_media_id,
     buttons: d.buttons ?? (template.buttons as CreateTemplateInput['buttons']) ?? [],
   }
 

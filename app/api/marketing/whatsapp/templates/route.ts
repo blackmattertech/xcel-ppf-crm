@@ -24,6 +24,7 @@ const createSchema = z.object({
   footer_text: z.string().max(60).optional().nullable(),
   header_format: z.enum(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT']).optional().default('TEXT'),
   header_media_url: z.string().max(2000).optional().nullable(),
+  header_media_id: z.string().max(500).optional().nullable(),
   buttons: z.array(buttonSchema).max(10).optional().default([]),
 })
 
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
     footer_text: parsed.data.footer_text ?? null,
     header_format: parsed.data.header_format ?? 'TEXT',
     header_media_url: parsed.data.header_media_url ?? null,
+    header_media_id: parsed.data.header_media_id ?? null,
     buttons: parsed.data.buttons ?? [],
   }
 

@@ -26,6 +26,7 @@ export default function TemplatesPage() {
   const [formFooter, setFormFooter] = useState('')
   const [formHeaderFormat, setFormHeaderFormat] = useState<'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'>('TEXT')
   const [formHeaderMediaUrl, setFormHeaderMediaUrl] = useState('')
+  const [formHeaderMediaId, setFormHeaderMediaId] = useState('')
   const [formHeaderPreviewUrl, setFormHeaderPreviewUrl] = useState('')
   const [formHeaderUploading, setFormHeaderUploading] = useState(false)
   const headerPreviewUrlRef = useRef<string | null>(null)
@@ -36,6 +37,7 @@ export default function TemplatesPage() {
   const [discoverResult, setDiscoverResult] = useState<{ wabaId?: string; wabaIds?: string[]; error?: string } | null>(null)
   const [discovering, setDiscovering] = useState(false)
   const [previewTemplate, setPreviewTemplate] = useState<WhatsAppTemplate | null>(null)
+  const [previewMediaUrl, setPreviewMediaUrl] = useState<string | null>(null)
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -60,6 +62,24 @@ export default function TemplatesPage() {
   }, [])
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
+
+  useEffect(() => {
+    const t = previewTemplate as (WhatsAppTemplate & { header_media_id?: string | null }) | null
+    if (!t?.header_media_id) {
+      setPreviewMediaUrl(null)
+      return
+    }
+    const url = (t.header_media_url ?? '').trim()
+    if (/^https?:\/\//i.test(url) || url.startsWith('blob:') || url.startsWith('data:')) {
+      setPreviewMediaUrl(url || null)
+      return
+    }
+    setPreviewMediaUrl(null)
+    fetch(`/api/marketing/whatsapp/media-url?id=${encodeURIComponent(t.header_media_id)}`, { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data?.url && setPreviewMediaUrl(data.url))
+      .catch(() => {})
+  }, [previewTemplate?.id, previewTemplate?.header_media_id, previewTemplate?.header_media_url])
 
   const fetchLibrary = useCallback(() => {
     setLibraryLoading(true)
@@ -94,6 +114,7 @@ export default function TemplatesPage() {
       headerPreviewUrlRef.current = null
     }
     setFormHeaderMediaUrl('')
+    setFormHeaderMediaId('')
     setFormHeaderPreviewUrl('')
     setFormButtons(lib.buttons?.length ? lib.buttons.map((b) => ({ type: b.type, text: b.text, example: b.example })) : [])
     setFormError(null)
@@ -116,6 +137,7 @@ export default function TemplatesPage() {
     setFormFooter(t.footer_text ?? '')
     setFormHeaderFormat((t.header_format as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') ?? 'TEXT')
     setFormHeaderMediaUrl(t.header_media_url ?? '')
+    setFormHeaderMediaId((t as { header_media_id?: string | null }).header_media_id ?? '')
     setFormButtons(Array.isArray(t.buttons) && t.buttons.length > 0
       ? t.buttons.map((b) => ({ type: b.type, text: b.text, example: b.example }))
       : [])
@@ -205,6 +227,7 @@ export default function TemplatesPage() {
       header_format: formHeaderFormat,
       header_text: formHeaderFormat === 'TEXT' ? (formHeader.trim() || null) : null,
       header_media_url: (formHeaderFormat !== 'TEXT' && formHeaderMediaUrl.trim()) ? formHeaderMediaUrl.trim() : null,
+      header_media_id: (formHeaderFormat !== 'TEXT' && formHeaderMediaId.trim()) ? formHeaderMediaId.trim() : null,
       buttons: formButtons.filter((b) => b.text.trim()).map((b) => ({
         type: b.type,
         text: b.text.trim(),
@@ -504,8 +527,11 @@ export default function TemplatesPage() {
                             try {
                               const res = await fetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
                               const data = await res.json()
-                              if (data.handle) setFormHeaderMediaUrl(data.handle)
-                              else setFormError(data.error ?? 'Upload failed')
+                              if (data.handle || data.id) {
+                                const id = data.id ?? data.handle
+                                setFormHeaderMediaId(id)
+                                setFormHeaderMediaUrl(id)
+                              } else setFormError(data.error ?? 'Upload failed')
                             } catch (err) {
                               setFormError(err instanceof Error ? err.message : 'Upload failed')
                             } finally {
@@ -637,17 +663,18 @@ export default function TemplatesPage() {
           </div>
 
           {previewTemplate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setPreviewTemplate(null)}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { setPreviewTemplate(null); setPreviewMediaUrl(null) }}>
               <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-900">Template preview</h3>
-                  <button type="button" onClick={() => setPreviewTemplate(null)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+                  <button type="button" onClick={() => { setPreviewTemplate(null); setPreviewMediaUrl(null) }} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
                 </div>
                 <p className="text-sm text-gray-500 mb-2">{previewTemplate.name} · {getLanguageName(previewTemplate.language)}</p>
                 <TemplatePreview
                   headerFormat={(previewTemplate.header_format as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') ?? 'TEXT'}
                   headerText={previewTemplate.header_text ?? ''}
                   headerMediaUrl={previewTemplate.header_media_url ?? ''}
+                  headerPreviewUrl={previewMediaUrl ?? undefined}
                   body={previewTemplate.body_text}
                   footer={previewTemplate.footer_text ?? ''}
                   buttons={previewTemplate.buttons?.filter((b) => b?.text) ?? []}

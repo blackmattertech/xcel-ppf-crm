@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { listTemplates, updateTemplateMetaStatus, updateTemplateMetaLanguage } from '@/backend/services/whatsapp-template.service'
-import { listMessageTemplatesFromMeta } from '@/backend/services/whatsapp.service'
+import { upsertTemplateFromMeta, type MetaTemplateDetailInput } from '@/backend/services/whatsapp-template.service'
+import { listMessageTemplatesWithDetails } from '@/backend/services/whatsapp.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 
 /**
- * Sync template status from Meta (pending → approved/rejected).
- * Call after submitting templates to refresh approval state.
+ * Sync templates from Meta and store full template info in DB (name, language, body, header_format, buttons, status).
+ * Use this so when sending we use DB template info (header_format, header_media_url) and avoid #132012.
  */
 export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { templates: metaTemplates, error: metaError } = await listMessageTemplatesFromMeta(wabaConfig)
+  const { templates: metaTemplates, error: metaError } = await listMessageTemplatesWithDetails(wabaConfig)
   if (metaError) {
     const hint = /does not exist|missing permissions|does not support/i.test(metaError)
       ? ' Use the correct WHATSAPP_BUSINESS_ACCOUNT_ID (from Business Manager → Accounts → WhatsApp Accounts) and a token with whatsapp_business_management permission.'
@@ -35,42 +35,23 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const localTemplates = await listTemplates()
-
-  function metaStatusToLocal(metaStatus: string): 'approved' | 'pending' | 'rejected' {
-    const s = (metaStatus || '').toLowerCase()
-    if (s === 'approved' || s === 'active') return 'approved'
-    if (s === 'rejected') return 'rejected'
-    return 'pending'
-  }
-
-  /** Match by name and language (exact or base match so "en" matches Meta "en_US" for sync). */
-  function metaMatchesLocal(meta: { name: string; language: string }, local: { name: string; language: string }): boolean {
-    if (meta.name !== local.name) return false
-    const mL = meta.language?.trim() || ''
-    const lL = local.language?.trim() || ''
-    if (mL === lL) return true
-    if (mL.startsWith(lL + '_') || lL.startsWith(mL + '_')) return true
-    return false
-  }
-
-  let updated = 0
-  for (const local of localTemplates) {
-    const meta = metaTemplates.find((m) => metaMatchesLocal(m, local))
-    if (!meta) continue
-    const status = metaStatusToLocal(meta.status)
-    await updateTemplateMetaStatus(
-      local.id,
-      meta.id ?? null,
-      status,
-      status === 'rejected' ? 'Rejected by Meta' : undefined
-    )
-    // Update local language to match Meta exactly (#132001: name+language must match Meta for send API)
-    if (meta.language && meta.language !== local.language) {
-      await updateTemplateMetaLanguage(local.id, meta.language)
+  let upserted = 0
+  for (const meta of metaTemplates) {
+    const input: MetaTemplateDetailInput = {
+      id: meta.id,
+      name: meta.name,
+      language: meta.language,
+      status: meta.status,
+      category: meta.category,
+      body_text: meta.body_text,
+      header_format: meta.header_format,
+      header_text: meta.header_text,
+      footer_text: meta.footer_text,
+      buttons: meta.buttons,
     }
-    updated++
+    await upsertTemplateFromMeta(input, user.id)
+    upserted++
   }
 
-  return NextResponse.json({ success: true, updated, metaCount: metaTemplates.length })
+  return NextResponse.json({ success: true, upserted, metaCount: metaTemplates.length })
 }
