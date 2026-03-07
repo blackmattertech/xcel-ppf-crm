@@ -27,10 +27,13 @@ export function getInterestedProductFromMeta(metaData: Record<string, any> | nul
   if (Array.isArray(fieldData)) {
     const serviceFieldNames = [
       'what_services_are_you_looking_for',
+      'what services are you looking for',
       'what service you are looking for',
-      'what service are you looking for',
+      'what_service_are_you_looking_for',
       'product_interest',
       'service',
+      'service',
+      'product',
       'interested_product',
     ]
     for (const field of fieldData) {
@@ -56,6 +59,8 @@ export function getCarModelFromMeta(metaData: Record<string, any> | null): strin
   const directKeys = [
     'car_model',
     'Car Model',
+    'car',
+    'car',
     'vehicle_model',
     'Vehicle Model',
     'vehicle',
@@ -93,4 +98,18 @@ export function getCarModelFromMeta(metaData: Record<string, any> | null): strin
   }
 
   return ''
+}
+
+/**
+ * Build requirement string from meta_data (e.g. from Meta Lead Ads field_data).
+ * Use when creating a lead from Meta so car model and interested product are stored on the lead.
+ */
+export function buildRequirementFromMeta(metaData: Record<string, any> | null): string {
+  if (!metaData || typeof metaData !== 'object') return ''
+  const service = getInterestedProductFromMeta(metaData)
+  const carModel = getCarModelFromMeta(metaData)
+  const parts: string[] = []
+  if (service) parts.push(service)
+  if (carModel) parts.push(`Car Model: ${carModel}`)
+  return parts.join(' | ')
 }

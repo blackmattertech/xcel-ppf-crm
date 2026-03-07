@@ -2158,6 +2158,8 @@ export default function LeadsPage() {
 
   const isAdmin = (userRole || userRoleState) === 'admin' || (userRole || userRoleState) === 'super_admin'
   const canDeleteLeads = isAdmin
+  // Show "Add Lead" / "New Lead" when user has leads.create or leads.manage (e.g. tele_caller), not only admin/super_admin
+  const canCreateLeads = isAdmin || (Array.isArray(userPermissions) && (userPermissions.includes('leads.create') || userPermissions.includes('leads.manage')))
   
   // Helper function for search (safe version)
   const searchLeads = (leads: Lead[], query: string): Lead[] => {
@@ -2238,7 +2240,7 @@ export default function LeadsPage() {
       <div className="md:hidden bg-[#f5f5f5] min-h-screen pb-20 relative">
         <MobileHeader 
           title="My Leads"
-          showAddButton={isAdmin}
+          showAddButton={canCreateLeads}
           onAddClick={() => setNewLeadModalOpen(true)}
         />
 
@@ -2846,7 +2848,7 @@ export default function LeadsPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-          {isAdmin && (
+          {canCreateLeads && (
               <button
                 onClick={() => setNewLeadModalOpen(true)}
                 className="bg-[#ed1b24] text-white px-5 py-2.5 rounded-md hover:bg-[#d11820] flex items-center gap-2 font-medium text-base"

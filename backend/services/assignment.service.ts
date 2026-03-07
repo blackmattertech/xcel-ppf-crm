@@ -135,6 +135,9 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
 /**
  * Redistribute existing leads with status "new" among all tele_callers in round-robin
  * when a new tele_caller is added. Call this after creating or updating a user to tele_caller role.
+ * - Leads already assigned to a tele_caller: redistributed when there are >= 2 tele_callers.
+ * - Leads with assigned_to = NULL (e.g. after the previous assignee was deleted): assigned to
+ *   tele_callers in round-robin even when there is only one tele_caller.
  * @param triggeredByUserId - Optional; if provided, used as changed_by for lead_status_history entries
  * @returns Number of leads reassigned
  */
@@ -165,54 +168,130 @@ export async function redistributeNewLeadsAmongTeleCallers(
   }
 
   const teleCallerIds = (users as { id: string }[]).map((u) => u.id)
-  if (teleCallerIds.length < 2) {
-    return 0
+  let reassigned = 0
+
+  // 1) Redistribute NEW leads that are already assigned to a tele_caller (only when >= 2 tele_callers)
+  if (teleCallerIds.length >= 2) {
+    const { data: leads, error: leadsError } = await supabase
+      .from('leads')
+      .select('id, assigned_to, status')
+      .eq('status', LEAD_STATUS.NEW)
+      .not('assigned_to', 'is', null)
+      .in('assigned_to', teleCallerIds)
+      .order('created_at', { ascending: true })
+
+    if (!leadsError && leads && leads.length > 0) {
+      const leadRows = leads as { id: string; assigned_to: string; status: string }[]
+      const n = teleCallerIds.length
+      for (let i = 0; i < leadRows.length; i++) {
+        const lead = leadRows[i]
+        const newAssigneeId = teleCallerIds[i % n]
+        if (lead.assigned_to === newAssigneeId) continue
+
+        const { error: updateError } = await supabase
+          .from('leads')
+          // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
+          .update({ assigned_to: newAssigneeId })
+          .eq('id', lead.id)
+
+        if (updateError) {
+          console.error(`[redistributeNewLeads] Failed to reassign lead ${lead.id}:`, updateError.message)
+          continue
+        }
+        reassigned++
+        if (triggeredByUserId) {
+          try {
+            await supabase.from('lead_status_history').insert({
+              lead_id: lead.id,
+              old_status: lead.status,
+              new_status: lead.status,
+              changed_by: triggeredByUserId,
+            } as any)
+          } catch {
+            // Non-fatal
+          }
+        }
+      }
+    }
   }
 
-  // All leads with status NEW that are assigned to any tele_caller
-  const { data: leads, error: leadsError } = await supabase
+  // 2) Assign NEW leads that have no assignee (e.g. DB SET NULL after previous tele_caller was deleted) to tele_callers in round-robin
+  const { data: unassignedLeads, error: unassignedError } = await supabase
+    .from('leads')
+    .select('id, status')
+    .eq('status', LEAD_STATUS.NEW)
+    .is('assigned_to', null)
+    .order('created_at', { ascending: true })
+
+  if (!unassignedError && unassignedLeads && unassignedLeads.length > 0) {
+    const rows = unassignedLeads as { id: string; status: string }[]
+    const n = Math.max(1, teleCallerIds.length)
+    for (let i = 0; i < rows.length; i++) {
+      const newAssigneeId = teleCallerIds[i % n]
+      const { error: updateError } = await supabase
+        .from('leads')
+        // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
+        .update({ assigned_to: newAssigneeId })
+        .eq('id', rows[i].id)
+
+      if (updateError) {
+        console.error(`[redistributeNewLeads] Failed to assign unassigned lead ${rows[i].id}:`, updateError.message)
+        continue
+      }
+      reassigned++
+      if (triggeredByUserId) {
+        try {
+          await supabase.from('lead_status_history').insert({
+            lead_id: rows[i].id,
+            old_status: rows[i].status,
+            new_status: rows[i].status,
+            changed_by: triggeredByUserId,
+          } as any)
+        } catch {
+          // Non-fatal
+        }
+      }
+    }
+  }
+
+  // 3) Reassign NEW leads that are assigned to a non-tele_caller (e.g. admin after deleting the only tele_caller) to tele_callers in round-robin
+  const teleCallerIdSet = new Set(teleCallerIds)
+  const { data: newLeadsAssignedToOthers, error: othersError } = await supabase
     .from('leads')
     .select('id, assigned_to, status')
     .eq('status', LEAD_STATUS.NEW)
     .not('assigned_to', 'is', null)
-    .in('assigned_to', teleCallerIds)
-    .order('created_at', { ascending: true })
 
-  if (leadsError || !leads || leads.length === 0) {
-    return 0
-  }
+  if (!othersError && newLeadsAssignedToOthers && newLeadsAssignedToOthers.length > 0 && teleCallerIds.length >= 1) {
+    const toReassign = (newLeadsAssignedToOthers as { id: string; assigned_to: string; status: string }[]).filter(
+      (row) => !teleCallerIdSet.has(row.assigned_to)
+    )
+    const n = Math.max(1, teleCallerIds.length)
+    for (let i = 0; i < toReassign.length; i++) {
+      const lead = toReassign[i]
+      const newAssigneeId = teleCallerIds[i % n]
+      const { error: updateError } = await supabase
+        .from('leads')
+        // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
+        .update({ assigned_to: newAssigneeId })
+        .eq('id', lead.id)
 
-  const leadRows = leads as { id: string; assigned_to: string; status: string }[]
-  const n = teleCallerIds.length
-  let reassigned = 0
-
-  for (let i = 0; i < leadRows.length; i++) {
-    const lead = leadRows[i]
-    const newAssigneeId = teleCallerIds[i % n]
-    if (lead.assigned_to === newAssigneeId) continue
-
-    const { error: updateError } = await supabase
-      .from('leads')
-      // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
-      .update({ assigned_to: newAssigneeId })
-      .eq('id', lead.id)
-
-    if (updateError) {
-      console.error(`[redistributeNewLeads] Failed to reassign lead ${lead.id}:`, updateError.message)
-      continue
-    }
-    reassigned++
-
-    if (triggeredByUserId) {
-      try {
-        await supabase.from('lead_status_history').insert({
-          lead_id: lead.id,
-          old_status: lead.status,
-          new_status: lead.status,
-          changed_by: triggeredByUserId,
-        } as any)
-      } catch {
-        // Non-fatal
+      if (updateError) {
+        console.error(`[redistributeNewLeads] Failed to reassign lead ${lead.id} from non-tele_caller:`, updateError.message)
+        continue
+      }
+      reassigned++
+      if (triggeredByUserId) {
+        try {
+          await supabase.from('lead_status_history').insert({
+            lead_id: lead.id,
+            old_status: lead.status,
+            new_status: lead.status,
+            changed_by: triggeredByUserId,
+          } as any)
+        } catch {
+          // Non-fatal
+        }
       }
     }
   }

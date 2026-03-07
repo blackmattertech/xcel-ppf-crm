@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import { createLead } from '@/backend/services/lead.service'
+import { buildRequirementFromMeta } from '@/shared/utils/lead-meta'
 import { MetaLeadField } from '@/shared/types/meta-lead'
 
 interface MetaApiLead {
@@ -197,6 +198,11 @@ export async function POST(request: NextRequest) {
                 const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').split('.')[0]
                 const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
                 const lead_id = `LEAD-${timestamp}-${randomSuffix}`
+                const meta_data = {
+                  meta_lead_id: metaLead.id,
+                  field_data: metaLead.field_data,
+                }
+                const requirement = buildRequirementFromMeta(meta_data) || undefined
 
                 return createLead(
                   {
@@ -212,10 +218,8 @@ export async function POST(request: NextRequest) {
                     form_name: metaLead.form_name || null,
                     ad_name: metaLead.ad_name || null,
                     campaign_name: metaLead.campaign_name || null,
-                    meta_data: {
-                      meta_lead_id: metaLead.id,
-                      field_data: metaLead.field_data,
-                    },
+                    meta_data,
+                    requirement,
                     status: 'new',
                   } as any,
                   true
