@@ -131,15 +131,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // #132000: template body may have {{1}}, {{2}} etc.; we must send that many parameters
+  // #132000: template body may have {{1}}, {{2}} etc.; we must send exactly that many parameters
   const bodyText = dbTemplate?.body_text ?? metaTemplate?.body_text ?? ''
   const expectedBodyCount = getTemplateBodyVariableCount(bodyText)
   let bodyParams = parsed.data.bodyParameters ?? []
-  if (expectedBodyCount > 0 && bodyParams.length < expectedBodyCount) {
-    const placeholders = ['Customer', 'Offer', 'Code', 'Value', 'Details']
-    bodyParams = [...bodyParams]
-    while (bodyParams.length < expectedBodyCount) {
-      bodyParams.push(placeholders[bodyParams.length] ?? `Param${bodyParams.length + 1}`)
+  if (expectedBodyCount === 0) {
+    bodyParams = []
+  } else {
+    if (bodyParams.length < expectedBodyCount) {
+      const placeholders = ['Customer', 'Offer', 'Code', 'Value', 'Details']
+      bodyParams = [...bodyParams]
+      while (bodyParams.length < expectedBodyCount) {
+        bodyParams.push(placeholders[bodyParams.length] ?? `Param${bodyParams.length + 1}`)
+      }
+    } else if (bodyParams.length > expectedBodyCount) {
+      bodyParams = bodyParams.slice(0, expectedBodyCount)
     }
   }
   const recipients = parsed.data.recipients.map((r) => ({

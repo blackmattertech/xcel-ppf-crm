@@ -4,6 +4,7 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/service'
+import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
 import type { ParsedMetaLead } from './meta-webhook.service'
 import { parseMetaLeadValue } from './meta-webhook.service'
 import type { MetaLeadValue } from '@/shared/types/meta-lead'
@@ -78,12 +79,18 @@ export async function fetchLeadgenForms(
 ): Promise<MetaFormNode[]> {
   const url = `${META_GRAPH_BASE}/${pageId}/leadgen_forms?fields=id,name&access_token=${encodeURIComponent(accessToken)}`
   const res = await fetch(url)
+  const parsed = await safeParseJsonResponse<{ data?: MetaFormNode[]; error?: { message?: string } }>(res)
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error?.message || `Meta API: ${res.status} ${res.statusText}`)
+    const errMsg =
+      parsed.ok && parsed.data?.error?.message
+        ? parsed.data.error.message
+        : parsed.ok
+          ? `Meta API: ${res.status} ${res.statusText}`
+          : parsed.error
+    throw new Error(errMsg)
   }
-  const json = await res.json()
-  return json.data || []
+  if (!parsed.ok) throw new Error(parsed.error)
+  return parsed.data.data || []
 }
 
 /**
@@ -127,16 +134,24 @@ export async function fetchLeadsForForm(
 
   while (nextUrl) {
     const res: Response = await fetch(nextUrl)
+    const parsed = await safeParseJsonResponse<{
+      data?: MetaLeadNode[]
+      paging?: { next?: string }
+      error?: { message?: string }
+    }>(res)
     if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
-      throw new Error(err.error?.message || `Meta API leads: ${res.status}`)
+      const errMsg =
+        parsed.ok && parsed.data?.error?.message
+          ? parsed.data.error.message
+          : parsed.ok
+            ? `Meta API leads: ${res.status}`
+            : parsed.error
+      throw new Error(errMsg)
     }
-    const json = await res.json() as { data?: MetaLeadNode[]; paging?: { next?: string } }
-    const data = json.data || []
+    if (!parsed.ok) throw new Error(parsed.error)
+    const data = parsed.data.data || []
     allLeads.push(...data)
-
-    const paging = json.paging
-    nextUrl = paging?.next ?? null
+    nextUrl = parsed.data.paging?.next ?? null
   }
 
   return allLeads

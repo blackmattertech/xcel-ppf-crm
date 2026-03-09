@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
+import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
 
 export async function POST(request: NextRequest) {
   try {
@@ -68,8 +69,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const data = await mailjetResponse.json()
-    return NextResponse.json({ success: true, data })
+    const parsed = await safeParseJsonResponse<unknown>(mailjetResponse)
+    if (!parsed.ok) {
+      console.error('Mailjet API: unexpected response body', parsed.error)
+      return NextResponse.json(
+        { error: 'Mailjet returned an invalid response. Please try again.' },
+        { status: 502 }
+      )
+    }
+    return NextResponse.json({ success: true, data: parsed.data })
   } catch (error) {
     console.error('Mailjet test-send error:', error)
     return NextResponse.json(

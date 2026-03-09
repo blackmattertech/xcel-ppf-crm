@@ -3,6 +3,7 @@ import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import { createLead } from '@/backend/services/lead.service'
 import { buildRequirementFromMeta } from '@/shared/utils/lead-meta'
+import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
 import { MetaLeadField } from '@/shared/types/meta-lead'
 
 interface MetaApiLead {
@@ -112,8 +113,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    const pagesData = await pagesRes.json()
-    const pages = pagesData.data || []
+    const pagesParsed = await safeParseJsonResponse<{ data?: unknown[] }>(pagesRes)
+    const pages = pagesParsed.ok && pagesParsed.data?.data ? pagesParsed.data.data : []
     if (!pages.length) {
       return NextResponse.json(
         { error: 'No Facebook pages found. Connect a page with Lead Ads.' },
@@ -136,16 +137,17 @@ export async function POST(request: NextRequest) {
       `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?fields=id,name&access_token=${pageAccessToken}`
     )
 
+    const formsParsed = await safeParseJsonResponse<{ data?: unknown[]; error?: { message?: string } }>(formsRes)
     if (!formsRes.ok) {
-      const errData = await formsRes.json().catch(() => ({}))
+      const errMsg = formsParsed.ok && formsParsed.data?.error?.message
+        ? formsParsed.data.error.message
+        : 'Failed to fetch lead forms. Ensure leads_retrieval permission is granted.'
       return NextResponse.json(
-        { error: errData.error?.message || 'Failed to fetch lead forms. Ensure leads_retrieval permission is granted.' },
+        { error: errMsg },
         { status: formsRes.status }
       )
     }
-
-    const formsData = await formsRes.json()
-    const forms = formsData.data || []
+    const forms = formsParsed.ok && formsParsed.data?.data ? formsParsed.data.data : []
 
     if (forms.length === 0) {
       return NextResponse.json({
@@ -165,12 +167,11 @@ export async function POST(request: NextRequest) {
       while (url) {
         const res: Response = await fetch(url)
         if (!res.ok) break
-
-        const data: { data?: MetaApiLead[]; paging?: { next?: string } } = await res.json()
-        const leads = data.data || []
+        const parsed = await safeParseJsonResponse<{ data?: MetaApiLead[]; paging?: { next?: string } }>(res)
+        if (!parsed.ok) break
+        const leads = parsed.data.data || []
         allLeads.push(...leads)
-
-        url = data.paging?.next || null
+        url = parsed.data.paging?.next || null
       }
     }
 

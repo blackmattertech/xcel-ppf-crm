@@ -2675,6 +2675,8 @@ export default function LeadsPage() {
                   { key: 'date', label: 'Date' },
                   { key: 'name', label: 'Name' },
                   { key: 'status', label: 'Lead Stage' },
+                  { key: 'ad_name', label: 'Ad Name' },
+                  { key: 'campaign_name', label: 'Campaign Name' },
                   { key: 'last_contacted', label: 'Last Contacted' },
                   { key: 'phone', label: 'Phone' },
                 ].map((col) => (
@@ -3200,6 +3202,8 @@ export default function LeadsPage() {
                           { key: 'phone', label: 'Phone' },
                           { key: 'email', label: 'Email' },
                           { key: 'source', label: 'Source' },
+                          { key: 'ad_name', label: 'Ad Name' },
+                          { key: 'campaign_name', label: 'Campaign Name' },
                           { key: 'status', label: 'Status' },
                           { key: 'interest_level', label: 'Lead Type' },
                           { key: 'requirement', label: 'Requirement' },

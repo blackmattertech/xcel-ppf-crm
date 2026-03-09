@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
+import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
 
 type FbSettings = {
   id: string
@@ -67,31 +68,49 @@ export async function GET(request: NextRequest) {
 
     const insightsResponse = await fetch(insightsUrl)
 
+    const insightsParsed = await safeParseJsonResponse<{
+      data?: unknown[]
+      error?: { message?: string }
+    }>(insightsResponse)
     if (!insightsResponse.ok) {
-      const errorData = await insightsResponse.json().catch(() => ({}))
-      console.error('Meta Ads API error:', errorData)
+      const errMsg = insightsParsed.ok && insightsParsed.data?.error?.message
+        ? insightsParsed.data.error.message
+        : 'Failed to fetch ad insights from Meta'
+      console.error('Meta Ads API error:', insightsParsed.ok ? insightsParsed.data : insightsParsed.error)
       return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to fetch ad insights from Meta' },
+        { error: errMsg },
         { status: insightsResponse.status }
       )
     }
-
-    const insightsData = await insightsResponse.json()
+    const insightsData = insightsParsed.ok && insightsParsed.data ? insightsParsed.data : { data: [] }
 
     // Fetch campaigns
     const campaignsUrl = `https://graph.facebook.com/v18.0/${accountId}/campaigns?fields=id,name,status,objective,created_time,updated_time&access_token=${accessToken}`
     const campaignsResponse = await fetch(campaignsUrl)
-    const campaignsData = campaignsResponse.ok ? await campaignsResponse.json() : { data: [] }
+    const campaignsParsed = campaignsResponse.ok
+      ? await safeParseJsonResponse<{ data?: unknown[] }>(campaignsResponse)
+      : null
+    const campaignsData =
+      campaignsResponse.ok && campaignsParsed?.ok && campaignsParsed.data
+        ? campaignsParsed.data
+        : { data: [] }
 
     // Fetch adsets
     const adsetsUrl = `https://graph.facebook.com/v18.0/${accountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget,start_time,end_time&access_token=${accessToken}`
     const adsetsResponse = await fetch(adsetsUrl)
-    const adsetsData = adsetsResponse.ok ? await adsetsResponse.json() : { data: [] }
+    const adsetsParsed = adsetsResponse.ok
+      ? await safeParseJsonResponse<{ data?: unknown[] }>(adsetsResponse)
+      : null
+    const adsetsData =
+      adsetsResponse.ok && adsetsParsed?.ok && adsetsParsed.data
+        ? adsetsParsed.data
+        : { data: [] }
 
     // Fetch active ads
     const adsUrl = `https://graph.facebook.com/v18.0/${accountId}/ads?fields=id,name,status,adset_id,campaign_id,creative&access_token=${accessToken}`
     const adsResponse = await fetch(adsUrl)
-    const adsData = adsResponse.ok ? await adsResponse.json() : { data: [] }
+    const adsParsed = adsResponse.ok ? await safeParseJsonResponse<{ data?: unknown[] }>(adsResponse) : null
+    const adsData = adsResponse.ok && adsParsed?.ok && adsParsed.data ? adsParsed.data : { data: [] }
 
     // Aggregate insights
     const totalInsights = insightsData.data?.[0] || {}

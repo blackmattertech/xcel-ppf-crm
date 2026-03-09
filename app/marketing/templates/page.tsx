@@ -1,18 +1,25 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FileText, RefreshCw, Loader2, BookOpen, Eye, Trash2, FileEdit, Upload } from 'lucide-react'
+import { FileText, RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload } from 'lucide-react'
 import { TemplatePreview } from '../_components/TemplatePreview'
-import type { WhatsAppTemplate, LibraryTemplate } from '../_lib/types'
+import type { WhatsAppTemplate } from '../_lib/types'
 import { getLanguageName, META_LANGUAGES } from '../_lib/utils'
 
+/** Parse response body as JSON without throwing on empty or invalid body (e.g. 502/504 HTML or empty). */
+async function parseJsonResponse(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text()
+  if (!text.trim()) return { error: res.statusText || 'Empty response' }
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    return { error: res.statusText || 'Invalid response' }
+  }
+}
+
 export default function TemplatesPage() {
-  const [templatesSubTab, setTemplatesSubTab] = useState<'my-templates' | 'library'>('my-templates')
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
   const [metaOnlyTemplates, setMetaOnlyTemplates] = useState<Array<{ name: string; language: string; category?: string }>>([])
-  const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([])
-  const [libraryLoading, setLibraryLoading] = useState(false)
-  const [libraryError, setLibraryError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [submittingId, setSubmittingId] = useState<string | null>(null)
@@ -38,6 +45,7 @@ export default function TemplatesPage() {
   const [discovering, setDiscovering] = useState(false)
   const [previewTemplate, setPreviewTemplate] = useState<WhatsAppTemplate | null>(null)
   const [previewMediaUrl, setPreviewMediaUrl] = useState<string | null>(null)
+  const [cardMediaUrls, setCardMediaUrls] = useState<Record<string, string>>({})
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -46,8 +54,8 @@ export default function TemplatesPage() {
   const fetchTemplates = useCallback(() => {
     setLoading(true)
     Promise.all([
-      fetch('/api/marketing/whatsapp/templates').then((res) => (res.ok ? res.json() : { templates: [] })),
-      fetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? res.json() : { templates: [] })),
+      fetch('/api/marketing/whatsapp/templates').then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
+      fetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
     ])
       .then(([local, meta]) => {
         setTemplates(local.templates || [])
@@ -65,7 +73,7 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     const t = previewTemplate as (WhatsAppTemplate & { header_media_id?: string | null }) | null
-    if (!t?.header_media_id) {
+    if (!t) {
       setPreviewMediaUrl(null)
       return
     }
@@ -74,54 +82,36 @@ export default function TemplatesPage() {
       setPreviewMediaUrl(url || null)
       return
     }
+    if (!t.header_media_id) {
+      setPreviewMediaUrl(null)
+      return
+    }
     setPreviewMediaUrl(null)
     fetch(`/api/marketing/whatsapp/media-url?id=${encodeURIComponent(t.header_media_id)}`, { credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => data?.url && setPreviewMediaUrl(data.url))
+      .then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve(null)))
+      .then((data) => data && !('error' in data) && data.url && setPreviewMediaUrl(String(data.url)))
       .catch(() => {})
   }, [previewTemplate?.id, previewTemplate?.header_media_id, previewTemplate?.header_media_url])
 
-  const fetchLibrary = useCallback(() => {
-    setLibraryLoading(true)
-    setLibraryError(null)
-    fetch('/api/marketing/whatsapp/templates/library')
-      .then((res) => (res.ok ? res.json() : { templates: [], error: 'Failed to load' }))
-      .then((data) => {
-        setLibraryTemplates(data.templates || [])
-        if (data.error) setLibraryError(data.error)
-      })
-      .catch(() => { setLibraryTemplates([]); setLibraryError('Could not load template library') })
-      .finally(() => setLibraryLoading(false))
-  }, [])
-
   useEffect(() => {
-    if (templatesSubTab === 'library') fetchLibrary()
-  }, [templatesSubTab, fetchLibrary])
-
-  const openFormFromLibrary = (lib: LibraryTemplate) => {
-    const cat = (lib.category?.toUpperCase() === 'UTILITY' || lib.category?.toUpperCase() === 'AUTHENTICATION')
-      ? lib.category.toUpperCase() as 'UTILITY' | 'AUTHENTICATION'
-      : 'MARKETING'
-    setFormName(`${lib.name}_copy`)
-    setFormCategory(cat)
-    setFormLanguage(lib.language)
-    setFormBody(lib.body_text)
-    setFormHeader(lib.header_text ?? '')
-    setFormFooter(lib.footer_text ?? '')
-    setFormHeaderFormat(lib.header_format ?? 'TEXT')
-    if (headerPreviewUrlRef.current) {
-      URL.revokeObjectURL(headerPreviewUrlRef.current)
-      headerPreviewUrlRef.current = null
-    }
-    setFormHeaderMediaUrl('')
-    setFormHeaderMediaId('')
-    setFormHeaderPreviewUrl('')
-    setFormButtons(lib.buttons?.length ? lib.buttons.map((b) => ({ type: b.type, text: b.text, example: b.example })) : [])
-    setFormError(null)
-    setEditingTemplateId(null)
-    setShowForm(true)
-    setTemplatesSubTab('my-templates')
-  }
+    const needsFetch = templates.filter(
+      (t) =>
+        (t.header_format === 'IMAGE' || t.header_format === 'VIDEO' || t.header_format === 'DOCUMENT') &&
+        (t as { header_media_id?: string }).header_media_id &&
+        !/^https?:\/\//i.test((t.header_media_url ?? '').trim())
+    )
+    if (needsFetch.length === 0) return
+    needsFetch.forEach((t) => {
+      const id = (t as { header_media_id?: string }).header_media_id
+      if (!id) return
+      fetch(`/api/marketing/whatsapp/media-url?id=${encodeURIComponent(id)}`, { credentials: 'include' })
+        .then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve(null)))
+        .then((data) => {
+          if (data && !('error' in data) && data.url) setCardMediaUrls((prev) => ({ ...prev, [t.id]: String(data!.url) }))
+        })
+        .catch(() => {})
+    })
+  }, [templates])
 
   const openFormForEdit = (t: WhatsAppTemplate) => {
     if (headerPreviewUrlRef.current) {
@@ -149,7 +139,7 @@ export default function TemplatesPage() {
   const handleDeleteTemplate = (id: string) => {
     setDeletingId(id)
     fetch(`/api/marketing/whatsapp/templates/${id}`, { method: 'DELETE', credentials: 'include' })
-      .then((res) => res.json())
+      .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) {
           alert(data.error)
@@ -167,7 +157,7 @@ export default function TemplatesPage() {
     setDiscoverResult(null)
     setPermissionError(null)
     fetch('/api/marketing/whatsapp/templates/sync', { method: 'POST' })
-      .then((res) => res.json())
+      .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) {
           const msg = data.detail ? `${data.error}\n\n${data.detail}` : data.error
@@ -186,8 +176,8 @@ export default function TemplatesPage() {
     setDiscovering(true)
     setDiscoverResult(null)
     fetch('/api/marketing/whatsapp/waba-discover')
-      .then((res) => res.json())
-      .then(setDiscoverResult)
+      .then((res) => parseJsonResponse(res))
+      .then((data) => setDiscoverResult(data as { wabaId?: string; wabaIds?: string[]; error?: string }))
       .finally(() => setDiscovering(false))
   }
 
@@ -195,7 +185,7 @@ export default function TemplatesPage() {
     setSubmittingId(id)
     setSubmitError(null)
     fetch(`/api/marketing/whatsapp/templates/${id}/submit`, { method: 'POST' })
-      .then((res) => res.json())
+      .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) {
           let msg = data.error
@@ -217,6 +207,10 @@ export default function TemplatesPage() {
   const handleCreateTemplate = (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
+    if (formHeaderFormat !== 'TEXT' && (!formHeaderMediaId?.trim() && !formHeaderMediaUrl?.trim())) {
+      setFormError('Upload an image/video/document for the header before saving. Click "Choose file" above.')
+      return
+    }
     setFormSaving(true)
     const payload: Record<string, unknown> = {
       name: formName.trim() || 'template',
@@ -244,7 +238,7 @@ export default function TemplatesPage() {
       body: JSON.stringify(payload),
       credentials: 'include',
     })
-      .then((res) => res.json())
+      .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) setFormError(data.error)
         else {
@@ -301,93 +295,7 @@ export default function TemplatesPage() {
         </div>
       </div>
 
-      <div className="flex gap-1 rounded-lg bg-gray-100 p-1 w-fit">
-        <button
-          type="button"
-          onClick={() => setTemplatesSubTab('my-templates')}
-          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            templatesSubTab === 'my-templates' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <FileText className="h-4 w-4" />
-          My templates
-        </button>
-        <button
-          type="button"
-          onClick={() => setTemplatesSubTab('library')}
-          className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            templatesSubTab === 'library' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <BookOpen className="h-4 w-4" />
-          Template library
-        </button>
-      </div>
-
-      {templatesSubTab === 'library' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <p className="text-sm text-gray-600">Templates in your account (from Meta). Preview and clone to edit as a new draft.</p>
-              <button
-                type="button"
-                onClick={fetchLibrary}
-                disabled={libraryLoading}
-                className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                {libraryLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Refresh
-              </button>
-            </div>
-            {libraryError && <p className="text-sm text-amber-600 mb-3">{libraryError}</p>}
-            {libraryLoading && libraryTemplates.length === 0 ? (
-              <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-[#ed1b24]" /></div>
-            ) : libraryTemplates.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">No templates in your account yet. Add templates in WhatsApp Manager or create custom ones in My templates.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {libraryTemplates.map((lib) => (
-                  <div key={`${lib.id}-${lib.name}-${lib.language}`} className="rounded-xl border border-gray-200 p-4 bg-gray-50/50 flex flex-col">
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div>
-                        <p className="font-medium text-gray-900">{lib.name}</p>
-                        <p className="text-xs text-gray-500">{getLanguageName(lib.language)} · {lib.category}</p>
-                        <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${
-                          lib.status === 'approved' || lib.status === 'active' ? 'bg-green-100 text-green-800' :
-                          lib.status === 'pending' ? 'bg-amber-100 text-amber-800' :
-                          lib.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {lib.status}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => openFormFromLibrary(lib)}
-                        className="shrink-0 rounded-lg border border-[#ed1b24] px-3 py-1.5 text-sm font-medium text-[#ed1b24] hover:bg-red-50"
-                      >
-                        Edit (clone)
-                      </button>
-                    </div>
-                    <div className="mt-auto">
-                      <TemplatePreview
-                        headerFormat={lib.header_format ?? 'TEXT'}
-                        headerText={lib.header_text ?? ''}
-                        headerMediaUrl=""
-                        body={lib.body_text}
-                        footer={lib.footer_text ?? ''}
-                        buttons={lib.buttons?.filter((b) => b.text) ?? []}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {templatesSubTab === 'my-templates' && (
-        <>
+      <>
           {showWabaHelp && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
               <h4 className="font-medium text-amber-900">Find your WhatsApp Business Account ID</h4>
@@ -434,7 +342,7 @@ export default function TemplatesPage() {
             </div>
           )}
 
-          {(showWabaHelp || permissionError || libraryError?.includes('100') || libraryError?.toLowerCase().includes('permission')) && (
+          {(showWabaHelp || permissionError) && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <h4 className="font-medium text-blue-900">If you see &quot;#100) Need permission on WhatsApp Business Account&quot;</h4>
@@ -526,11 +434,11 @@ export default function TemplatesPage() {
                             fd.append('file', f)
                             try {
                               const res = await fetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
-                              const data = await res.json()
+                              const data = await parseJsonResponse(res) as { handle?: string; id?: string; url?: string; error?: string }
                               if (data.handle || data.id) {
-                                const id = data.id ?? data.handle
-                                setFormHeaderMediaId(id)
-                                setFormHeaderMediaUrl(id)
+                                setFormHeaderMediaId(data.id ?? data.handle)
+                                if (data.url) setFormHeaderMediaUrl(data.url)
+                                else setFormHeaderMediaUrl(data.id ?? data.handle)
                               } else setFormError(data.error ?? 'Upload failed')
                             } catch (err) {
                               setFormError(err instanceof Error ? err.message : 'Upload failed')
@@ -598,64 +506,75 @@ export default function TemplatesPage() {
               <div className="p-6 text-center text-sm text-gray-500">No templates yet. Create one above or add in Meta WhatsApp dashboard, then click Sync.</div>
             ) : (
               <>
-                <ul className="divide-y divide-gray-100">
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {templates.map((t) => (
-                    <li key={t.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <span className="font-medium text-gray-900">{t.name}</span>
-                        <span className="text-gray-500 text-sm ml-2">({getLanguageName(t.language)})</span>
-                        <span className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-100">{t.category}</span>
-                        <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
+                    <div key={t.id} className="rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col overflow-hidden">
+                      <div className="p-3 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-white">
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{t.name}</p>
+                          <p className="text-xs text-gray-500">{getLanguageName(t.language)} · {t.category}</p>
+                        </div>
+                        <span className={`shrink-0 text-xs px-2 py-0.5 rounded ${
                           t.status === 'approved' ? 'bg-green-100 text-green-800' :
                           t.status === 'pending' ? 'bg-amber-100 text-amber-800' :
                           t.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
                         }`}>{t.status}</span>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button type="button" onClick={() => setPreviewTemplate(t)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5" title="Preview">
-                          <Eye className="h-4 w-4" /> Preview
+                      <div className="p-3 flex-1 min-h-0">
+                        <TemplatePreview
+                          headerFormat={(t.header_format as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') ?? 'TEXT'}
+                          headerText={t.header_text ?? ''}
+                          headerMediaUrl={t.header_media_url ?? ''}
+                          headerPreviewUrl={previewTemplate?.id === t.id ? (previewMediaUrl ?? undefined) : (cardMediaUrls[t.id] ?? undefined)}
+                          body={t.body_text}
+                          footer={t.footer_text ?? ''}
+                          buttons={t.buttons?.filter((b) => b?.text) ?? []}
+                        />
+                      </div>
+                      <div className="p-3 border-t border-gray-100 bg-white flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => setPreviewTemplate(t)} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1" title="Preview">
+                          <Eye className="h-3.5 w-3.5" /> Preview
                         </button>
                         {t.status === 'draft' && (
-                          <button type="button" onClick={() => openFormForEdit(t)} className="rounded-lg border border-[#ed1b24] px-3 py-1.5 text-sm font-medium text-[#ed1b24] hover:bg-red-50 inline-flex items-center gap-1.5" title="Edit">
-                            <FileEdit className="h-4 w-4" /> Edit
+                          <button type="button" onClick={() => openFormForEdit(t)} className="rounded-lg border border-[#ed1b24] px-2.5 py-1.5 text-xs font-medium text-[#ed1b24] hover:bg-red-50 inline-flex items-center gap-1" title="Edit">
+                            <FileEdit className="h-3.5 w-3.5" /> Edit
                           </button>
                         )}
                         {deleteConfirmId === t.id ? (
-                          <span className="flex items-center gap-2">
+                          <span className="flex items-center gap-1.5">
                             <span className="text-xs text-gray-600">Delete?</span>
-                            <button type="button" onClick={() => handleDeleteTemplate(t.id)} disabled={!!deletingId} className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50">{deletingId === t.id ? 'Deleting…' : 'Yes'}</button>
-                            <button type="button" onClick={() => setDeleteConfirmId(null)} className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">No</button>
+                            <button type="button" onClick={() => handleDeleteTemplate(t.id)} disabled={!!deletingId} className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50">{deletingId === t.id ? '…' : 'Yes'}</button>
+                            <button type="button" onClick={() => setDeleteConfirmId(null)} className="rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">No</button>
                           </span>
                         ) : (
-                          <button type="button" onClick={() => setDeleteConfirmId(t.id)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 inline-flex items-center gap-1.5" title="Delete">
-                            <Trash2 className="h-4 w-4" /> Delete
+                          <button type="button" onClick={() => setDeleteConfirmId(t.id)} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 inline-flex items-center gap-1" title="Delete">
+                            <Trash2 className="h-3.5 w-3.5" /> Delete
                           </button>
                         )}
                         {t.status === 'draft' && (
-                          <button type="button" onClick={() => handleSubmitToMeta(t.id)} disabled={!!submittingId} className="rounded-lg border border-[#ed1b24] px-3 py-1.5 text-sm font-medium text-[#ed1b24] hover:bg-red-50 disabled:opacity-50">
-                            {submittingId === t.id ? 'Submitting…' : 'Submit for review'}
+                          <button type="button" onClick={() => handleSubmitToMeta(t.id)} disabled={!!submittingId} className="rounded-lg border border-[#ed1b24] px-2.5 py-1.5 text-xs font-medium text-[#ed1b24] hover:bg-red-50 disabled:opacity-50">
+                            {submittingId === t.id ? '…' : 'Submit'}
                           </button>
                         )}
                       </div>
-                    </li>
+                    </div>
                   ))}
-                </ul>
+                </div>
                 {metaOnlyTemplates.length > 0 && (
                   <>
                     <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">From Meta (created in WhatsApp dashboard)</div>
-                    <ul className="divide-y divide-gray-100">
+                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                       {metaOnlyTemplates.map((m) => (
-                        <li key={`${m.name}:${m.language}`} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                        <div key={`${m.name}:${m.language}`} className="rounded-xl border border-gray-200 bg-gray-50/50 p-4 flex flex-col justify-between">
                           <div>
-                            <span className="font-medium text-gray-900">{m.name}</span>
-                            <span className="text-gray-500 text-sm ml-2">({getLanguageName(m.language)})</span>
-                            {m.category && <span className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-100">{m.category}</span>}
-                            <span className="ml-2 text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">approved</span>
+                            <p className="font-medium text-gray-900">{m.name}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{getLanguageName(m.language)}{m.category ? ` · ${m.category}` : ''}</p>
+                            <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">approved</span>
                           </div>
-                          <span className="text-xs text-gray-400">Use in Bulk WhatsApp</span>
-                        </li>
+                          <p className="text-xs text-gray-400 mt-3">Use in Bulk WhatsApp</p>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
                   </>
                 )}
               </>
@@ -683,7 +602,6 @@ export default function TemplatesPage() {
             </div>
           )}
         </>
-      )}
     </div>
   )
 }

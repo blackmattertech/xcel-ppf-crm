@@ -603,6 +603,8 @@ export interface CreateTemplateAtMetaResult {
   id?: string
   status?: string
   error?: string
+  /** Raw Meta API response for debugging (when error) */
+  metaResponse?: unknown
 }
 
 /**
@@ -627,6 +629,7 @@ export async function createMessageTemplateAtMeta(
     name: input.name.replace(/\s/g, '_').toLowerCase().replace(/[^a-z0-9_]/g, ''),
     language: input.language.replace(/-/g, '_'),
     category: input.category.toLowerCase(),
+    allow_category_change: true,
     components: input.components.map((c) => {
       const comp: Record<string, unknown> = { type: (c.type as string).toLowerCase() }
       const fmt = c.format as string | undefined
@@ -660,13 +663,22 @@ export async function createMessageTemplateAtMeta(
   const data = await res.json().catch(() => ({})) as {
     id?: string
     status?: string
-    error?: { message: string; code?: number }
+    error?: {
+      message: string
+      code?: number
+      error_user_msg?: string
+      error_user_title?: string
+    }
   }
 
   if (!res.ok) {
-    const rawMessage = data?.error?.message ?? `HTTP ${res.status}`
-    const code = data?.error?.code
+    const err = data?.error
+    const rawMessage = err?.message ?? `HTTP ${res.status}`
+    const code = err?.code
     const codeStr = code != null ? ` (Meta code ${code})` : ''
+    const userMsg = typeof err?.error_user_msg === 'string' && err.error_user_msg.trim()
+      ? err.error_user_msg.trim()
+      : null
     if (code === 100 || /invalid parameter/i.test(rawMessage)) {
       const debugPayload = {
         name: body.name,
@@ -683,7 +695,9 @@ export async function createMessageTemplateAtMeta(
       console.warn('[WhatsApp createMessageTemplateAtMeta] Invalid parameter (100) – payload summary:', JSON.stringify(debugPayload))
     }
     let hint = ''
-    if (/invalid parameter/i.test(rawMessage)) {
+    if (userMsg) {
+      hint = ` ${userMsg}`
+    } else if (/invalid parameter/i.test(rawMessage)) {
       hint =
         ' Common causes: (1) Image/Video/Document header — use a Text header, or ensure media URL is uploaded. (2) Button URL/phone/code example missing or invalid. (3) Template name (lowercase, underscores only) or language code. (4) Body/header has invalid variable syntax (use {{1}}, {{2}}).'
     } else if (/does not exist|cannot be loaded due to missing permissions|does not support this operation/i.test(rawMessage)) {
@@ -693,6 +707,7 @@ export async function createMessageTemplateAtMeta(
     return {
       success: false,
       error: rawMessage + codeStr + hint,
+      metaResponse: data,
     }
   }
 
@@ -1050,6 +1065,38 @@ export function getTemplateBodyVariableCount(bodyText: string): number {
   return indices.size === 0 ? 0 : Math.max(...indices)
 }
 
+/**
+ * Validate template text for Meta: variables must be {{1}}, {{2}}... sequential (no gaps).
+ * Variables cannot be at the start or end of the template.
+ * Returns error message or null if valid.
+ */
+export function validateTemplateVariableSyntax(text: string, label: string): string | null {
+  if (!text?.trim()) return null
+  const trimmed = text.trim()
+  const matches = trimmed.match(/\{\{(\d+)\}\}/g)
+  if (!matches) return null
+  if (/^\{\{\d+\}\}/.test(trimmed)) {
+    return `${label}: Variables cannot be at the start. Add text before the first {{1}}. Example: "Hello {{1}}, welcome!"`
+  }
+  if (/\{\{\d+\}\}\s*$/.test(trimmed)) {
+    return `${label}: Variables cannot be at the end. Add text after the last variable. Example: "Hello {{1}}, thanks for your order!"`
+  }
+  const indices = [...new Set(matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10)))].sort((a, b) => a - b)
+  const max = Math.max(...indices)
+  for (let i = 1; i <= max; i++) {
+    if (!indices.includes(i)) {
+      return `${label} has {{${max}}} but is missing {{${i}}}. Use sequential variables: {{1}}, {{2}}, {{3}}...`
+    }
+  }
+  if (/\t|\n|\r/.test(text)) {
+    return `${label} must not contain tabs or newlines`
+  }
+  if (/\s{5,}/.test(text)) {
+    return `${label} must not have more than 4 consecutive spaces`
+  }
+  return null
+}
+
 export interface SendTemplateResult {
   success: boolean
   messageId?: string
@@ -1179,6 +1226,9 @@ export async function sendTemplateMessage(
     }
     if (data?.error?.code === 100 && /media attachment ID|template.*parameters/i.test(errMsg)) {
       errMsg += ' When sending, use a public image URL (https://...) in the template’s header_media_url. The upload handle is only for template creation, not for sending.'
+    }
+    if (data?.error?.code === 132000 || /number of parameters does not match|parameter.*does not match/i.test(errMsg)) {
+      errMsg += ' Send exactly the number of body parameters the template expects ({{1}}, {{2}}, etc.). For media header, add 1 header param (URL).'
     }
     if (data?.error?.code === 132012 || /parameter format does not match|format mismatch.*expected (IMAGE|VIDEO|DOCUMENT)/i.test(errMsg)) {
       errMsg += ' This template has a media header (IMAGE/VIDEO/DOCUMENT). Pass one URL or media ID in headerParameters; the app now sends it with the correct type.'
