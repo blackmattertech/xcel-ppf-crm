@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FileText, RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload } from 'lucide-react'
+import Link from 'next/link'
+import { FileText, RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload, Plus } from 'lucide-react'
 import { TemplatePreview } from '../_components/TemplatePreview'
 import type { WhatsAppTemplate } from '../_lib/types'
 import { getLanguageName, META_LANGUAGES } from '../_lib/utils'
@@ -51,11 +52,13 @@ export default function TemplatesPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [permissionError, setPermissionError] = useState<string | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'UTILITY' | 'MARKETING' | 'AUTHENTICATION'>('ALL')
 
   const fetchTemplates = useCallback(() => {
     setLoading(true)
+    const categoryParam = categoryFilter !== 'ALL' ? `?category=${encodeURIComponent(categoryFilter)}` : ''
     Promise.all([
-      fetch('/api/marketing/whatsapp/templates').then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
+      fetch(`/api/marketing/whatsapp/templates${categoryParam}`).then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
       fetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
     ])
       .then(([local, meta]) => {
@@ -63,14 +66,17 @@ export default function TemplatesPage() {
         setTemplates(localTemplates as WhatsAppTemplate[])
         const localSet = new Set(localTemplates.map((t: WhatsAppTemplate) => `${t.name}:${t.language}`))
         const metaTemplates = Array.isArray(meta.templates) ? meta.templates : []
-        const metaOnly = metaTemplates.filter(
-          (m: { name: string; language: string }) => !localSet.has(`${m.name}:${m.language}`)
+        let metaOnly = metaTemplates.filter(
+          (m: { name: string; language: string; category?: string }) => !localSet.has(`${m.name}:${m.language}`)
         )
+        if (categoryFilter !== 'ALL') {
+          metaOnly = metaOnly.filter((m: { category?: string }) => (m.category ?? '').toUpperCase() === categoryFilter)
+        }
         setMetaOnlyTemplates(metaOnly)
       })
       .catch(() => setTemplates([]))
       .finally(() => setLoading(false))
-  }, [])
+  }, [categoryFilter])
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
 
@@ -268,10 +274,33 @@ export default function TemplatesPage() {
       .finally(() => setFormSaving(false))
   }
 
+  const categoryTabs: Array<{ value: 'ALL' | 'UTILITY' | 'MARKETING' | 'AUTHENTICATION'; label: string }> = [
+    { value: 'ALL', label: 'All' },
+    { value: 'UTILITY', label: 'Utility' },
+    { value: 'MARKETING', label: 'Marketing' },
+    { value: 'AUTHENTICATION', label: 'Authentication' },
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+            {categoryTabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setCategoryFilter(tab.value)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  categoryFilter === tab.value
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={handleSync}
@@ -281,15 +310,21 @@ export default function TemplatesPage() {
             {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Sync status from Meta
           </button>
+          <Link
+            href="/marketing/templates/create"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e]"
+          >
+            <Plus className="h-4 w-4" /> Create template
+          </Link>
           <button
             type="button"
             onClick={() => {
               if (showForm) setShowForm(false)
               else { setEditingTemplateId(null); setShowForm(true) }
             }}
-            className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e]"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            {showForm ? 'Cancel' : 'Create template'}
+            {showForm ? 'Cancel' : 'Quick create (legacy)'}
           </button>
           <button
             type="button"
@@ -584,6 +619,9 @@ export default function TemplatesPage() {
                         />
                       </div>
                       <div className="p-3 border-t border-gray-100 bg-white flex flex-wrap items-center gap-2">
+                        <Link href={`/marketing/templates/${t.id}`} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1" title="View details">
+                          View
+                        </Link>
                         <button type="button" onClick={() => setPreviewTemplate(t)} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1" title="Preview">
                           <Eye className="h-3.5 w-3.5" /> Preview
                         </button>

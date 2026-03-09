@@ -3,9 +3,10 @@ import { saveIncomingMessage, updateMessageStatus } from '@/backend/services/wha
 import { markMessageAsRead } from '@/backend/services/whatsapp.service'
 import { getWhatsAppConfigByWabaId } from '@/backend/services/whatsapp-config.service'
 import { getWhatsAppConfig } from '@/backend/services/whatsapp.service'
+import { processTemplateWebhook } from '@/backend/services/whatsapp-template-webhook.service'
 import { createServiceClient } from '@/lib/supabase/service'
 
-/** Meta WhatsApp webhook: GET for verification, POST for incoming messages and status updates. */
+/** Meta WhatsApp webhook: GET for verification, POST for incoming messages, status updates, and template events. */
 
 function normalizePhone(phone: string): string {
   const d = phone.replace(/\D/g, '')
@@ -32,6 +33,7 @@ export async function POST(request: NextRequest) {
       entry?: Array<{
         id?: string
         changes?: Array<{
+          field?: string
           value?: {
             messages?: Array<{ from: string; id: string; timestamp: string; type: string; text?: { body: string } }>
             statuses?: Array<{
@@ -41,6 +43,12 @@ export async function POST(request: NextRequest) {
               timestamp: string
               errors?: Array<{ code: number; title: string; message?: string }>
             }>
+            event?: string
+            message_template_id?: string
+            template_id?: string
+            status?: string
+            rejection_reason?: string
+            correct_category?: string
           }
         }>
       }>
@@ -50,13 +58,24 @@ export async function POST(request: NextRequest) {
     }
 
     for (const entry of body.entry) {
-      const wabaId = entry.id
+      const wabaId = entry.id ?? ''
       const waConfig = wabaId ? await getWhatsAppConfigByWabaId(wabaId) : null
       const config = waConfig ?? getWhatsAppConfig()
       const changes = entry.changes ?? []
       for (const change of changes) {
         const value = change.value
         if (!value) continue
+
+        // Template status/category updates (message_templates field)
+        if (change.field === 'message_templates' && value.event) {
+          const eventType = (value.event as string) || 'message_template_status_update'
+          processTemplateWebhook({
+            wabaId,
+            eventType,
+            payload: value as Record<string, unknown>,
+          }).catch((err) => console.warn('[webhooks/whatsapp] processTemplateWebhook failed:', err))
+          continue
+        }
 
         // Handle status updates (sent, delivered, read, failed)
         const statuses = value.statuses ?? []

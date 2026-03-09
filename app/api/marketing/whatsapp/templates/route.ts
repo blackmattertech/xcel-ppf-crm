@@ -34,8 +34,12 @@ export async function GET(request: NextRequest) {
   if ('error' in authResult) return authResult.error
 
   const status = request.nextUrl.searchParams.get('status') as 'draft' | 'pending' | 'approved' | 'rejected' | null
+  const category = request.nextUrl.searchParams.get('category') as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION' | null
+  const filters: { status?: typeof status; category?: typeof category } = {}
+  if (status) filters.status = status
+  if (category) filters.category = category
   try {
-    const templates = await listTemplates(status ? { status } : undefined)
+    const templates = await listTemplates(Object.keys(filters).length ? filters : undefined)
     return NextResponse.json({ templates })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to list templates'

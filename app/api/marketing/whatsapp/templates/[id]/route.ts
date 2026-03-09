@@ -9,6 +9,10 @@ import {
   type TemplateSubCategory,
 } from '@/backend/services/whatsapp-template.service'
 import { deleteMessageTemplateOnMeta } from '@/backend/services/whatsapp.service'
+import {
+  getStatusHistoryByTemplateId,
+  getWebhookEventsByMetaTemplateId,
+} from '@/backend/services/whatsapp-template-repository.service'
 import { z } from 'zod'
 
 const buttonSchema = z.object({
@@ -43,7 +47,22 @@ export async function GET(
   if (!template) {
     return NextResponse.json({ error: 'Template not found' }, { status: 404 })
   }
-  return NextResponse.json({ template })
+  let statusHistory: unknown[] = []
+  let webhookEvents: unknown[] = []
+  try {
+    statusHistory = await getStatusHistoryByTemplateId(id)
+    const metaId = (template as { meta_id?: string | null }).meta_id ?? (template as { meta_template_id?: string | null }).meta_template_id
+    if (metaId) {
+      webhookEvents = await getWebhookEventsByMetaTemplateId(metaId)
+    }
+  } catch {
+    // optional: tables may not exist yet
+  }
+  return NextResponse.json({
+    template,
+    statusHistory,
+    webhookEvents,
+  })
 }
 
 export async function PATCH(

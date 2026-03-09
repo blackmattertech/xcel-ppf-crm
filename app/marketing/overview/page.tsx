@@ -307,14 +307,14 @@ export default function OverviewPage() {
               {/* KPI Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
                 {[
-                  { label: 'Spend', value: metaAdsOverview.accountSummary?.spend ?? 0, format: (v: number) => `$${v.toFixed(2)}`, icon: DollarSign, color: 'from-rose-500 to-rose-600' },
+                  { label: 'Spend', value: metaAdsOverview.accountSummary?.spend ?? 0, format: (v: number) => `₹${v.toFixed(2)}`, icon: DollarSign, color: 'from-rose-500 to-rose-600' },
                   { label: 'Impressions', value: metaAdsOverview.accountSummary?.impressions ?? 0, format: (v: number) => v.toLocaleString(), icon: Eye, color: 'from-blue-500 to-blue-600' },
                   { label: 'Reach', value: metaAdsOverview.accountSummary?.reach ?? 0, format: (v: number) => v.toLocaleString(), icon: Users, color: 'from-violet-500 to-violet-600' },
                   { label: 'Clicks', value: metaAdsOverview.accountSummary?.clicks ?? 0, format: (v: number) => v.toLocaleString(), icon: MousePointer, color: 'from-cyan-500 to-cyan-600' },
                   { label: 'Leads', value: metaAdsOverview.accountSummary?.leads ?? 0, format: (v: number) => v.toLocaleString(), icon: Target, color: 'from-emerald-500 to-emerald-600' },
-                  { label: 'CPM', value: metaAdsOverview.accountSummary?.cpm ?? 0, format: (v: number) => `$${v.toFixed(2)}`, icon: Zap, color: 'from-amber-500 to-amber-600' },
+                  { label: 'CPM', value: metaAdsOverview.accountSummary?.cpm ?? 0, format: (v: number) => `₹${v.toFixed(2)}`, icon: Zap, color: 'from-amber-500 to-amber-600' },
                   { label: 'CTR', value: metaAdsOverview.accountSummary?.ctr ?? 0, format: (v: number) => `${v.toFixed(2)}%`, icon: Percent, color: 'from-indigo-500 to-indigo-600' },
-                  { label: 'CPL', value: metaAdsOverview.accountSummary?.cpl ?? 0, format: (v: number) => v > 0 ? `$${v.toFixed(2)}` : '—', icon: DollarSign, color: 'from-teal-500 to-teal-600' },
+                  { label: 'CPL', value: metaAdsOverview.accountSummary?.cpl ?? 0, format: (v: number) => v > 0 ? `₹${v.toFixed(2)}` : '—', icon: DollarSign, color: 'from-teal-500 to-teal-600' },
                 ].map((kpi, i) => (
                   <motion.div
                     key={kpi.label}
@@ -362,10 +362,10 @@ export default function OverviewPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                         <XAxis dataKey="shortDate" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
                         <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} />
-                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v}`} />
                         <Tooltip
                           contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                          formatter={(value, name) => { const n = String(name ?? ''); return [name === 'spend' ? `$${Number(value ?? 0).toFixed(2)}` : Number(value ?? 0).toLocaleString(), n.charAt(0).toUpperCase() + n.slice(1)]; }}
+                          formatter={(value, name) => { const n = String(name ?? ''); return [name === 'spend' ? `₹${Number(value ?? 0).toFixed(2)}` : Number(value ?? 0).toLocaleString(), n.charAt(0).toUpperCase() + n.slice(1)]; }}
                           labelFormatter={(_, payload) => payload?.[0]?.payload?.date}
                         />
                         <Legend />
@@ -466,7 +466,7 @@ export default function OverviewPage() {
                             <td className="px-6 py-3.5 text-right font-medium text-gray-800">{c.reach.toLocaleString()}</td>
                             <td className="px-6 py-3.5 text-right font-medium text-gray-800">{c.formsFilled.toLocaleString()}</td>
                             <td className="px-6 py-3.5 text-right font-medium text-gray-800">{c.crmLeads.toLocaleString()}</td>
-                            <td className="px-6 py-3.5 text-right font-bold text-gray-900">${parseFloat(c.spend || '0').toFixed(2)}</td>
+                            <td className="px-6 py-3.5 text-right font-bold text-gray-900">₹{parseFloat(c.spend || '0').toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>

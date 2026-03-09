@@ -147,6 +147,35 @@ See `database/migrations/` for complete schema. Key tables:
 2. Set webhook verify token in environment variables
 3. Webhook will automatically parse leads and assign them via round-robin
 
+## WhatsApp Template Management
+
+Template creation, validation, submission, and status tracking for the Meta WhatsApp Business Platform.
+
+### Configuration
+
+- **WABA ID & token**: Configure in Settings → Integrations (WhatsApp), or set in `.env.local`:
+  - `WHATSAPP_BUSINESS_ACCOUNT_ID` – WhatsApp Business Account ID (required for templates)
+  - `WHATSAPP_ACCESS_TOKEN` – Meta access token with `whatsapp_business_management` and `whatsapp_business_messaging`
+- **Webhook verification**: `META_WEBHOOK_VERIFY_TOKEN` or `WHATSAPP_WEBHOOK_VERIFY_TOKEN` for GET verification
+
+### Running locally
+
+1. Run `npm run dev` and open Marketing → Message templates.
+2. Use "Create template" for the full flow (category, subtype, name, language, content, submit).
+3. Templates are submitted to Meta for review; only **APPROVED** templates are sendable.
+
+### Testing in sandbox
+
+Use a Meta test WABA; new templates typically return `PENDING` until reviewed. Sync status via "Sync status from Meta" or the cron endpoint.
+
+### Webhook subscriptions
+
+Subscribe to **message_templates** (or template status updates) in Meta App Dashboard → Webhooks so template approval/rejection and category updates are ingested. Template events are processed by `POST /api/webhooks/whatsapp` and update local template status and history.
+
+### Template sync cron
+
+Optional: call `GET` or `POST /api/cron/whatsapp-template-sync` (e.g. with `Authorization: Bearer <CRON_SECRET>`) to poll Meta and reconcile template status. Set `CRON_SECRET` in env to protect the route.
+
 ## License
 
 Private - All rights reserved

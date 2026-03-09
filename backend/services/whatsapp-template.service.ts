@@ -112,10 +112,11 @@ export async function getTemplateById(id: string): Promise<WhatsAppTemplateRow |
   return data as WhatsAppTemplateRow | null
 }
 
-export async function listTemplates(filters?: { status?: TemplateStatus }): Promise<WhatsAppTemplateRow[]> {
+export async function listTemplates(filters?: { status?: TemplateStatus; category?: TemplateCategory }): Promise<WhatsAppTemplateRow[]> {
   const supabase = createServiceClient()
   let q = supabase.from('whatsapp_templates').select('*').order('updated_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  if (filters?.category) q = q.eq('category', filters.category)
   const { data, error } = await q
   if (error) {
     if (isTableMissingError(error)) return []
