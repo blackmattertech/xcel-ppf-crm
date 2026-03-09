@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       )
     }
     const tokenData = tokenParsed.data
-    const accessToken = tokenData.access_token
+    const accessToken = tokenData.access_token!
 
     // Get token expiration
     const expiresIn = tokenData.expires_in

@@ -58,9 +58,11 @@ export default function TemplatesPage() {
       fetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
     ])
       .then(([local, meta]) => {
-        setTemplates(local.templates || [])
-        const localSet = new Set((local.templates || []).map((t: WhatsAppTemplate) => `${t.name}:${t.language}`))
-        const metaOnly = (meta.templates || []).filter(
+        const localTemplates = Array.isArray(local.templates) ? local.templates : []
+        setTemplates(localTemplates as WhatsAppTemplate[])
+        const localSet = new Set(localTemplates.map((t: WhatsAppTemplate) => `${t.name}:${t.language}`))
+        const metaTemplates = Array.isArray(meta.templates) ? meta.templates : []
+        const metaOnly = metaTemplates.filter(
           (m: { name: string; language: string }) => !localSet.has(`${m.name}:${m.language}`)
         )
         setMetaOnlyTemplates(metaOnly)
@@ -188,7 +190,7 @@ export default function TemplatesPage() {
       .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) {
-          let msg = data.error
+          let msg = String(data.error ?? '')
           if (data.detail) msg += `\n\n${data.detail}`
           if (data.currentStatus) msg += `\n(Current status: ${data.currentStatus})`
           if (data.reason === 'status_not_draft') msg += '\n\nOnly draft templates can be submitted.'
@@ -240,7 +242,7 @@ export default function TemplatesPage() {
     })
       .then((res) => parseJsonResponse(res))
       .then((data) => {
-        if (data.error) setFormError(data.error)
+        if (data.error) setFormError(String(data.error))
         else {
           if (headerPreviewUrlRef.current) {
             URL.revokeObjectURL(headerPreviewUrlRef.current)
@@ -436,9 +438,10 @@ export default function TemplatesPage() {
                               const res = await fetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
                               const data = await parseJsonResponse(res) as { handle?: string; id?: string; url?: string; error?: string }
                               if (data.handle || data.id) {
-                                setFormHeaderMediaId(data.id ?? data.handle)
+                                const mediaId = data.id ?? data.handle ?? ''
+                                setFormHeaderMediaId(mediaId)
                                 if (data.url) setFormHeaderMediaUrl(data.url)
-                                else setFormHeaderMediaUrl(data.id ?? data.handle)
+                                else setFormHeaderMediaUrl(mediaId)
                               } else setFormError(data.error ?? 'Upload failed')
                             } catch (err) {
                               setFormError(err instanceof Error ? err.message : 'Upload failed')

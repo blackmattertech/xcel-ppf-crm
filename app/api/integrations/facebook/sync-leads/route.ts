@@ -113,7 +113,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    const pagesParsed = await safeParseJsonResponse<{ data?: unknown[] }>(pagesRes)
+    type FbPage = { id: string; name?: string; access_token?: string }
+    const pagesParsed = await safeParseJsonResponse<{ data?: FbPage[] }>(pagesRes)
     const pages = pagesParsed.ok && pagesParsed.data?.data ? pagesParsed.data.data : []
     if (!pages.length) {
       return NextResponse.json(
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use specified page or first page
-    const targetPage = pageId ? pages.find((p: { id: string }) => p.id === pageId) : pages[0]
+    const targetPage = pageId ? pages.find((p) => p.id === pageId) : pages[0]
     if (!targetPage) {
       return NextResponse.json(
         { error: 'Selected Facebook page not found. Please reconnect your account.' },
@@ -137,7 +138,8 @@ export async function POST(request: NextRequest) {
       `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?fields=id,name&access_token=${pageAccessToken}`
     )
 
-    const formsParsed = await safeParseJsonResponse<{ data?: unknown[]; error?: { message?: string } }>(formsRes)
+    type FbLeadForm = { id: string; name?: string }
+    const formsParsed = await safeParseJsonResponse<{ data?: FbLeadForm[]; error?: { message?: string } }>(formsRes)
     if (!formsRes.ok) {
       const errMsg = formsParsed.ok && formsParsed.data?.error?.message
         ? formsParsed.data.error.message

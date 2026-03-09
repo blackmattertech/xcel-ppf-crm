@@ -10,6 +10,19 @@ type FbSettings = {
   expires_at: string | null
 }
 
+type MetaInsights = {
+  actions?: Array<{ action_type: string; value: string }>
+  impressions?: string
+  clicks?: string
+  spend?: string
+  ctr?: string
+  cpc?: string
+  cpp?: string
+  cpm?: string
+  reach?: string
+  frequency?: string
+}
+
 /**
  * GET /api/integrations/facebook/ads
  * Fetch ad performance data from Meta Ads
@@ -113,7 +126,7 @@ export async function GET(request: NextRequest) {
     const adsData = adsResponse.ok && adsParsed?.ok && adsParsed.data ? adsParsed.data : { data: [] }
 
     // Aggregate insights
-    const totalInsights = insightsData.data?.[0] || {}
+    const totalInsights = (insightsData.data?.[0] || {}) as MetaInsights
     const actions = totalInsights.actions || []
 
     // Extract lead actions
