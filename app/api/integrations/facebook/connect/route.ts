@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       'leads_retrieval',
     ].join(',')
 
-    const facebookAuthUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&state=${encodeURIComponent(state)}&response_type=code`
+    const facebookAuthUrl = `https://www.facebook.com/v25.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&state=${encodeURIComponent(state)}&response_type=code`
 
     return NextResponse.json({ authUrl: facebookAuthUrl })
   } catch (error) {

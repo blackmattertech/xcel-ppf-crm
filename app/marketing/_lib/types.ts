@@ -42,6 +42,7 @@ export interface WhatsAppTemplate {
   name: string
   language: string
   category: string
+  sub_category?: string | null
   body_text: string
   header_text: string | null
   footer_text: string | null

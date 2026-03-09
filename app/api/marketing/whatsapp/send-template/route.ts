@@ -103,6 +103,18 @@ export async function POST(request: NextRequest) {
     (m) => m.name === templateName && norm(m.language ?? '') === norm(templateLanguage)
   )
   const existsInMeta = !!metaTemplate
+  // Meta returns "accepted" but won't deliver if template is not APPROVED
+  const approvedStatuses = ['approved', 'active']
+  if (metaTemplate && !approvedStatuses.includes((metaTemplate.status ?? '').toLowerCase())) {
+    return NextResponse.json(
+      {
+        error: `Template "${templateName}" is not approved yet. Current status: ${metaTemplate.status}. Meta accepts the send request but will not deliver until the template is approved. Check WhatsApp Manager → Message templates and wait for approval.`,
+        code: 'TEMPLATE_NOT_APPROVED',
+        status: metaTemplate.status,
+      },
+      { status: 400 }
+    )
+  }
   if (!existsInMeta) {
     // Check Meta list for a similar template name (e.g. welcome vs welcom)
     const similar = metaList.templates?.find((m) => templateNameSimilar(templateName, m.name))

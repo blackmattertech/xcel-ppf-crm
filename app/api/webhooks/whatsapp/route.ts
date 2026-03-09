@@ -34,7 +34,13 @@ export async function POST(request: NextRequest) {
         changes?: Array<{
           value?: {
             messages?: Array<{ from: string; id: string; timestamp: string; type: string; text?: { body: string } }>
-            statuses?: Array<{ id: string; status: string; recipient_id?: string; timestamp: string }>
+            statuses?: Array<{
+              id: string
+              status: string
+              recipient_id?: string
+              timestamp: string
+              errors?: Array<{ code: number; title: string; message?: string }>
+            }>
           }
         }>
       }>
@@ -52,11 +58,20 @@ export async function POST(request: NextRequest) {
         const value = change.value
         if (!value) continue
 
-        // Handle status updates (sent, delivered, read)
+        // Handle status updates (sent, delivered, read, failed)
         const statuses = value.statuses ?? []
         for (const st of statuses) {
           const status = String(st.status ?? '').toLowerCase()
-          if (['sent', 'delivered', 'read'].includes(status)) {
+          if (status === 'failed') {
+            // Meta sends delivery failure reason here - log for debugging
+            const errs = (st as { errors?: Array<{ code: number; title: string; message?: string }> }).errors ?? []
+            console.error('[webhooks/whatsapp] Message delivery FAILED:', {
+              messageId: st.id,
+              recipientId: st.recipient_id,
+              errors: errs,
+              hint: 'Common: 131047=user not opted in / 24h window closed, 131026=template rejected, 131031=recipient blocked',
+            })
+          } else if (['sent', 'delivered', 'read'].includes(status)) {
             updateMessageStatus(st.id, status as StatusValue).catch((err) =>
               console.warn('[webhooks/whatsapp] updateMessageStatus failed:', err)
             )

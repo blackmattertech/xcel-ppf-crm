@@ -7,6 +7,8 @@ import { createServiceClient } from '@/lib/supabase/service'
 
 export type TemplateStatus = 'draft' | 'pending' | 'approved' | 'rejected'
 export type TemplateCategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+/** Meta sub-category for UTILITY templates. ORDER_* are predefined formats for order-related messages. */
+export type TemplateSubCategory = 'ORDER_DETAILS' | 'ORDER_STATUS' | 'RICH_ORDER_STATUS' | null
 
 export interface TemplateButton {
   type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'COPY_CODE'
@@ -19,6 +21,7 @@ export interface WhatsAppTemplateRow {
   name: string
   language: string
   category: TemplateCategory
+  sub_category?: TemplateSubCategory
   body_text: string
   header_text: string | null
   footer_text: string | null
@@ -39,6 +42,7 @@ export interface CreateTemplateInput {
   name: string
   language?: string
   category: TemplateCategory
+  sub_category?: TemplateSubCategory
   body_text: string
   header_text?: string | null
   footer_text?: string | null
@@ -73,6 +77,7 @@ export async function createTemplate(input: CreateTemplateInput, userId: string)
     name,
     language,
     category: input.category,
+    sub_category: input.sub_category ?? null,
     body_text: input.body_text,
     header_text: input.header_text || null,
     footer_text: input.footer_text || null,
@@ -346,6 +351,7 @@ export async function updateTemplate(id: string, input: CreateTemplateInput): Pr
     name,
     language,
     category: input.category,
+    sub_category: input.sub_category ?? null,
     body_text: input.body_text,
     header_text: input.header_text || null,
     footer_text: input.footer_text || null,

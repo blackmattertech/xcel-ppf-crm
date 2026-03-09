@@ -218,11 +218,13 @@ export async function POST(
     })
   }
 
+  const subCategory = (template as { sub_category?: string | null }).sub_category
   let result = await createMessageTemplateAtMeta(
     {
       name: template.name,
       language: template.language,
       category: template.category as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION',
+      ...(template.category === 'UTILITY' && subCategory && { sub_category: subCategory as 'ORDER_DETAILS' | 'ORDER_STATUS' | 'RICH_ORDER_STATUS' }),
       components,
     },
     wabaConfig
@@ -244,6 +246,7 @@ export async function POST(
           name: template.name,
           language: template.language,
           category: template.category as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION',
+          ...(template.category === 'UTILITY' && subCategory && { sub_category: subCategory as 'ORDER_DETAILS' | 'ORDER_STATUS' | 'RICH_ORDER_STATUS' }),
           components: retryComponents,
         },
         wabaConfig

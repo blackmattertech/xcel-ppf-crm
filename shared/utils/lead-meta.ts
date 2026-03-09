@@ -101,6 +101,72 @@ export function getCarModelFromMeta(metaData: Record<string, any> | null): strin
 }
 
 /**
+ * Extract city from lead meta_data.
+ */
+export function getCityFromMeta(metaData: Record<string, any> | null): string {
+  if (!metaData || typeof metaData !== 'object') return ''
+  const directKeys = ['city', 'City', 'location', 'Location']
+  for (const key of directKeys) {
+    const val = metaData[key]
+    if (val && typeof val === 'string') return String(val).trim()
+  }
+  const fieldData = metaData.field_data
+  if (Array.isArray(fieldData)) {
+    const cityFields = ['city', 'location', 'your city']
+    for (const field of fieldData) {
+      const name = (field?.name || '').toLowerCase()
+      const value = field?.values?.[0]
+      if (value && cityFields.some((fn) => name.includes(fn))) return String(value).trim()
+    }
+  }
+  return ''
+}
+
+/**
+ * Extract state from lead meta_data.
+ */
+export function getStateFromMeta(metaData: Record<string, any> | null): string {
+  if (!metaData || typeof metaData !== 'object') return ''
+  const directKeys = ['state', 'State', 'region', 'Region']
+  for (const key of directKeys) {
+    const val = metaData[key]
+    if (val && typeof val === 'string') return String(val).trim()
+  }
+  const fieldData = metaData.field_data
+  if (Array.isArray(fieldData)) {
+    const stateFields = ['state', 'region', 'your state']
+    for (const field of fieldData) {
+      const name = (field?.name || '').toLowerCase()
+      const value = field?.values?.[0]
+      if (value && stateFields.some((fn) => name.includes(fn))) return String(value).trim()
+    }
+  }
+  return ''
+}
+
+/**
+ * Extract country from lead meta_data.
+ */
+export function getCountryFromMeta(metaData: Record<string, any> | null): string {
+  if (!metaData || typeof metaData !== 'object') return ''
+  const directKeys = ['country', 'Country']
+  for (const key of directKeys) {
+    const val = metaData[key]
+    if (val && typeof val === 'string') return String(val).trim()
+  }
+  const fieldData = metaData.field_data
+  if (Array.isArray(fieldData)) {
+    const countryFields = ['country', 'your country']
+    for (const field of fieldData) {
+      const name = (field?.name || '').toLowerCase()
+      const value = field?.values?.[0]
+      if (value && countryFields.some((fn) => name.includes(fn))) return String(value).trim()
+    }
+  }
+  return ''
+}
+
+/**
  * Build requirement string from meta_data (e.g. from Meta Lead Ads field_data).
  * Use when creating a lead from Meta so car model and interested product are stored on the lead.
  */

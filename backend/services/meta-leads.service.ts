@@ -9,7 +9,7 @@ import type { ParsedMetaLead } from './meta-webhook.service'
 import { parseMetaLeadValue } from './meta-webhook.service'
 import type { MetaLeadValue } from '@/shared/types/meta-lead'
 
-const META_GRAPH_API_VERSION = 'v24.0'
+const META_GRAPH_API_VERSION = 'v25.0'
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_API_VERSION}`
 
 export interface FacebookLeadsSettings {

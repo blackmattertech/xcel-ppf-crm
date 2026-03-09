@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     // Exchange code for access token
     const tokenResponse = await fetch(
-      `https://graph.facebook.com/v18.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`,
+      `https://graph.facebook.com/v25.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`,
       { method: 'GET' }
     )
 
@@ -86,8 +86,8 @@ export async function GET(request: NextRequest) {
 
     // Fetch user's pages (with Page Access Token for each) and ad accounts
     const [pagesResponse, adAccountsResponse] = await Promise.all([
-      fetch(`https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(accessToken)}`),
-      fetch(`https://graph.facebook.com/v18.0/me/adaccounts?access_token=${encodeURIComponent(accessToken)}&fields=id,name,account_id`),
+      fetch(`https://graph.facebook.com/v25.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(accessToken)}`),
+      fetch(`https://graph.facebook.com/v25.0/me/adaccounts?access_token=${encodeURIComponent(accessToken)}&fields=id,name,account_id`),
     ])
 
     let pageId: string | null = null
@@ -122,14 +122,14 @@ export async function GET(request: NextRequest) {
     if (adAccountId) {
       try {
         const businessResponse = await fetch(
-          `https://graph.facebook.com/v18.0/${adAccountId}?access_token=${accessToken}&fields=business`
+          `https://graph.facebook.com/v25.0/${adAccountId}?access_token=${accessToken}&fields=business`
         )
         if (businessResponse.ok) {
           const businessParsed = await safeParseJsonResponse<{ business?: { id: string } }>(businessResponse)
           if (businessParsed.ok && businessParsed.data?.business) {
             businessId = businessParsed.data.business.id
             const businessInfoResponse = await fetch(
-              `https://graph.facebook.com/v18.0/${businessId}?access_token=${accessToken}&fields=name`
+              `https://graph.facebook.com/v25.0/${businessId}?access_token=${accessToken}&fields=name`
             )
             if (businessInfoResponse.ok) {
               const businessInfoParsed = await safeParseJsonResponse<{ name?: string }>(businessInfoResponse)

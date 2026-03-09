@@ -27,6 +27,7 @@ export default function TemplatesPage() {
   const [showForm, setShowForm] = useState(false)
   const [formName, setFormName] = useState('')
   const [formCategory, setFormCategory] = useState<'MARKETING' | 'UTILITY' | 'AUTHENTICATION'>('MARKETING')
+  const [formSubCategory, setFormSubCategory] = useState<string | null>(null)
   const [formLanguage, setFormLanguage] = useState('en')
   const [formBody, setFormBody] = useState('')
   const [formHeader, setFormHeader] = useState('')
@@ -123,6 +124,7 @@ export default function TemplatesPage() {
     setFormHeaderPreviewUrl('')
     setFormName(t.name)
     setFormCategory(t.category as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION')
+    setFormSubCategory((t as { sub_category?: string | null }).sub_category ?? null)
     setFormLanguage(t.language)
     setFormBody(t.body_text)
     setFormHeader(t.header_text ?? '')
@@ -217,6 +219,7 @@ export default function TemplatesPage() {
     const payload: Record<string, unknown> = {
       name: formName.trim() || 'template',
       category: formCategory,
+      sub_category: formCategory === 'UTILITY' ? formSubCategory : null,
       language: formLanguage,
       body_text: formBody.trim(),
       footer_text: formFooter.trim() || null,
@@ -251,6 +254,7 @@ export default function TemplatesPage() {
           setShowForm(false)
           setEditingTemplateId(null)
           setFormName('')
+          setFormSubCategory(null)
           setFormBody('')
           setFormHeader('')
           setFormFooter('')
@@ -379,12 +383,46 @@ export default function TemplatesPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                      <select value={formCategory} onChange={(e) => setFormCategory(e.target.value as typeof formCategory)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                        <option value="MARKETING">MARKETING</option>
-                        <option value="UTILITY">UTILITY</option>
-                        <option value="AUTHENTICATION">AUTHENTICATION</option>
+                      <select
+                        value={formCategory}
+                        onChange={(e) => {
+                          const v = e.target.value as typeof formCategory
+                          setFormCategory(v)
+                          if (v !== 'UTILITY') setFormSubCategory(null)
+                          if (v === 'AUTHENTICATION' && formHeaderFormat !== 'TEXT') setFormHeaderFormat('TEXT')
+                        }}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      >
+                        <option value="MARKETING">MARKETING — Promotional, offers, re-engagement</option>
+                        <option value="UTILITY">UTILITY — Order updates, account alerts, transactional</option>
+                        <option value="AUTHENTICATION">AUTHENTICATION — OTP, verification only</option>
                       </select>
+                      {formCategory === 'MARKETING' && (
+                        <p className="mt-1 text-xs text-amber-700">Requires user opt-in. Use for promotions, discounts, cart nudges.</p>
+                      )}
+                      {formCategory === 'UTILITY' && (
+                        <p className="mt-1 text-xs text-blue-700">Delivers without opt-in. Non-promotional, transactional only.</p>
+                      )}
+                      {formCategory === 'AUTHENTICATION' && (
+                        <p className="mt-1 text-xs text-purple-700">OTP only. No emojis, URLs, or media. Include COPY_CODE button.</p>
+                      )}
                     </div>
+                    {formCategory === 'UTILITY' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Sub-category (optional)</label>
+                        <select
+                          value={formSubCategory ?? ''}
+                          onChange={(e) => setFormSubCategory(e.target.value || null)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        >
+                          <option value="">Standard — General transactional</option>
+                          <option value="ORDER_DETAILS">ORDER_DETAILS — Invoice/order details with product list</option>
+                          <option value="ORDER_STATUS">ORDER_STATUS — Order status updates (pending, shipped, etc.)</option>
+                          <option value="RICH_ORDER_STATUS">RICH_ORDER_STATUS — Rich order status with formatting</option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">Predefined Meta formats for order-related messages.</p>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
                       <select value={formLanguage} onChange={(e) => setFormLanguage(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
@@ -396,12 +434,23 @@ export default function TemplatesPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Header type</label>
-                    <select value={formHeaderFormat} onChange={(e) => setFormHeaderFormat(e.target.value as typeof formHeaderFormat)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    <select
+                      value={formHeaderFormat}
+                      onChange={(e) => setFormHeaderFormat(e.target.value as typeof formHeaderFormat)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    >
                       <option value="TEXT">Text</option>
-                      <option value="IMAGE">Image</option>
-                      <option value="VIDEO">Video</option>
-                      <option value="DOCUMENT">Document</option>
+                      {formCategory !== 'AUTHENTICATION' && (
+                        <>
+                          <option value="IMAGE">Image</option>
+                          <option value="VIDEO">Video</option>
+                          <option value="DOCUMENT">Document</option>
+                        </>
+                      )}
                     </select>
+                    {formCategory === 'AUTHENTICATION' && formHeaderFormat !== 'TEXT' && (
+                      <p className="mt-1 text-xs text-amber-600">Authentication templates: no media. Use Text header only.</p>
+                    )}
                   </div>
                   {formHeaderFormat === 'TEXT' && (
                     <div>

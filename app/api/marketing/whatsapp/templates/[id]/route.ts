@@ -6,6 +6,7 @@ import {
   updateTemplate,
   type CreateTemplateInput,
   type TemplateCategory,
+  type TemplateSubCategory,
 } from '@/backend/services/whatsapp-template.service'
 import { deleteMessageTemplateOnMeta } from '@/backend/services/whatsapp.service'
 import { z } from 'zod'
@@ -20,6 +21,7 @@ const updateSchema = z.object({
   name: z.string().min(1).max(512).optional(),
   language: z.string().max(10).optional(),
   category: z.enum(['MARKETING', 'UTILITY', 'AUTHENTICATION']).optional(),
+  sub_category: z.enum(['ORDER_DETAILS', 'ORDER_STATUS', 'RICH_ORDER_STATUS']).optional().nullable(),
   body_text: z.string().min(1).max(1024).optional(),
   header_text: z.string().max(60).optional().nullable(),
   footer_text: z.string().max(60).optional().nullable(),
@@ -83,6 +85,7 @@ export async function PATCH(
     name: d.name ?? template.name,
     language: d.language ?? template.language,
     category: (d.category as TemplateCategory) ?? template.category,
+    sub_category: (d.sub_category !== undefined ? d.sub_category : ((template as { sub_category?: string | null }).sub_category ?? null)) as TemplateSubCategory,
     body_text: d.body_text ?? template.body_text,
     header_text: d.header_text !== undefined ? d.header_text : template.header_text,
     footer_text: d.footer_text !== undefined ? d.footer_text : template.footer_text,

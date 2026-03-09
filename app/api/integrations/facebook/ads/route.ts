@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch ad insights from Meta Marketing API
-    const insightsUrl = `https://graph.facebook.com/v18.0/${accountId}/insights?fields=impressions,clicks,spend,ctr,cpc,cpp,cpm,reach,frequency,actions&date_preset=${dateRange}&access_token=${accessToken}`
+    const insightsUrl = `https://graph.facebook.com/v25.0/${accountId}/insights?fields=impressions,clicks,spend,ctr,cpc,cpp,cpm,reach,frequency,actions&date_preset=${dateRange}&access_token=${accessToken}`
 
     const insightsResponse = await fetch(insightsUrl)
 
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
     const insightsData = insightsParsed.ok && insightsParsed.data ? insightsParsed.data : { data: [] }
 
     // Fetch campaigns
-    const campaignsUrl = `https://graph.facebook.com/v18.0/${accountId}/campaigns?fields=id,name,status,objective,created_time,updated_time&access_token=${accessToken}`
+    const campaignsUrl = `https://graph.facebook.com/v25.0/${accountId}/campaigns?fields=id,name,status,objective,created_time,updated_time&access_token=${accessToken}`
     const campaignsResponse = await fetch(campaignsUrl)
     const campaignsParsed = campaignsResponse.ok
       ? await safeParseJsonResponse<{ data?: unknown[] }>(campaignsResponse)
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
         : { data: [] }
 
     // Fetch adsets
-    const adsetsUrl = `https://graph.facebook.com/v18.0/${accountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget,start_time,end_time&access_token=${accessToken}`
+    const adsetsUrl = `https://graph.facebook.com/v25.0/${accountId}/adsets?fields=id,name,status,campaign_id,daily_budget,lifetime_budget,start_time,end_time&access_token=${accessToken}`
     const adsetsResponse = await fetch(adsetsUrl)
     const adsetsParsed = adsetsResponse.ok
       ? await safeParseJsonResponse<{ data?: unknown[] }>(adsetsResponse)
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
         : { data: [] }
 
     // Fetch active ads
-    const adsUrl = `https://graph.facebook.com/v18.0/${accountId}/ads?fields=id,name,status,adset_id,campaign_id,creative&access_token=${accessToken}`
+    const adsUrl = `https://graph.facebook.com/v25.0/${accountId}/ads?fields=id,name,status,adset_id,campaign_id,creative&access_token=${accessToken}`
     const adsResponse = await fetch(adsUrl)
     const adsParsed = adsResponse.ok ? await safeParseJsonResponse<{ data?: unknown[] }>(adsResponse) : null
     const adsData = adsResponse.ok && adsParsed?.ok && adsParsed.data ? adsParsed.data : { data: [] }

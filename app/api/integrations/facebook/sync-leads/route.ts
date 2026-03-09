@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch pages with Page access tokens - leadgen_forms requires a Page token, not User token
     const pagesRes = await fetch(
-      `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&access_token=${userAccessToken}`
+      `https://graph.facebook.com/v25.0/me/accounts?fields=id,name,access_token&access_token=${userAccessToken}`
     )
     if (!pagesRes.ok) {
       return NextResponse.json(
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
     const pageAccessToken = targetPage.access_token
 
     const formsRes = await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}/leadgen_forms?fields=id,name&access_token=${pageAccessToken}`
+      `https://graph.facebook.com/v25.0/${pageId}/leadgen_forms?fields=id,name&access_token=${pageAccessToken}`
     )
 
     type FbLeadForm = { id: string; name?: string }
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
     const allLeads: MetaApiLead[] = []
 
     for (const form of forms) {
-      let url: string | null = `https://graph.facebook.com/v18.0/${form.id}/leads?fields=${fields}&access_token=${pageAccessToken}`
+      let url: string | null = `https://graph.facebook.com/v25.0/${form.id}/leads?fields=${fields}&access_token=${pageAccessToken}`
 
       while (url) {
         const res: Response = await fetch(url)

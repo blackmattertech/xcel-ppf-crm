@@ -11,7 +11,7 @@
  * @see https://developers.facebook.com/docs/whatsapp/marketing-messages-api-for-whatsapp/features/
  */
 
-const META_GRAPH_API_VERSION = 'v24.0'
+const META_GRAPH_API_VERSION = 'v25.0'
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_API_VERSION}`
 
 /**
@@ -595,6 +595,8 @@ export interface CreateTemplateAtMetaInput {
   name: string
   language: string
   category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+  /** Meta sub_category for UTILITY: ORDER_DETAILS, ORDER_STATUS, RICH_ORDER_STATUS */
+  sub_category?: 'ORDER_DETAILS' | 'ORDER_STATUS' | 'RICH_ORDER_STATUS' | null
   components: MetaTemplateComponent[]
 }
 
@@ -630,6 +632,7 @@ export async function createMessageTemplateAtMeta(
     language: input.language.replace(/-/g, '_'),
     category: input.category.toLowerCase(),
     allow_category_change: true,
+    ...(input.category === 'UTILITY' && input.sub_category && { sub_category: input.sub_category }),
     components: input.components.map((c) => {
       const comp: Record<string, unknown> = { type: (c.type as string).toLowerCase() }
       const fmt = c.format as string | undefined
