@@ -144,6 +144,7 @@ export async function GET(request: NextRequest) {
       impressions: number
       reach: number
       leads: number
+      clicks: number
       spend: string
     }> = []
 
@@ -164,6 +165,7 @@ export async function GET(request: NextRequest) {
           impressions: parseInt(insights?.impressions || '0', 10),
           reach: parseInt(insights?.reach || '0', 10),
           leads: parseInt(leadAction.value || '0', 10),
+          clicks: parseInt(insights?.clicks || '0', 10),
           spend: insights?.spend || '0',
         })
       }
@@ -197,10 +199,15 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Fetch leads from Meta Lead Gen API and aggregate by product, city, state, campaign
+    // Only include leads from campaigns in the selected ad account
+    const campaignIdsInAccount = new Set(campaignsList.map((c) => c.id))
     let leadAnalyticsPayload = { ...emptyLeadAnalytics, byRegion }
     try {
       const metaLeads = await fetchAllLeadsFromMeta(user.id)
-      const filtered = filterLeadsByDateRange(metaLeads, dateRange)
+      const byDateRange = filterLeadsByDateRange(metaLeads, dateRange)
+      const filtered = byDateRange.filter(
+        (lead) => lead.campaignId && campaignIdsInAccount.has(lead.campaignId)
+      )
 
       const byCampaign: Record<string, number> = {}
       const byProduct: Record<string, number> = {}
@@ -281,25 +288,26 @@ export async function GET(request: NextRequest) {
     } = { spend: 0, impressions: 0, reach: 0, clicks: 0, leads: 0, cpm: 0, ctr: 0, cpl: 0 }
     let insightsOverTime: Array<{ date: string; impressions: number; reach: number; spend: number; clicks: number; leads: number }> = []
     try {
-      const summaryUrl = `https://graph.facebook.com/v25.0/${accountId}/insights?fields=impressions,reach,clicks,spend,actions&date_preset=${dateRange}&access_token=${accessToken}`
+      const summaryUrl = `https://graph.facebook.com/v25.0/${accountId}/insights?fields=impressions,reach,clicks,spend,actions&date_preset=${dateRange}&summary=impressions,reach,clicks,spend,actions&access_token=${accessToken}`
       const summaryRes = await fetch(summaryUrl)
       const summaryParsed = await safeParseJsonResponse<{
-        data?: MetaInsightsRegionRow[]
-        summary?: { spend?: string; impressions?: string; reach?: string; clicks?: string }
+        data?: Array<Record<string, unknown>>
+        summary?: Record<string, unknown>
         error?: { message?: string }
       }>(summaryRes)
 
       if (summaryParsed.ok && summaryParsed.data) {
-        const d = summaryParsed.data as any
+        const d = summaryParsed.data as Record<string, unknown>
         const dataRows = Array.isArray(d.data) ? d.data : []
-        const first = dataRows[0] || d.summary
+        const summaryObj = d.summary as Record<string, unknown> | undefined
+        const first = dataRows[0] as Record<string, unknown> | undefined || summaryObj
         if (first && typeof first === 'object') {
-          const spend = parseFloat(first.spend || '0')
-          const impressions = parseInt(first.impressions || '0', 10)
-          const reach = parseInt(first.reach || '0', 10)
-          const clicks = parseInt(first.clicks || '0', 10)
-          const actions = first.actions || []
-          const leadAction = actions.find((a: { action_type: string }) => a.action_type === 'lead')
+          const spend = parseFloat(String(first.spend ?? '0'))
+          const impressions = parseInt(String(first.impressions ?? '0'), 10)
+          const reach = parseInt(String(first.reach ?? '0'), 10)
+          const clicks = parseInt(String(first.clicks ?? '0'), 10)
+          const actions = (first.actions as Array<{ action_type: string; value: string }>) || []
+          const leadAction = actions.find((a) => a.action_type === 'lead')
           const leads = parseInt(leadAction?.value || '0', 10)
           accountSummary = {
             spend,
@@ -311,6 +319,29 @@ export async function GET(request: NextRequest) {
             ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
             cpl: leads > 0 ? spend / leads : 0,
           }
+        }
+      }
+
+      // Fallback: if account insights return zeros but we have campaign data, aggregate from campaigns
+      if (
+        accountSummary.impressions === 0 &&
+        accountSummary.spend === 0 &&
+        campaignsList.length > 0
+      ) {
+        const totalSpend = campaignsList.reduce((s, c) => s + parseFloat(c.spend || '0'), 0)
+        const totalImpressions = campaignsList.reduce((s, c) => s + c.impressions, 0)
+        const totalReach = campaignsList.reduce((s, c) => s + c.reach, 0)
+        const totalLeads = campaignsList.reduce((s, c) => s + c.leads, 0)
+        const totalClicks = campaignsList.reduce((s, c) => s + (c.clicks ?? 0), 0)
+        accountSummary = {
+          spend: totalSpend,
+          impressions: totalImpressions,
+          reach: totalReach,
+          clicks: totalClicks,
+          leads: totalLeads,
+          cpm: totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : 0,
+          ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
+          cpl: totalLeads > 0 ? totalSpend / totalLeads : 0,
         }
       }
 

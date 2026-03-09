@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { CheckCircle2, XCircle, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { CheckCircle2, XCircle, ExternalLink, Loader2, RefreshCw, ChevronDown } from 'lucide-react'
 
 interface FacebookConfig {
   id: string
@@ -25,6 +25,10 @@ export default function FacebookIntegration() {
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; failed: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showAdAccountPicker, setShowAdAccountPicker] = useState(false)
+  const [adAccounts, setAdAccounts] = useState<Array<{ id: string; name: string }>>([])
+  const [loadingAdAccounts, setLoadingAdAccounts] = useState(false)
+  const [changingAdAccount, setChangingAdAccount] = useState(false)
 
   useEffect(() => {
     fetchConfig()
@@ -129,6 +133,41 @@ export default function FacebookIntegration() {
     }
   }
 
+  async function loadAdAccounts() {
+    try {
+      setLoadingAdAccounts(true)
+      const res = await fetch('/api/integrations/facebook/ad-accounts')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to load ad accounts')
+      setAdAccounts(data.adAccounts ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load ad accounts')
+      setAdAccounts([])
+    } finally {
+      setLoadingAdAccounts(false)
+    }
+  }
+
+  async function handleChangeAdAccount(adAccountId: string, adAccountName: string) {
+    try {
+      setChangingAdAccount(true)
+      setError(null)
+      const res = await fetch('/api/integrations/facebook/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adAccountId, adAccountName }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to update ad account')
+      setConfig((prev) => prev ? { ...prev, adAccountId, adAccountName } : null)
+      setShowAdAccountPicker(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to change ad account')
+    } finally {
+      setChangingAdAccount(false)
+    }
+  }
+
   async function handleDisconnect() {
     if (!confirm('Are you sure you want to disconnect your Facebook Business account? This will stop syncing leads from Facebook.')) {
       return
@@ -217,9 +256,63 @@ export default function FacebookIntegration() {
             {config.adAccountName && (
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Ad Account</p>
-                <p className="text-sm font-medium text-gray-900">{config.adAccountName}</p>
-                {config.adAccountId && (
-                  <p className="text-xs text-gray-500 mt-1">ID: {config.adAccountId}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{config.adAccountName}</p>
+                    {config.adAccountId && (
+                      <p className="text-xs text-gray-500 mt-1">ID: {config.adAccountId}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdAccountPicker(true)
+                      loadAdAccounts()
+                    }}
+                    disabled={config.isExpired}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Change <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {showAdAccountPicker && (
+                  <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-xs text-gray-600 mb-2">Select an ad account:</p>
+                    {loadingAdAccounts ? (
+                      <div className="flex items-center gap-2 py-2 text-sm text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading...
+                      </div>
+                    ) : adAccounts.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-2">No ad accounts found.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {adAccounts.map((acc) => (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => handleChangeAdAccount(acc.id, acc.name)}
+                            disabled={changingAdAccount || acc.id === config.adAccountId}
+                            className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                              acc.id === config.adAccountId
+                                ? 'bg-blue-100 text-blue-800 font-medium'
+                                : 'hover:bg-gray-200 text-gray-900'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {acc.name}
+                            {acc.id === config.adAccountId && ' (current)'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowAdAccountPicker(false)}
+                      className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 )}
               </div>
             )}
