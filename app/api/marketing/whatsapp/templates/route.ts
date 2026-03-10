@@ -6,6 +6,7 @@ import {
   sanitizeTemplateName,
   type CreateTemplateInput,
   type TemplateCategory,
+  type TemplateStatus,
 } from '@/backend/services/whatsapp-template.service'
 import { z } from 'zod'
 
@@ -33,11 +34,15 @@ export async function GET(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
-  const status = request.nextUrl.searchParams.get('status') as 'draft' | 'pending' | 'approved' | 'rejected' | null
-  const category = request.nextUrl.searchParams.get('category') as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION' | null
-  const filters: { status?: typeof status; category?: typeof category } = {}
-  if (status) filters.status = status
-  if (category) filters.category = category
+  const statusParam = request.nextUrl.searchParams.get('status')
+  const categoryParam = request.nextUrl.searchParams.get('category')
+  const filters: { status?: TemplateStatus; category?: TemplateCategory } = {}
+  if (statusParam && ['draft', 'pending', 'approved', 'rejected'].includes(statusParam)) {
+    filters.status = statusParam as TemplateStatus
+  }
+  if (categoryParam && ['MARKETING', 'UTILITY', 'AUTHENTICATION'].includes(categoryParam)) {
+    filters.category = categoryParam as TemplateCategory
+  }
   try {
     const templates = await listTemplates(Object.keys(filters).length ? filters : undefined)
     return NextResponse.json({ templates })
