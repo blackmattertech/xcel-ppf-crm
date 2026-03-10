@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation'
 
 /**
- * Marketing root: redirect to Bulk WhatsApp so the layout's tabs are the only nav.
- * Avoids duplicate tab rows (layout tabs + page tabs).
+ * Marketing root: redirect to Dashboard (overview). Layout tabs: Dashboard | WhatsApp.
  */
 export default function MarketingPage() {
-  redirect('/marketing/bulk-whatsapp')
+  redirect('/marketing/dashboard')
 }

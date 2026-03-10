@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { FileText, RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload, Plus } from 'lucide-react'
+import { FileText, RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload, Plus, ArrowLeft } from 'lucide-react'
 import { TemplatePreview } from '../_components/TemplatePreview'
 import type { WhatsAppTemplate } from '../_lib/types'
 import { getLanguageName, META_LANGUAGES } from '../_lib/utils'
@@ -283,6 +283,13 @@ export default function TemplatesPage() {
 
   return (
     <div className="space-y-6">
+      <Link
+        href="/marketing/whatsapp"
+        className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 mb-2"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to WhatsApp
+      </Link>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">

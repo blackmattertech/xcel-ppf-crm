@@ -3684,8 +3684,24 @@ export default function LeadsPage() {
         </div>
 
           {/* Pagination */}
-        {totalPages > 1 && (
-            <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex justify-between items-center">
+        {totalPages >= 1 && (
+            <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex flex-wrap justify-between items-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-600">Show</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value))
+                  setCurrentPage(1)
+                }}
+                className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-700 bg-white focus:ring-2 focus:ring-[#ed1b24] focus:border-transparent"
+              >
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <span className="text-sm text-gray-600">per page</span>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
@@ -3766,8 +3782,24 @@ export default function LeadsPage() {
                 deletingLeadId={deletingLeadId}
               />
               {/* Pagination for Grid View */}
-              {totalPages > 1 && (
-                <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex justify-between items-center">
+              {totalPages >= 1 && (
+                <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex flex-wrap justify-between items-center gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-600">Show</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value))
+                        setCurrentPage(1)
+                      }}
+                      className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-700 bg-white focus:ring-2 focus:ring-[#ed1b24] focus:border-transparent"
+                    >
+                      {[10, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm text-gray-600">per page</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}

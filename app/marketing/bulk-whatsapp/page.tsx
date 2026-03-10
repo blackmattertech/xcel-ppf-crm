@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Loader2, Send, Users, UserCheck, ListOrdered, MessageCircle } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Loader2, Send, Users, UserCheck, ListOrdered, MessageCircle, ArrowLeft } from 'lucide-react'
 import type { LeadRecipient, CustomerRecipient, PastedRecipient, Recipient, SendResult, WhatsAppTemplate, MetaTemplateOption } from '../_lib/types'
 import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/utils'
 
@@ -266,6 +267,13 @@ export default function BulkWhatsAppPage() {
 
   return (
     <div className="space-y-6">
+      <Link
+        href="/marketing/whatsapp"
+        className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 mb-2"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to WhatsApp
+      </Link>
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <label className="block text-sm font-medium text-gray-700 mb-3">Recipient source</label>
         <div className="flex flex-wrap gap-2">

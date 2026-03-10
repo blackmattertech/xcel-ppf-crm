@@ -12,6 +12,8 @@ export interface SidebarMenuItem {
   resource: string // The resource name for permissions (e.g., 'leads', 'products')
   roles?: string[] // If specified, only show for these roles
   requiresPermissions?: boolean // If true, will generate permissions for this item
+  /** Child items for dropdown (e.g. Marketing → Dashboard, WhatsApp) */
+  children?: SidebarMenuItem[]
 }
 
 export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
@@ -65,11 +67,15 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
   },
   {
     name: 'Marketing',
-    href: '/marketing',
+    href: '/marketing/dashboard',
     icon: '📢',
     iconPath: '/assets/sidebar/marketing.svg',
     resource: 'marketing',
     requiresPermissions: true,
+    children: [
+      { name: 'Dashboard', href: '/marketing/dashboard', icon: '📊', resource: 'marketing_dashboard', requiresPermissions: true },
+      { name: 'WhatsApp', href: '/marketing/whatsapp', icon: '💬', resource: 'marketing_whatsapp', requiresPermissions: true },
+    ],
   },
   {
     name: 'Teams',
@@ -139,12 +145,34 @@ export function generatePermissionsForResource(resource: string) {
   ]
 }
 
+function collectResources(item: SidebarMenuItem): string[] {
+  const list: string[] = []
+  if (item.requiresPermissions) list.push(item.resource)
+  for (const child of item.children ?? []) {
+    if (child.requiresPermissions) list.push(child.resource)
+  }
+  return list
+}
+
 /**
- * Get all resources that require permissions from sidebar items
+ * Get all resources that require permissions from sidebar items (including children)
  */
 export function getResourcesRequiringPermissions(): string[] {
-  return SIDEBAR_MENU_ITEMS
-    .filter(item => item.requiresPermissions)
-    .map(item => item.resource)
-    .filter((value, index, self) => self.indexOf(value) === index) // Remove duplicates
+  const resources: string[] = []
+  for (const item of SIDEBAR_MENU_ITEMS) {
+    resources.push(...collectResources(item))
+  }
+  return [...new Set(resources)]
+}
+
+/** All resources from sidebar (including children) for permission sync */
+export function getAllSidebarResources(): string[] {
+  const resources: string[] = []
+  for (const item of SIDEBAR_MENU_ITEMS) {
+    resources.push(item.resource)
+    for (const child of item.children ?? []) {
+      resources.push(child.resource)
+    }
+  }
+  return [...new Set(resources)]
 }

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
-import { Bell, ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
+import { Bell, ChevronDown, ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
 import { useAuthContext } from './AuthProvider'
 import { usePushNotification } from './PushNotificationProvider'
 
@@ -23,6 +23,7 @@ export default function Sidebar() {
     return localStorage.getItem('sidebar-collapsed') === 'true'
   })
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const profileMenuRef = useRef<HTMLDivElement>(null)
 
   // Initial collapsed state is derived from localStorage via lazy state initializer
@@ -92,25 +93,25 @@ export default function Sidebar() {
     const isSuperAdminOrAdmin = roleLower === 'super_admin' || roleLower === 'admin'
 
     return SIDEBAR_MENU_ITEMS.filter((item) => {
-      // Only super_admin and admin can see all items (case-insensitive)
-      if (isSuperAdminOrAdmin) {
-        return true
+      if (isSuperAdminOrAdmin) return true
+      if (!item.requiresPermissions) return true
+      if (item.roles && userRole && item.roles.some((r) => r.toLowerCase() === roleLower)) return true
+
+      const hasParentRead = userPermissions.includes(`${item.resource}.read`)
+      const hasParentManage = userPermissions.includes(`${item.resource}.manage`)
+      if (hasParentRead || hasParentManage) return true
+
+      // Parent with children: show if user has access to any child
+      if (item.children?.length) {
+        const hasChildAccess = item.children.some(
+          (child) =>
+            userPermissions.includes(`${child.resource}.read`) ||
+            userPermissions.includes(`${child.resource}.manage`)
+        )
+        if (hasChildAccess) return true
       }
 
-      // Items that don't require permissions are visible to all authenticated users
-      if (!item.requiresPermissions) {
-        return true
-      }
-
-      // If item has specific roles, check if user role matches (case-insensitive)
-      if (item.roles && userRole && item.roles.some((r) => r.toLowerCase() === roleLower)) {
-        return true
-      }
-
-      // Must have explicit read or manage permission for this resource
-      const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
-      const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
-      return hasReadPermission || hasManagePermission
+      return false
     })
   }, [userRole, userPermissions])
 
@@ -166,28 +167,133 @@ export default function Sidebar() {
             </div>
           ))
         ) : filteredMenuItems.map((item) => {
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
           const roleLower = userRole?.toLowerCase() ?? ''
           const shouldShowFollowUpBadge = ['tele_caller', 'telecaller', 'sales', 'sales_manager', 'sales_executive'].includes(roleLower)
           const showBadge = item.href === '/leads' && shouldShowFollowUpBadge && followUpCount > 0
-          
+
+          const visibleChildren =
+            item.children?.filter((child) => {
+              if (roleLower === 'super_admin' || roleLower === 'admin') return true
+              return (
+                userPermissions.includes(`${child.resource}.read`) ||
+                userPermissions.includes(`${child.resource}.manage`)
+              )
+            }) ?? []
+          const hasChildren = (item.children?.length ?? 0) > 0
+          const hasDropdown = hasChildren
+          const isDropdownOpen = openDropdown === item.resource
+          const isParentActive =
+            pathname === item.href ||
+            (item.href && pathname?.startsWith(item.href + '/')) ||
+            visibleChildren.some(
+              (c) => pathname === c.href || (c.href && pathname?.startsWith(c.href + '/'))
+            )
+
+          if (hasDropdown && !isCollapsed) {
+            return (
+              <div key={item.resource} className="space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdown(isDropdownOpen ? null : item.resource)}
+                  className={`relative flex w-full items-center justify-between px-4 py-3 rounded-lg transition-all ${
+                    isParentActive ? 'bg-[#242d35] text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  }`}
+                  title={item.name}
+                  aria-expanded={isDropdownOpen}
+                  aria-haspopup="true"
+                >
+                  <div className="flex items-center min-w-0">
+                    <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                      {item.iconPath ? (
+                        <img
+                          src={item.iconPath}
+                          alt={item.name}
+                          className="opacity-90 w-6 h-6 object-contain"
+                          style={{ maxWidth: '24px', maxHeight: '24px' }}
+                        />
+                      ) : (
+                        <span className="text-xl">{item.icon}</span>
+                      )}
+                    </div>
+                    <span className="ml-3 font-medium text-base truncate">{item.name}</span>
+                    {showBadge && (
+                      <span className="ml-2 px-2 py-1 text-xs font-bold rounded-full bg-[#de0510] text-white">
+                        {followUpCount}
+                      </span>
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={`ml-2 h-4 w-4 flex-shrink-0 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {isDropdownOpen && (
+                  <div className="ml-4 pl-6 border-l border-gray-700 space-y-0.5">
+                    {visibleChildren.map((child) => {
+                      const isChildActive =
+                        pathname === child.href || (child.href && pathname?.startsWith(child.href + '/'))
+                      return (
+                        <Link
+                          key={child.resource}
+                          href={child.href}
+                          onClick={() => setOpenDropdown(null)}
+                          className={`relative flex items-center px-3 py-2 rounded-lg text-sm transition-all ${
+                            isChildActive
+                              ? 'bg-[#242d35] text-white'
+                              : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                          }`}
+                        >
+                          {isChildActive && (
+                            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-[#de0510] rounded-l" />
+                          )}
+                          <span className="truncate">{child.name}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          if (hasDropdown && isCollapsed) {
+            return (
+              <button
+                key={item.resource}
+                type="button"
+                onClick={() => setOpenDropdown(isDropdownOpen ? null : item.resource)}
+                className="relative flex items-center justify-center px-2 py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-all w-full"
+                title={item.name}
+                aria-label={`${item.name} menu`}
+              >
+                <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                  {item.iconPath ? (
+                    <img
+                      src={item.iconPath}
+                      alt={item.name}
+                      className="opacity-90 w-6 h-6 object-contain"
+                      style={{ maxWidth: '24px', maxHeight: '24px' }}
+                    />
+                  ) : (
+                    <span className="text-xl">{item.icon}</span>
+                  )}
+                </div>
+              </button>
+            )
+          }
+
+          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`relative flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-start px-4'} py-3 rounded-lg transition-all group ${
-                isActive
-                  ? 'bg-[#242d35] text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                isActive ? 'bg-[#242d35] text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
               title={isCollapsed ? item.name : undefined}
             >
-              {/* Active indicator bar */}
               {isActive && (
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-[#de0510] rounded-l" />
               )}
-              
-              {/* Icon */}
               <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
                 {item.iconPath ? (
                   item.iconPath.endsWith('.svg') ? (
@@ -208,22 +314,16 @@ export default function Sidebar() {
                     />
                   )
                 ) : (
-                <span className="text-xl">{item.icon}</span>
+                  <span className="text-xl">{item.icon}</span>
                 )}
               </div>
-              
-              {/* Label */}
               {!isCollapsed && (
                 <>
                   <span className="ml-3 font-medium text-base flex-1">{item.name}</span>
-              {showBadge && (
-                <span className={`px-2 py-1 text-xs font-bold rounded-full ${
-                  isActive 
-                        ? 'bg-[#de0510] text-white' 
-                        : 'bg-[#de0510] text-white'
-                }`}>
-                  {followUpCount}
-                </span>
+                  {showBadge && (
+                    <span className="px-2 py-1 text-xs font-bold rounded-full bg-[#de0510] text-white">
+                      {followUpCount}
+                    </span>
                   )}
                 </>
               )}

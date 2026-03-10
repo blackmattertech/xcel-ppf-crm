@@ -33,6 +33,14 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
+   **Optional – show customers from a second database:** To merge customer data from another Supabase project into the Customers section, add:
+```env
+SUPABASE_EXT_URL=https://your-other-project.supabase.co
+SUPABASE_EXT_SERVICE_ROLE_KEY=your_other_project_service_role_key
+SUPABASE_EXT_CUSTOMERS_TABLE=your_table_name
+```
+   For a **claims-style schema**, the table can use columns: `id`, `customer_name`, `customer_email`, `customer_mobile`, `created_at`, and optionally `car_number`, `chassis_number`, `service_type`, `series`, `service_date`, `service_location`, `dealer_name`, `warranty_years`, `ppf_warranty_years`, `car_name`, `car_model`, `car_photo_url`, `chassis_photo_url`, `dealer_invoice_url`. Set `SUPABASE_EXT_CUSTOMERS_TABLE` to your actual table or view name (e.g. the one that returns these columns). External customers appear with an "External" badge; detail view shows car/service info and image previews.
+
 3. Run database migrations:
    - Go to your Supabase dashboard
    - Navigate to SQL Editor
