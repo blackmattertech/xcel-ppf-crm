@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
             reach: parseInt(r.reach || '0', 10),
           }))
           .sort((a, b) => b.impressions - a.impressions)
-          .slice(0, 10)
+        // Return all regions (no slice) so overview shows every state Meta returns
       }
     } catch (err) {
       console.warn('Meta insights by region error:', err)

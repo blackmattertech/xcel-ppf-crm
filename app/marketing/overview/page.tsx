@@ -415,14 +415,18 @@ export default function OverviewPage() {
                   >
                     <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
                       <MapPin className="h-5 w-5 text-[#1877F2]" />
-                      Top regions by impressions
+                      Regions by impressions
+                      <span className="text-xs font-normal text-gray-500">({metaAdsOverview.leadAnalytics.byRegion.length} regions)</span>
                     </h3>
-                    <div className="h-[220px]">
+                    <div
+                      className="overflow-auto"
+                      style={{ height: Math.min(560, Math.max(220, metaAdsOverview.leadAnalytics.byRegion.length * 32)) }}
+                    >
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={metaAdsOverview.leadAnalytics.byRegion} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
                           <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-                          <YAxis type="category" dataKey="region" width={100} tick={{ fontSize: 11 }} />
+                          <YAxis type="category" dataKey="region" width={120} tick={{ fontSize: 11 }} />
                           <Tooltip formatter={(v) => [(v ?? 0).toLocaleString(), '']} />
                           <Bar dataKey="impressions" fill="#6366f1" radius={[0, 4, 4, 0]} name="Impressions" />
                         </BarChart>
