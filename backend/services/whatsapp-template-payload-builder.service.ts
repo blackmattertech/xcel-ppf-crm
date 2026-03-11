@@ -82,6 +82,9 @@ export function buildStandardPayload(normalized: NormalizedTemplate): Record<str
   if (normalized.parameterFormat) {
     payload.parameter_format = normalized.parameterFormat
   }
+  if (normalized.category === 'UTILITY' && (normalized.subtype === 'ORDER_STATUS' || normalized.subtype === 'ORDER_DETAILS')) {
+    payload.sub_category = normalized.subtype.toLowerCase()
+  }
   return payload
 }
 
@@ -93,6 +96,7 @@ function mapButtonToMeta(b: TemplateButton): Record<string, unknown> {
     COPY_CODE: 'copy_code',
     CALL_REQUEST: 'call_request',
     CATALOG: 'catalog',
+    FLOW: 'flow',
   }
   const type = typeMap[b.type] ?? b.type.toLowerCase()
   const btn: Record<string, unknown> = { type }
@@ -298,6 +302,9 @@ export function buildCreationPayload(normalized: NormalizedTemplate): Record<str
       return buildLimitedTimeOfferPayload(normalized)
     case 'PRODUCT_CARD_CAROUSEL':
       return buildProductCardCarouselPayload(normalized)
+    case 'FLOWS':
+    case 'ORDER_DETAILS':
+    case 'ORDER_STATUS':
     case 'STANDARD':
     default:
       return buildStandardPayload(normalized)

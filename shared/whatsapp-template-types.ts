@@ -18,6 +18,9 @@ export type TemplateSubtype =
   | 'CATALOG'
   | 'LIMITED_TIME_OFFER'
   | 'PRODUCT_CARD_CAROUSEL'
+  | 'FLOWS'
+  | 'ORDER_DETAILS'
+  | 'ORDER_STATUS'
 
 export type ParameterFormat = 'named' | 'positional' | null
 
@@ -47,6 +50,7 @@ export type TemplateButton =
       supportedApps?: Array<{ packageName: string; signatureHash: string }>
     }
   | { type: 'CATALOG'; text?: string }
+  | { type: 'FLOW'; text?: string; flowId?: string; flowCta?: string }
 
 // ---------------------------------------------------------------------------
 // Components (generic + subtype-specific)
@@ -140,6 +144,9 @@ export const templateSubtypeSchema = z.enum([
   'CATALOG',
   'LIMITED_TIME_OFFER',
   'PRODUCT_CARD_CAROUSEL',
+  'FLOWS',
+  'ORDER_DETAILS',
+  'ORDER_STATUS',
 ])
 export const parameterFormatSchema = z.enum(['named', 'positional']).nullable()
 export const headerFormatSchema = z.enum(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'])
@@ -201,6 +208,12 @@ export const templateButtonOtpSchema = z.object({
 export const templateButtonCatalogSchema = z.object({
   type: z.literal('CATALOG'),
   text: z.string().optional(),
+})
+export const templateButtonFlowSchema = z.object({
+  type: z.literal('FLOW'),
+  text: z.string().max(25).optional(),
+  flowId: z.string().optional(),
+  flowCta: z.string().optional(),
 })
 
 export const carouselCardSchema = z.object({

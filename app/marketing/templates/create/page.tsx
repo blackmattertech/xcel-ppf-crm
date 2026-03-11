@@ -3,48 +3,68 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Loader2, CheckCircle, Megaphone, Bell, Key } from 'lucide-react'
 import { TemplatePreview } from '../../_components/TemplatePreview'
 import { META_LANGUAGES } from '../../_lib/utils'
 
 const CATEGORIES = [
-  { value: 'UTILITY' as const, label: 'Utility', help: 'User-triggered updates, order confirmations, account alerts' },
-  { value: 'MARKETING' as const, label: 'Marketing', help: 'Promotional or engagement messages' },
-  { value: 'AUTHENTICATION' as const, label: 'Authentication', help: 'OTP / verification only' },
+  { value: 'MARKETING' as const, label: 'Marketing', help: 'Engage customers with promotions, offers, and announcements', icon: Megaphone },
+  { value: 'UTILITY' as const, label: 'Utility', help: 'User-triggered updates, order confirmations, account alerts', icon: Bell },
+  { value: 'AUTHENTICATION' as const, label: 'Authentication', help: 'OTP and verification codes only', icon: Key },
 ]
 
-const SUBTYPES: Record<string, Array<{ value: string; label: string }>> = {
-  UTILITY: [
-    { value: 'STANDARD', label: 'Standard' },
-    { value: 'CALL_PERMISSION_REQUEST', label: 'Call permission request' },
-  ],
+type SubtypeOption = { value: string; label: string; description: string; goodFor?: string[]; customize?: string[] }
+const SUBTYPES: Record<string, SubtypeOption[]> = {
   MARKETING: [
-    { value: 'STANDARD', label: 'Standard' },
-    { value: 'CALL_PERMISSION_REQUEST', label: 'Call permission request' },
-    { value: 'CATALOG', label: 'Catalog' },
-    { value: 'LIMITED_TIME_OFFER', label: 'Limited time offer' },
-    { value: 'PRODUCT_CARD_CAROUSEL', label: 'Product card carousel' },
+    { value: 'STANDARD', label: 'Default', description: 'Send messages with media and customized buttons to engage your customers.', goodFor: ['Welcome messages', 'Promotions', 'Offers', 'Coupons', 'Newsletters', 'Announcements'], customize: ['Media', 'Header', 'Body', 'Footer', 'Button'] },
+    { value: 'CATALOG', label: 'Catalog', description: 'Send messages that drive sales by connecting your product catalog.', goodFor: ['Product discovery', 'Catalog sharing'], customize: ['Body', 'Footer', 'Catalog button'] },
+    { value: 'FLOWS', label: 'Flows', description: 'Send a form to capture customer interests, appointment requests or run surveys.', goodFor: ['Forms', 'Surveys', 'Appointment requests'], customize: ['Body', 'Footer', 'Flow'] },
+    { value: 'ORDER_DETAILS', label: 'Order Details', description: 'Send messages through which customers can pay you.', goodFor: ['Payment/invoice reminders', 'Billing information', 'Product availability', 'Cart abandonment'], customize: ['Header', 'Body', 'Footer'] },
+    { value: 'CALL_PERMISSION_REQUEST', label: 'Calling permissions request', description: 'Ask customers if you can call them on WhatsApp.', goodFor: ['Requesting call permission'], customize: ['Body'] },
   ],
-  AUTHENTICATION: [{ value: 'AUTHENTICATION_OTP', label: 'Authentication OTP' }],
+  UTILITY: [
+    { value: 'STANDARD', label: 'Default', description: 'Send messages about an existing order or account.', goodFor: ['Order updates', 'Account alerts', 'Transactional messages'], customize: ['Header', 'Body', 'Footer', 'Buttons'] },
+    { value: 'FLOWS', label: 'Flows', description: 'Send a form to collect feedback, send reminders or manage orders.', goodFor: ['Feedback', 'Reminders', 'Order management'], customize: ['Body', 'Footer', 'Flow'] },
+    { value: 'ORDER_STATUS', label: 'Order Status', description: 'Send messages to tell customers about the progress of their orders.', goodFor: ['Order status updates', 'Shipping notifications'], customize: ['Header', 'Body', 'Footer'] },
+    { value: 'ORDER_DETAILS', label: 'Order Details', description: 'Send messages through which customers can pay you.', goodFor: ['Payment reminders', 'Invoice details'], customize: ['Header', 'Body', 'Footer'] },
+    { value: 'CALL_PERMISSION_REQUEST', label: 'Calling permissions request', description: 'Ask customers if you can call them on WhatsApp.', goodFor: ['Requesting call permission'], customize: ['Body'] },
+  ],
+  AUTHENTICATION: [
+    { value: 'AUTHENTICATION_OTP', label: 'One-time Passcode', description: 'Send codes to verify a transaction or login.', goodFor: ['One-time password', 'Account recovery code', 'Account verification', 'Integrity challenges'], customize: ['Code delivery method'] },
+  ],
 }
+
+const BUTTON_TYPES = [
+  { value: 'QUICK_REPLY', label: 'Custom', description: 'Quick reply button', icon: '↩' },
+  { value: 'URL', label: 'Visit website', description: 'Link to a URL', icon: '🔗' },
+  { value: 'CALL_REQUEST', label: 'Call on WhatsApp', description: 'Initiate a WhatsApp call', icon: '📞' },
+  { value: 'PHONE_NUMBER', label: 'Call phone number', description: 'Call a phone number', icon: '📱' },
+  { value: 'FLOW', label: 'Complete Flow', description: 'Open a flow (form/survey)', icon: '📄' },
+  { value: 'COPY_CODE', label: 'Copy offer code', description: 'Copy a code to clipboard', icon: '📋' },
+] as const
+
+type ButtonEntry = { type: string; text: string; example?: string; url?: string; phoneNumber?: string }
+const MAX_BUTTONS = 10
 
 export default function CreateTemplatePage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [draftId, setDraftId] = useState<string | null>(null)
-  const [category, setCategory] = useState<'UTILITY' | 'MARKETING' | 'AUTHENTICATION'>('UTILITY')
+  const [category, setCategory] = useState<'UTILITY' | 'MARKETING' | 'AUTHENTICATION'>('MARKETING')
   const [subtype, setSubtype] = useState('STANDARD')
   const [name, setName] = useState('')
   const [language, setLanguage] = useState('en_US')
   const [body, setBody] = useState('')
   const [footer, setFooter] = useState('')
   const [headerText, setHeaderText] = useState('')
+  const [buttons, setButtons] = useState<ButtonEntry[]>([])
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [catalogConnected, setCatalogConnected] = useState<boolean | null>(null)
 
-  const subtypes = SUBTYPES[category] ?? SUBTYPES.UTILITY
+  const subtypes = SUBTYPES[category] ?? SUBTYPES.MARKETING
+  const selectedSubtypeInfo = subtypes.find((s) => s.value === subtype)
   const needsCatalog = subtype === 'CATALOG' || subtype === 'PRODUCT_CARD_CAROUSEL'
 
   useEffect(() => {
@@ -56,6 +76,21 @@ export default function CreateTemplatePage() {
     }
   }, [needsCatalog, catalogConnected])
 
+  const buildButtonsComponent = () => {
+    const list = buttons.filter((b) => b.text.trim()).slice(0, MAX_BUTTONS)
+    if (list.length === 0) return []
+    return [{
+      type: 'BUTTONS',
+      buttons: list.map((b) => {
+        const base = { type: b.type, text: b.text.trim() }
+        if (b.type === 'URL' && (b.example?.trim() || b.url?.trim())) return { ...base, example: b.example ?? b.url }
+        if (b.type === 'PHONE_NUMBER' && (b.example?.trim() || b.phoneNumber?.trim())) return { ...base, example: b.example ?? b.phoneNumber }
+        if (b.type === 'COPY_CODE' && b.example?.trim()) return { ...base, example: b.example }
+        return base
+      }),
+    }]
+  }
+
   const createDraft = async () => {
     setSaving(true)
     setError(null)
@@ -64,6 +99,7 @@ export default function CreateTemplatePage() {
     if (headerText) components.push({ type: 'HEADER', format: 'TEXT', text: headerText })
     components.push({ type: 'BODY', text: bodyText, variables: [] })
     if (footer) components.push({ type: 'FOOTER', text: footer })
+    components.push(...buildButtonsComponent())
     const res = await fetch('/api/marketing/whatsapp/template-drafts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -103,6 +139,7 @@ export default function CreateTemplatePage() {
     if (headerText) components.push({ type: 'HEADER', format: 'TEXT', text: headerText })
     components.push({ type: 'BODY', text: body, variables: [] })
     if (footer) components.push({ type: 'FOOTER', text: footer })
+    components.push(...buildButtonsComponent())
     const res = await fetch(`/api/marketing/whatsapp/template-drafts/${draftId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -188,37 +225,71 @@ export default function CreateTemplatePage() {
 
         {step === 1 && (
           <>
-            <h2 className="text-sm font-medium text-gray-700 mb-2">Step 1: Category & subtype</h2>
-            <div className="space-y-4">
+            <p className="text-sm text-gray-600 mb-4">Choose the category that best describes your message template. Then select the type of message you want to send.</p>
+            <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                 <div className="flex flex-wrap gap-2">
-                  {CATEGORIES.map((c) => (
-                    <button
-                      key={c.value}
-                      type="button"
-                      onClick={() => { setCategory(c.value); setSubtype(SUBTYPES[c.value]?.[0]?.value ?? 'STANDARD') }}
-                      className={`rounded-lg border px-4 py-2 text-sm font-medium ${
-                        category === c.value ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
+                  {CATEGORIES.map((c) => {
+                    const Icon = c.icon
+                    return (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => { setCategory(c.value); setSubtype(SUBTYPES[c.value]?.[0]?.value ?? 'STANDARD') }}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                          category === c.value ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {Icon && <Icon className="h-4 w-4" />}
+                        {c.label}
+                      </button>
+                    )
+                  })}
                 </div>
-                <p className="mt-1 text-xs text-gray-500">{CATEGORIES.find((c) => c.value === category)?.help}</p>
+                <p className="mt-1.5 text-xs text-gray-500">{CATEGORIES.find((c) => c.value === category)?.help}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Subtype</label>
-                <select
-                  value={subtype}
-                  onChange={(e) => setSubtype(e.target.value)}
-                  className="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message template type</label>
+                <div className="space-y-3">
                   {subtypes.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
+                    <label
+                      key={s.value}
+                      className={`flex gap-3 rounded-xl border p-4 cursor-pointer transition-colors ${
+                        subtype === s.value ? 'border-[#ed1b24] bg-red-50/50' : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="subtype"
+                        value={s.value}
+                        checked={subtype === s.value}
+                        onChange={() => setSubtype(s.value)}
+                        className="mt-1 h-4 w-4 border-gray-300 text-[#ed1b24] focus:ring-[#ed1b24]"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-gray-900">{s.label}</span>
+                        <p className="mt-0.5 text-sm text-gray-600">{s.description}</p>
+                      </div>
+                    </label>
                   ))}
-                </select>
+                </div>
+                {selectedSubtypeInfo && (selectedSubtypeInfo.goodFor?.length || selectedSubtypeInfo.customize?.length) && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4">
+                    {selectedSubtypeInfo.goodFor && selectedSubtypeInfo.goodFor.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">This template is good for</p>
+                        <p className="text-sm text-gray-700">{selectedSubtypeInfo.goodFor.join(', ')}</p>
+                      </div>
+                    )}
+                    {selectedSubtypeInfo.customize && selectedSubtypeInfo.customize.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Template areas you can customize</p>
+                        <p className="text-sm text-gray-700">{selectedSubtypeInfo.customize.join(', ')}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="mt-6 flex justify-end">
@@ -315,6 +386,73 @@ export default function CreateTemplatePage() {
                   />
                 </div>
               )}
+              {(subtype === 'STANDARD' || subtype === 'FLOWS' || subtype === 'ORDER_DETAILS') && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-700">Buttons • Optional</label>
+                    {buttons.length < MAX_BUTTONS && (
+                      <div className="relative group">
+                        <select
+                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 appearance-none pr-8"
+                          value=""
+                          onChange={(e) => {
+                            const v = e.target.value
+                            if (v) {
+                              setButtons((prev) => [...prev, { type: v, text: '' }])
+                              e.target.value = ''
+                            }
+                          }}
+                        >
+                          <option value="">+ Add button</option>
+                          {BUTTON_TYPES.map((bt) => (
+                            <option key={bt.value} value={bt.value}>{bt.label}</option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">▼</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">Create buttons that let customers respond or take action. You can add up to {MAX_BUTTONS} buttons. If you add more than 3, they will appear in a list.</p>
+                  {buttons.map((b, i) => (
+                    <div key={i} className="flex flex-wrap items-start gap-2 mb-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+                      <span className="text-xs text-gray-500 w-24 shrink-0">{BUTTON_TYPES.find((bt) => bt.value === b.type)?.label ?? b.type}</span>
+                      <input
+                        type="text"
+                        value={b.text}
+                        onChange={(e) => setButtons((prev) => prev.map((x, j) => (j === i ? { ...x, text: e.target.value.slice(0, 25) } : x)))}
+                        placeholder="Button text (max 25)"
+                        maxLength={25}
+                        className="flex-1 min-w-[120px] rounded border border-gray-300 px-2 py-1.5 text-sm"
+                      />
+                      {(b.type === 'URL' || b.type === 'PHONE_NUMBER' || b.type === 'COPY_CODE') && (
+                        <input
+                          type="text"
+                          value={b.type === 'URL' ? (b.example ?? b.url ?? '') : b.type === 'PHONE_NUMBER' ? (b.example ?? b.phoneNumber ?? '') : (b.example ?? '')}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            setButtons((prev) => prev.map((x, j) => {
+                              if (j !== i) return x
+                              if (x.type === 'URL') return { ...x, example: val, url: val }
+                              if (x.type === 'PHONE_NUMBER') return { ...x, example: val, phoneNumber: val }
+                              return { ...x, example: val }
+                            }))
+                          }}
+                          placeholder={b.type === 'URL' ? 'https://example.com' : b.type === 'PHONE_NUMBER' ? '+1234567890' : 'Offer code'}
+                          maxLength={b.type === 'COPY_CODE' ? 15 : 2000}
+                          className="w-40 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setButtons((prev) => prev.filter((_, j) => j !== i))}
+                        className="text-gray-500 hover:text-red-600 text-sm font-medium"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="mt-6 flex justify-between">
               <button type="button" onClick={() => setStep(2)} className="text-sm font-medium text-gray-600 hover:text-gray-900">Back</button>
@@ -341,7 +479,7 @@ export default function CreateTemplatePage() {
                   headerMediaUrl=""
                   body={body}
                   footer={footer}
-                  buttons={[]}
+                  buttons={buttons.filter((b) => b.text.trim()).map((b) => ({ type: b.type, text: b.text.trim(), example: b.example }))}
                 />
               </div>
               <div>

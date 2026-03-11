@@ -55,12 +55,13 @@ export function TemplatePreview({
               <span
                 key={i}
                 className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-white transition transform hover:scale-[1.02] ${
-                  b.type === 'URL' ? 'bg-[#25D366]' : b.type === 'PHONE_NUMBER' ? 'bg-[#128C7E]' : b.type === 'COPY_CODE' ? 'bg-[#075E54]' : 'bg-[#25D366]'
+                  b.type === 'URL' ? 'bg-[#25D366]' : b.type === 'PHONE_NUMBER' ? 'bg-[#128C7E]' : b.type === 'COPY_CODE' ? 'bg-[#075E54]' : b.type === 'CALL_REQUEST' ? 'bg-[#128C7E]' : b.type === 'FLOW' ? 'bg-[#075E54]' : 'bg-[#25D366]'
                 }`}
               >
                 {b.type === 'URL' && <span aria-hidden>🔗</span>}
-                {b.type === 'PHONE_NUMBER' && <span aria-hidden>📞</span>}
+                {(b.type === 'PHONE_NUMBER' || b.type === 'CALL_REQUEST') && <span aria-hidden>📞</span>}
                 {b.type === 'COPY_CODE' && <span aria-hidden>📋</span>}
+                {b.type === 'FLOW' && <span aria-hidden>📄</span>}
                 {b.text}
               </span>
             ))}
