@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -140,6 +140,7 @@ function GridView({
   formatStageName,
   getStageBadgeColor,
   router,
+  currentPage,
   onDeleteLead,
   canDeleteLeads,
   deletingLeadId,
@@ -151,6 +152,7 @@ function GridView({
   formatStageName: (status: string) => string
   getStageBadgeColor: (status: string) => string
   router: ReturnType<typeof useRouter>
+  currentPage: number
   onDeleteLead?: (leadId: string) => void
   canDeleteLeads?: boolean
   deletingLeadId?: string | null
@@ -460,7 +462,8 @@ function KanbanBoard({
   getVehicleName,
   getProductInterest,
   getTimeAgo,
-  router
+  router,
+  currentPage,
 }: {
   leads: Lead[]
   allLeads: Lead[]
@@ -470,6 +473,7 @@ function KanbanBoard({
   getProductInterest: (lead: Lead) => string
   getTimeAgo: (date: string | null) => string
   router: ReturnType<typeof useRouter>
+  currentPage: number
 }) {
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
@@ -852,7 +856,7 @@ function KanbanBoard({
   )
 }
 
-export default function LeadsPage() {
+function LeadsPageContent() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -3793,7 +3797,7 @@ export default function LeadsPage() {
 
           {/* Kanban View */}
           {viewMode === 'kanban' && (
-            <KanbanBoard 
+            <KanbanBoard
               leads={leads}
               allLeads={allLeads}
               groupBy={groupBy}
@@ -3802,13 +3806,14 @@ export default function LeadsPage() {
               getProductInterest={getProductInterest}
               getTimeAgo={getTimeAgo}
               router={router}
+              currentPage={currentPage}
             />
           )}
 
           {/* Grid View */}
           {viewMode === 'grid' && (
             <>
-              <GridView 
+              <GridView
                 leads={leads}
                 getVehicleName={getVehicleName}
                 getTimeAgo={getTimeAgo}
@@ -3816,6 +3821,7 @@ export default function LeadsPage() {
                 formatStageName={formatStageName}
                 getStageBadgeColor={getStageBadgeColor}
                 router={router}
+                currentPage={currentPage}
                 onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
                 canDeleteLeads={canDeleteLeads}
                 deletingLeadId={deletingLeadId}
@@ -4437,5 +4443,13 @@ export default function LeadsPage() {
         </div>
       )}
     </>
+  )
+}
+
+export default function LeadsPage() {
+  return (
+    <Suspense fallback={<Layout><div className="min-h-screen flex items-center justify-center"><div className="text-lg">Loading...</div></div></Layout>}>
+      <LeadsPageContent />
+    </Suspense>
   )
 }
