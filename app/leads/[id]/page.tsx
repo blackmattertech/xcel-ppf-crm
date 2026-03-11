@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
@@ -457,7 +457,17 @@ interface Lead {
 export default function LeadDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const leadId = params.id as string
+
+  // Go back to list: read fromPage from current URL at click time so it's never stale
+  function goBackToLeads() {
+    const fromPage =
+      searchParams.get('fromPage') ??
+      (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('fromPage') : null)
+    if (fromPage) router.push(`/leads?page=${fromPage}`)
+    else router.back()
+  }
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -663,7 +673,7 @@ export default function LeadDetailPage() {
       const data = await response.json()
 
       if (response.ok) {
-        router.push('/leads')
+        goBackToLeads()
         alert('Lead deleted successfully')
       } else {
         alert(data.error || 'Failed to delete lead')
@@ -1381,7 +1391,7 @@ export default function LeadDetailPage() {
   if (error || !lead) {
     return (
       <Layout>
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => router.push('/leads')} />
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => goBackToLeads()} />
         <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
           <div className="bg-white shadow-2xl rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto pointer-events-auto p-6">
             <div className="text-center">
@@ -1389,7 +1399,7 @@ export default function LeadDetailPage() {
               {error || 'Lead not found'}
             </div>
             <button
-              onClick={() => router.push('/leads')}
+              onClick={() => goBackToLeads()}
               className="text-indigo-600 hover:text-indigo-800"
             >
               ← Back to Leads
@@ -1611,7 +1621,7 @@ export default function LeadDetailPage() {
       {/* Blur Overlay */}
       <div 
         className="fixed inset-0 bg-black/20 backdrop-blur-md z-40"
-        onClick={() => router.push('/leads')}
+        onClick={() => goBackToLeads()}
       />
       
       {/* Centered Modal - Figma design (800px, border #eaecee) */}
@@ -1661,7 +1671,7 @@ export default function LeadDetailPage() {
                 </button>
               )}
               <button
-                onClick={() => router.push('/leads')}
+                onClick={() => goBackToLeads()}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <X size={20} />

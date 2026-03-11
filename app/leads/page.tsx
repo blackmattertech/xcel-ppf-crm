@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
@@ -426,7 +426,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}`)
+                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#ed1b24] text-white rounded-md text-[10px] font-medium hover:bg-[#c0040e] transition-colors"
                 >
@@ -435,7 +435,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}`)
+                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-[#eaecee] text-[#717d8a] rounded-md text-[10px] font-medium hover:bg-[#f5f5f5] transition-colors"
                 >
@@ -781,7 +781,7 @@ function KanbanBoard({
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => router.push(`/leads/${lead.id}`)}
+                      onClick={() => router.push(`/leads/${lead.id}?fromPage=${currentPage}`)}
                       className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-[#eaecee]"
                     >
                       {/* Name and Product */}
@@ -855,6 +855,7 @@ function KanbanBoard({
 export default function LeadsPage() {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { loading: authLoading, userId, role, profile } = useAuthContext()
   const userRole = role?.name ?? null
   const userPermissions = role?.permissions ?? []
@@ -917,9 +918,11 @@ export default function LeadsPage() {
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false)
   const [metaSyncLoading, setMetaSyncLoading] = useState(false)
   
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1)
+  // Pagination: current page is derived from URL so closing lead detail always shows the right page
+  const pageParam = searchParams.get('page')
+  const currentPage = !pageParam ? 1 : Math.max(1, parseInt(pageParam, 10) || 1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+  const PAGINATION_STORAGE_KEY = 'leads-list-pagination'
 
   // Column customization state
   interface ColumnConfig {
@@ -1134,10 +1137,62 @@ export default function LeadsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
   
-  // Reset to first page when filters change
+  // On initial load only: when URL has no ?page=, restore from sessionStorage (e.g. refresh on /leads). Never overwrite if the browser URL already has page=. Only run the redirect once per mount so clicking "Page 1" later is not overwritten.
+  const hasRestoredFromStorageOnce = useRef(false)
   useEffect(() => {
-    setCurrentPage(1)
+    if (pageParam) {
+      hasRestoredFromStorageOnce.current = true
+      return
+    }
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('page')) {
+      hasRestoredFromStorageOnce.current = true
+      return
+    }
+    if (hasRestoredFromStorageOnce.current) return
+    hasRestoredFromStorageOnce.current = true
+    try {
+      const raw = sessionStorage.getItem(PAGINATION_STORAGE_KEY)
+      if (raw) {
+        const { page, itemsPerPage: ipp } = JSON.parse(raw) as { page?: number; itemsPerPage?: number }
+        if (ipp != null && [10, 25, 50, 100].includes(ipp)) setItemsPerPage(ipp)
+        if (page != null && page >= 1) {
+          router.replace(pathname + `?page=${page}`, { scroll: false })
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [pageParam, pathname, router])
+
+  // Reset to first page when filters change (skip initial mount so we don't overwrite ?page= when returning from lead detail)
+  const isFirstFilterEffect = useRef(true)
+  const mountTime = useRef(0)
+  useEffect(() => {
+    if (mountTime.current === 0) mountTime.current = Date.now()
+    if (isFirstFilterEffect.current) {
+      isFirstFilterEffect.current = false
+      return
+    }
+    // Right after mount, don't overwrite URL (we may have just landed from lead detail with ?page=32)
+    const justLanded = Date.now() - mountTime.current < 800
+    const urlHasPage = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('page')
+    if (justLanded && urlHasPage) return
+    router.replace(pathname + '?page=1', { scroll: false })
   }, [filterConditions, sortColumn, sortDirection, activeQuickFilter])
+
+  // Persist pagination to sessionStorage for refresh
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(PAGINATION_STORAGE_KEY, JSON.stringify({ page: currentPage, itemsPerPage }))
+    } catch {
+      // ignore
+    }
+  }, [currentPage, itemsPerPage])
+
+  // Update URL when user changes page (closing lead detail then lands on this URL)
+  function goToPage(page: number) {
+    router.replace(pathname + (page === 1 ? '' : `?page=${page}`), { scroll: false })
+  }
 
   // Clean up columns on mount to ensure only valid columns are shown; preserve column order
   useEffect(() => {
@@ -3241,7 +3296,7 @@ export default function LeadsPage() {
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value)
-                    setCurrentPage(1)
+                    goToPage(1)
                   }}
                   className="w-full pl-10 pr-4 py-2.5 text-base border rounded-md focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all"
                   style={{ 
@@ -3617,7 +3672,7 @@ export default function LeadsPage() {
                             (e.target as HTMLElement).closest('button')) {
                           return
                         }
-                        router.push(`/leads/${lead.id}`)
+                        router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
                       }}
                     >
                     {isAdmin && (
@@ -3676,7 +3731,7 @@ export default function LeadsPage() {
                 value={itemsPerPage}
                 onChange={(e) => {
                   setItemsPerPage(Number(e.target.value))
-                  setCurrentPage(1)
+                  goToPage(1)
                 }}
                 className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-700 bg-white focus:ring-2 focus:ring-[#ed1b24] focus:border-transparent"
               >
@@ -3688,7 +3743,7 @@ export default function LeadsPage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                onClick={() => goToPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
                 className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -3704,7 +3759,7 @@ export default function LeadsPage() {
                     return (
                       <button
                         key={page}
-                        onClick={() => setCurrentPage(page)}
+                        onClick={() => goToPage(page)}
                         className={`px-3 py-2 text-base font-medium rounded-md ${
                           currentPage === page
                             ? 'bg-[#ed1b24] text-white'
@@ -3721,7 +3776,7 @@ export default function LeadsPage() {
                 })}
               </div>
               <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                onClick={() => goToPage(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
                 className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -3774,7 +3829,7 @@ export default function LeadsPage() {
                       value={itemsPerPage}
                       onChange={(e) => {
                         setItemsPerPage(Number(e.target.value))
-                        setCurrentPage(1)
+                        goToPage(1)
                       }}
                       className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-700 bg-white focus:ring-2 focus:ring-[#ed1b24] focus:border-transparent"
                     >
@@ -3786,7 +3841,7 @@ export default function LeadsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      onClick={() => goToPage(Math.max(1, currentPage - 1))}
                       disabled={currentPage === 1}
                       className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -3800,9 +3855,9 @@ export default function LeadsPage() {
                           (page >= currentPage - 1 && page <= currentPage + 1)
                         ) {
                           return (
-                            <button
+<button
                               key={page}
-                              onClick={() => setCurrentPage(page)}
+                              onClick={() => goToPage(page)}
                               className={`px-3 py-2 text-base font-medium rounded-md ${
                                 currentPage === page
                                   ? 'bg-[#ed1b24] text-white'
@@ -3817,9 +3872,9 @@ export default function LeadsPage() {
                         }
                         return null
                       })}
-        </div>
+                    </div>
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      onClick={() => goToPage(Math.min(totalPages, currentPage + 1))}
                       disabled={currentPage === totalPages}
                       className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
