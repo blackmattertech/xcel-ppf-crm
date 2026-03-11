@@ -88,7 +88,8 @@ export async function getLeadCountsByStatus(filters?: {
   }
 
   const counts: Record<string, number> = {}
-  for (const row of data || []) {
+  const rows: { status: string }[] = Array.isArray(data) ? data : []
+  for (const row of rows) {
     const s = row.status ?? 'unknown'
     counts[s] = (counts[s] ?? 0) + 1
   }

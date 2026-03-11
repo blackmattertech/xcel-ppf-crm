@@ -37,6 +37,23 @@ function getTtlMs(method: string, ttlMs?: number): number {
 }
 
 /**
+ * Build a response-like object that supports multiple .json()/.text() calls.
+ * Used when deduplicating in-flight requests so all waiters can read the body
+ * without "Body has already been consumed".
+ */
+function responseLike(res: Response, data: unknown, _isJson: boolean): Response {
+  return {
+    ok: res.ok,
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+    json: () => Promise.resolve(data),
+    text: () => Promise.resolve(typeof data === 'string' ? data : JSON.stringify(data)),
+    clone: () => responseLike(res, data, _isJson),
+  } as Response
+}
+
+/**
  * Fetch with frontend cache and in-flight deduplication.
  * - Same key (url + method + body for POST) while a request is in flight → same Promise (one network call).
  * - After success, response is cached in memory; next identical call within TTL returns cached response.
@@ -82,7 +99,10 @@ export async function cachedFetch(
       if (res.ok && ttl > 0) {
         cache.set(key, { data, expiresAt: Date.now() + ttl })
       }
-      return res
+      // Return a response-like object that supports multiple .json()/.text() calls
+      // so in-flight deduplication doesn't cause "Body has already been consumed"
+      // when multiple callers share the same Promise<Response>.
+      return responseLike(res, data, contentType.includes('application/json'))
     } finally {
       inFlight.delete(key)
     }

@@ -174,7 +174,8 @@ export async function deleteAllFollowUps(filters?: { assignedTo?: string }): Pro
   if (selectError) {
     throw new Error(`Failed to fetch follow-ups for delete: ${selectError.message}`)
   }
-  const ids = (Array.isArray(rows) ? rows : []).map((r) => r.id).filter(Boolean)
+  const rowList: { id: string }[] = Array.isArray(rows) ? rows : []
+  const ids = rowList.map((r) => r.id).filter(Boolean)
   if (ids.length === 0) {
     return { deletedCount: 0 }
   }
@@ -203,7 +204,8 @@ export async function deleteFollowUpsByIds(
   if (selectError) {
     throw new Error(`Failed to fetch follow-ups: ${selectError.message}`)
   }
-  const allowedIds = (Array.isArray(rows) ? rows : []).map((r) => r.id).filter(Boolean)
+  const rowList: { id: string }[] = Array.isArray(rows) ? rows : []
+  const allowedIds = rowList.map((r) => r.id).filter(Boolean)
   if (allowedIds.length === 0) return { deletedCount: 0 }
   const { data, error } = await supabase.from('follow_ups').delete().select('id').in('id', allowedIds)
   if (error) {
