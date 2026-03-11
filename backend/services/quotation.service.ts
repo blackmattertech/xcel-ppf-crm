@@ -243,34 +243,6 @@ export async function updateQuotationStatus(id: string, status: 'sent' | 'viewed
         notes: `Quotation ${status}`,
       } as any)
     }
-
-    // Auto-create follow-up for viewed or expired quotations
-    if ((status === 'viewed' || status === 'expired') && leadData.assigned_to) {
-      try {
-        const followUpDate = new Date()
-        if (status === 'viewed') {
-          // Follow up in 2 days if viewed
-          followUpDate.setDate(followUpDate.getDate() + 2)
-        } else if (status === 'expired') {
-          // Follow up immediately if expired
-          followUpDate.setHours(followUpDate.getHours() + 1)
-        }
-
-        await supabase
-          .from('follow_ups')
-          // @ts-ignore - Supabase type inference issue with dynamic inserts
-          .insert({
-            lead_id: leadData.id,
-            assigned_to: leadData.assigned_to,
-            scheduled_at: followUpDate.toISOString(),
-            notes: `Auto-scheduled follow-up: Quotation ${status}`,
-            status: 'pending',
-          } as any)
-      } catch (followUpError) {
-        // Log but don't fail the quotation update
-        console.error('Failed to create automatic follow-up for quotation:', followUpError)
-      }
-    }
   }
 
   return data

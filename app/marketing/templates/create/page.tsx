@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, CheckCircle, Megaphone, Bell, Key } from 'lucide-react'
 import { TemplatePreview } from '../../_components/TemplatePreview'
 import { META_LANGUAGES } from '../../_lib/utils'
+import { cachedFetch } from '@/lib/api-client'
 
 const CATEGORIES = [
   { value: 'MARKETING' as const, label: 'Marketing', help: 'Engage customers with promotions, offers, and announcements', icon: Megaphone },
@@ -69,7 +70,7 @@ export default function CreateTemplatePage() {
 
   useEffect(() => {
     if (needsCatalog && catalogConnected === null) {
-      fetch('/api/marketing/whatsapp/catalog-status', { credentials: 'include' })
+      cachedFetch('/api/marketing/whatsapp/catalog-status', { credentials: 'include' })
         .then((r) => r.json())
         .then((d) => setCatalogConnected(d.connected === true))
         .catch(() => setCatalogConnected(false))
@@ -100,7 +101,7 @@ export default function CreateTemplatePage() {
     components.push({ type: 'BODY', text: bodyText, variables: [] })
     if (footer) components.push({ type: 'FOOTER', text: footer })
     components.push(...buildButtonsComponent())
-    const res = await fetch('/api/marketing/whatsapp/template-drafts', {
+    const res = await cachedFetch('/api/marketing/whatsapp/template-drafts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -140,7 +141,7 @@ export default function CreateTemplatePage() {
     components.push({ type: 'BODY', text: body, variables: [] })
     if (footer) components.push({ type: 'FOOTER', text: footer })
     components.push(...buildButtonsComponent())
-    const res = await fetch(`/api/marketing/whatsapp/template-drafts/${draftId}`, {
+    const res = await cachedFetch(`/api/marketing/whatsapp/template-drafts/${draftId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -191,7 +192,7 @@ export default function CreateTemplatePage() {
     }
     setSubmitting(true)
     setError(null)
-    const res = await fetch(`/api/marketing/whatsapp/template-drafts/${draftId}/submit`, {
+    const res = await cachedFetch(`/api/marketing/whatsapp/template-drafts/${draftId}/submit`, {
       method: 'POST',
       credentials: 'include',
     })

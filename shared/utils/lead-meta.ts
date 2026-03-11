@@ -100,48 +100,115 @@ export function getCarModelFromMeta(metaData: Record<string, any> | null): strin
   return ''
 }
 
+/** City-like field name fragments (Meta form question text often varies). */
+const CITY_FIELD_MATCHERS = [
+  'city',
+  'location',
+  'your city',
+  'city name',
+  'where are you located',
+  'where do you live',
+  'area',
+  'locality',
+  'town',
+]
+
+/** State/region-like field name fragments. */
+const STATE_FIELD_MATCHERS = [
+  'state',
+  'region',
+  'your state',
+  'state/region',
+  'state or province',
+  'province',
+  'region/state',
+]
+
+/** Field names that may contain "City, State" or "City, State, Country". */
+const ADDRESS_LIKE_FIELD_MATCHERS = [
+  'address',
+  'full address',
+  'location',
+  'where are you located',
+  'city and state',
+  'city, state',
+]
+
+function parseAddressValue(value: string): { city: string; state: string } | null {
+  const trimmed = String(value).trim()
+  if (!trimmed || !trimmed.includes(',')) return null
+  const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length >= 2) {
+    return { city: parts[0], state: parts[1] }
+  }
+  return null
+}
+
+/**
+ * Extract city and state from lead meta_data in one pass.
+ * Tries dedicated city/state fields first, then parses address-like fields (e.g. "Mumbai, Maharashtra").
+ */
+export function getLocationFromMeta(metaData: Record<string, any> | null): { city: string; state: string } {
+  const empty = { city: '', state: '' }
+  if (!metaData || typeof metaData !== 'object') return empty
+
+  const directCity = metaData.city ?? metaData.City ?? metaData.location ?? metaData.Location
+  const directState = metaData.state ?? metaData.State ?? metaData.region ?? metaData.Region
+  if (directCity && typeof directCity === 'string') {
+    const state = (directState && typeof directState === 'string') ? String(directState).trim() : ''
+    return { city: String(directCity).trim(), state }
+  }
+  if (directState && typeof directState === 'string') {
+    return { city: '', state: String(directState).trim() }
+  }
+
+  const fieldData = metaData.field_data
+  if (!Array.isArray(fieldData)) return empty
+
+  let city = ''
+  let state = ''
+  let parsedFromAddress: { city: string; state: string } | null = null
+
+  for (const field of fieldData) {
+    const name = (field?.name || '').toLowerCase()
+    const value = field?.values?.[0]
+    if (!value || typeof value !== 'string') continue
+    const v = String(value).trim()
+
+    // Prefer parsing "City, State" from address-like fields when value contains comma
+    if (ADDRESS_LIKE_FIELD_MATCHERS.some((fn) => name.includes(fn)) && v.includes(',')) {
+      const parsed = parseAddressValue(v)
+      if (parsed && !parsedFromAddress) parsedFromAddress = parsed
+      continue
+    }
+    if (CITY_FIELD_MATCHERS.some((fn) => name.includes(fn)) && !name.includes('state') && !name.includes('region')) {
+      city = v
+    } else if (STATE_FIELD_MATCHERS.some((fn) => name.includes(fn))) {
+      state = v
+    }
+  }
+
+  if (city || state) {
+    return { city, state }
+  }
+  if (parsedFromAddress) {
+    return parsedFromAddress
+  }
+  return empty
+}
+
 /**
  * Extract city from lead meta_data.
  */
 export function getCityFromMeta(metaData: Record<string, any> | null): string {
-  if (!metaData || typeof metaData !== 'object') return ''
-  const directKeys = ['city', 'City', 'location', 'Location']
-  for (const key of directKeys) {
-    const val = metaData[key]
-    if (val && typeof val === 'string') return String(val).trim()
-  }
-  const fieldData = metaData.field_data
-  if (Array.isArray(fieldData)) {
-    const cityFields = ['city', 'location', 'your city']
-    for (const field of fieldData) {
-      const name = (field?.name || '').toLowerCase()
-      const value = field?.values?.[0]
-      if (value && cityFields.some((fn) => name.includes(fn))) return String(value).trim()
-    }
-  }
-  return ''
+  return getLocationFromMeta(metaData).city
 }
 
 /**
  * Extract state from lead meta_data.
  */
 export function getStateFromMeta(metaData: Record<string, any> | null): string {
-  if (!metaData || typeof metaData !== 'object') return ''
-  const directKeys = ['state', 'State', 'region', 'Region']
-  for (const key of directKeys) {
-    const val = metaData[key]
-    if (val && typeof val === 'string') return String(val).trim()
-  }
-  const fieldData = metaData.field_data
-  if (Array.isArray(fieldData)) {
-    const stateFields = ['state', 'region', 'your state']
-    for (const field of fieldData) {
-      const name = (field?.name || '').toLowerCase()
-      const value = field?.values?.[0]
-      if (value && stateFields.some((fn) => name.includes(fn))) return String(value).trim()
-    }
-  }
-  return ''
+  return getLocationFromMeta(metaData).state
 }
 
 /**

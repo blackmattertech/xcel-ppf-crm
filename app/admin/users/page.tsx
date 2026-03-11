@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Role {
   id: string
@@ -96,7 +97,7 @@ export default function UsersPage() {
 
   async function fetchUsers() {
     try {
-      const response = await fetch('/api/users')
+      const response = await cachedFetch('/api/users')
       if (response.ok) {
         const data = await response.json()
         setUsers(data.users || [])
@@ -110,7 +111,7 @@ export default function UsersPage() {
 
   async function fetchRoles() {
     try {
-      const response = await fetch('/api/roles')
+      const response = await cachedFetch('/api/roles')
       if (response.ok) {
         const data = await response.json()
         setRoles(data.roles || [])
@@ -142,7 +143,7 @@ export default function UsersPage() {
         address: formData.address || null,
       }
 
-      const response = await fetch('/api/users', {
+      const response = await cachedFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(userData),
@@ -158,7 +159,7 @@ export default function UsersPage() {
             imageFormData.append('file', profileImage)
             imageFormData.append('userId', user.id)
 
-            const imageResponse = await fetch('/api/users/upload-profile-image', {
+            const imageResponse = await cachedFetch('/api/users/upload-profile-image', {
               method: 'POST',
               body: imageFormData,
             })
@@ -166,7 +167,7 @@ export default function UsersPage() {
             if (imageResponse.ok) {
               const imageData = await imageResponse.json()
               // Update user with image URL
-              await fetch(`/api/users/${user.id}`, {
+              await cachedFetch(`/api/users/${user.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -229,7 +230,7 @@ export default function UsersPage() {
     }
 
     try {
-      const response = await fetch(`/api/users/${userId}`, {
+      const response = await cachedFetch(`/api/users/${userId}`, {
         method: 'DELETE',
       })
 

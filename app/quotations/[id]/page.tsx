@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import { ArrowLeft, Download, Share2, Building2, User, Phone, Mail, Calendar, FileText } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface QuotationItem {
   name: string
@@ -63,7 +64,7 @@ export default function QuotationDetailPage() {
 
   async function fetchQuotation() {
     try {
-      const response = await fetch(`/api/quotations/${quotationId}`)
+      const response = await cachedFetch(`/api/quotations/${quotationId}`)
       if (response.ok) {
         const data = await response.json()
         setQuotation(data.quotation)

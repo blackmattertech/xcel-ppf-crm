@@ -14,6 +14,7 @@ import { getInterestedProductFromMeta, getCarModelFromMeta } from '@/shared/util
 import { useAuthContext } from '@/components/AuthProvider'
 import MobileHeader from '@/components/MobileHeader'
 import MobileBottomNav from '@/components/MobileBottomNav'
+import { cachedFetch } from '@/lib/api-client'
 
 // New lead modal is quite heavy; load it only when the user actually opens it
 // so the main Leads list and filters become interactive faster.
@@ -650,7 +651,7 @@ function KanbanBoard({
       const newInterestLevel = interestLevelMap[groupKey]
       if (newInterestLevel !== undefined && newInterestLevel !== draggedLead.interest_level) {
         // Update lead's interest_level
-        fetch(`/api/leads/${draggedLead.id}`, {
+        cachedFetch(`/api/leads/${draggedLead.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -664,7 +665,7 @@ function KanbanBoard({
       // Find user ID by name
       const targetUser = allLeads.find(lead => lead.assigned_user?.name === groupKey)?.assigned_user
       if (targetUser && targetUser.id !== draggedLead.assigned_user?.id) {
-        fetch(`/api/leads/${draggedLead.id}`, {
+        cachedFetch(`/api/leads/${draggedLead.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1012,7 +1013,7 @@ export default function LeadsPage() {
   async function fetchLeadFollowups(leadId: string) {
     setLoadingFollowups(true)
     try {
-      const response = await fetch(`/api/followups?leadId=${leadId}`)
+      const response = await cachedFetch(`/api/followups?leadId=${leadId}`)
       if (response.ok) {
         const data = await response.json()
         setLeadFollowups(data.followUps || [])
@@ -1090,42 +1091,25 @@ export default function LeadsPage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Fetch followups counts for visible leads only (optimized)
+  // Fetch follow-up counts in one batch (single API call for visible leads)
   useEffect(() => {
     if (leads.length === 0) return
-    
-    async function fetchVisibleFollowupsCounts() {
-      try {
-        const counts: Record<string, number> = {}
-        const leadIds = leads.map(lead => lead.id)
-        
-        // Fetch followups for visible leads only
-        const promises = leadIds.map(async (leadId) => {
-          try {
-            const response = await fetch(`/api/followups?leadId=${leadId}`)
-            if (response.ok) {
-              const data = await response.json()
-              return { leadId, count: data.followUps?.length || 0 }
-            }
-            return { leadId, count: 0 }
-          } catch (error) {
-            return { leadId, count: 0 }
-          }
-        })
-        
-        const results = await Promise.all(promises)
-        const newCounts: Record<string, number> = {}
-        results.forEach(({ leadId, count }) => {
-          newCounts[leadId] = count
-        })
-        
-        setLeadFollowupsCounts(prev => ({ ...prev, ...newCounts }))
-      } catch (error) {
-        console.error('Failed to fetch followups counts:', error)
-      }
-    }
-    
-    fetchVisibleFollowupsCounts()
+    const leadIds = leads.map((lead) => lead.id)
+    if (leadIds.length === 0) return
+    let cancelled = false
+    cachedFetch('/api/followups/counts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds }),
+    }, 15000)
+      .then((res) => (res.ok ? res.json() : { counts: {} }))
+      .then((data) => {
+        if (!cancelled && data.counts) {
+          setLeadFollowupsCounts((prev) => ({ ...prev, ...data.counts }))
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [leads])
 
   // Save container styles to localStorage whenever they change
@@ -1708,7 +1692,7 @@ export default function LeadsPage() {
 
   async function fetchTeleCallers() {
     try {
-      const response = await fetch('/api/users/tele-callers')
+      const response = await cachedFetch('/api/users/tele-callers')
       if (response.ok) {
         const data = await response.json()
         setTeleCallers(data.teleCallers || [])
@@ -1720,7 +1704,7 @@ export default function LeadsPage() {
 
   async function fetchLeads() {
     try {
-      const response = await fetch('/api/leads')
+      const response = await cachedFetch('/api/leads')
       if (response.ok) {
         const data = await response.json()
         setAllLeads(data.leads || [])
@@ -1871,7 +1855,7 @@ export default function LeadsPage() {
 
     setBulkReassignLoading(true)
     try {
-      const response = await fetch('/api/leads/bulk-reassign', {
+      const response = await cachedFetch('/api/leads/bulk-reassign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1902,7 +1886,7 @@ export default function LeadsPage() {
   // Handle lead move in Kanban (drag and drop)
   async function handleLeadMove(leadId: string, newStatus: string) {
     try {
-      const response = await fetch(`/api/leads/${leadId}/status`, {
+      const response = await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -1928,7 +1912,7 @@ export default function LeadsPage() {
 
     setReassignLoading(true)
     try {
-      const response = await fetch(`/api/leads/${leadId}/reassign`, {
+      const response = await cachedFetch(`/api/leads/${leadId}/reassign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assigned_to: selectedTeleCaller.trim() }),
@@ -1960,7 +1944,7 @@ export default function LeadsPage() {
     setDeleteLoading(true)
     setDeletingLeadId(leadId)
     try {
-      const response = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+      const response = await cachedFetch(`/api/leads/${leadId}`, { method: 'DELETE' })
       const data = await response.json()
 
       if (response.ok) {
@@ -1988,7 +1972,7 @@ export default function LeadsPage() {
 
     setBulkDeleteLoading(true)
     try {
-      const response = await fetch('/api/leads/bulk-delete', {
+      const response = await cachedFetch('/api/leads/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead_ids: Array.from(selectedLeadIds) }),
@@ -2014,7 +1998,7 @@ export default function LeadsPage() {
   async function handleSyncFromMeta() {
     setMetaSyncLoading(true)
     try {
-      const response = await fetch('/api/integrations/facebook/sync-leads', { method: 'POST' })
+      const response = await cachedFetch('/api/integrations/facebook/sync-leads', { method: 'POST' })
       const contentType = response.headers.get('content-type') || ''
 
       if (!response.ok) {
@@ -4198,7 +4182,10 @@ export default function LeadsPage() {
       {/* Modals - Outside desktop view, at fragment level */}
       {/* New Lead Modal */}
       {newLeadModalOpen && (
-        <NewLeadForm onClose={() => setNewLeadModalOpen(false)} />
+        <NewLeadForm
+          onClose={() => setNewLeadModalOpen(false)}
+          onSuccess={() => fetchLeads()}
+        />
       )}
 
       {/* Container Customization Modal */}

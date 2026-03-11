@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { updateFollowUp, completeFollowUp } from '@/backend/services/followup.service'
+import { updateFollowUp, completeFollowUp, deleteFollowUp } from '@/backend/services/followup.service'
 import { z } from 'zod'
 
 const updateFollowUpSchema = z.object({
@@ -63,6 +63,28 @@ export async function POST(
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to complete follow-up' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const authResult = await requireAuth(request)
+
+    if ('error' in authResult) {
+      return authResult.error
+    }
+
+    await deleteFollowUp(id)
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to delete follow-up' },
       { status: 500 }
     )
   }

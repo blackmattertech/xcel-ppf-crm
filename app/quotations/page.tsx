@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import Link from 'next/link'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Quotation {
   id: string
@@ -33,7 +34,7 @@ export default function QuotationsPage() {
 
   async function fetchTotalLeads() {
     try {
-      const response = await fetch('/api/leads')
+      const response = await cachedFetch('/api/leads')
       if (response.ok) {
         const data = await response.json()
         setTotalLeads(data.leads?.length || 0)
@@ -54,7 +55,7 @@ export default function QuotationsPage() {
 
   async function fetchQuotations() {
     try {
-      const response = await fetch('/api/quotations')
+      const response = await cachedFetch('/api/quotations')
       if (response.ok) {
         const data = await response.json()
         setQuotations(data.quotations || [])

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Order {
   id: string
@@ -36,7 +37,7 @@ export default function OrdersPage() {
 
   async function fetchTotalLeads() {
     try {
-      const response = await fetch('/api/leads')
+      const response = await cachedFetch('/api/leads')
       if (response.ok) {
         const data = await response.json()
         setTotalLeads(data.leads?.length || 0)
@@ -57,7 +58,7 @@ export default function OrdersPage() {
 
   async function fetchOrders() {
     try {
-      const response = await fetch('/api/orders')
+      const response = await cachedFetch('/api/orders')
       if (response.ok) {
         const data = await response.json()
         setOrders(data.orders || [])

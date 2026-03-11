@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import { cachedFetch } from '@/lib/api-client'
 
 export default function ForgotPasswordPage() {
   const router = useRouter()
@@ -19,7 +20,7 @@ export default function ForgotPasswordPage() {
     setLoading(true)
 
     try {
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await cachedFetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

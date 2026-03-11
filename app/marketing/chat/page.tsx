@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { LeadRecipient } from '../_lib/types'
 import type { ChatMessage } from '../_lib/types'
 import { normalizePhoneForChat, normalizePhoneForStorage } from '../_lib/utils'
+import { cachedFetch } from '@/lib/api-client'
 
 export default function ChatWithLeadsPage() {
   const [leads, setLeads] = useState<LeadRecipient[]>([])
@@ -25,7 +26,7 @@ export default function ChatWithLeadsPage() {
   const sendingRef = useRef(false)
 
   useEffect(() => {
-    fetch('/api/marketing/whatsapp/config')
+    cachedFetch('/api/marketing/whatsapp/config')
       .then((res) => (res.ok ? res.json() : { configured: false }))
       .then((data) => setApiConfigured(!!data?.configured))
       .catch(() => setApiConfigured(false))
@@ -33,7 +34,7 @@ export default function ChatWithLeadsPage() {
 
   useEffect(() => {
     setLoading(true)
-    fetch('/api/leads')
+    cachedFetch('/api/leads')
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 403 ? "You don't have access to leads." : 'Failed to load leads')
         return res.json()
@@ -55,7 +56,7 @@ export default function ChatWithLeadsPage() {
     setLoadingMessages(true)
     setMessagesError(null)
     const normalized = normalizePhoneForChat(phone)
-    fetch(`/api/marketing/whatsapp/chat?leadId=${encodeURIComponent(leadId)}&phone=${encodeURIComponent(normalized)}`)
+    cachedFetch(`/api/marketing/whatsapp/chat?leadId=${encodeURIComponent(leadId)}&phone=${encodeURIComponent(normalized)}`)
       .then((res) => (res.ok ? res.json() : { messages: [] }))
       .then((data) => setMessages(data.messages || []))
       .catch(() => { setMessages([]); setMessagesError('Failed to load conversation') })
@@ -122,7 +123,7 @@ export default function ChatWithLeadsPage() {
     setMessage('')
     const contextMessageId = lastIncomingMetaId
     try {
-      const res = await fetch('/api/marketing/whatsapp/send', {
+      const res = await cachedFetch('/api/marketing/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

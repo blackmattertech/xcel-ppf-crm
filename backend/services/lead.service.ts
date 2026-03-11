@@ -67,6 +67,34 @@ export async function getAllLeads(filters?: {
   return data || []
 }
 
+/** Returns lead counts grouped by status (for pipeline view). Respects role-based filtering. */
+export async function getLeadCountsByStatus(filters?: {
+  userId?: string
+  userRole?: string
+}): Promise<Record<string, number>> {
+  const supabase = createServiceClient()
+  let query = supabase
+    .from('leads')
+    .select('status')
+    .neq('status', LEAD_STATUS.FULLY_PAID)
+
+  if (filters?.userRole === 'tele_caller' && filters?.userId) {
+    query = query.eq('assigned_to', filters.userId)
+  }
+
+  const { data, error } = await query
+  if (error) {
+    throw new Error(`Failed to fetch lead counts: ${error.message}`)
+  }
+
+  const counts: Record<string, number> = {}
+  for (const row of data || []) {
+    const s = row.status ?? 'unknown'
+    counts[s] = (counts[s] ?? 0) + 1
+  }
+  return counts
+}
+
 export async function getLeadById(id: string, userId?: string, userRole?: string) {
   const supabase = createServiceClient()
 

@@ -21,6 +21,7 @@ import {
   ComposedChart,
 } from 'recharts'
 import type { TemplateForOverview } from '../_lib/types'
+import { cachedFetch } from '@/lib/api-client'
 
 const PIE_COLORS = [
   '#25D366', '#128C7E', '#34B7F1', '#6366f1', '#8b5cf6',
@@ -115,15 +116,15 @@ export default function OverviewPage() {
     const endDate = end.toISOString()
 
     Promise.all([
-      fetch('/api/marketing/whatsapp/config').then((r) => (r.ok ? r.json() : { configured: false })),
-      fetch('/api/marketing/whatsapp/templates').then((r) => {
+      cachedFetch('/api/marketing/whatsapp/config').then((r) => (r.ok ? r.json() : { configured: false })),
+      cachedFetch('/api/marketing/whatsapp/templates').then((r) => {
         if (!r.ok) throw new Error('Failed to load templates')
         return r.json()
       }),
-      fetch(`/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`).then((r) =>
+      cachedFetch(`/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`).then((r) =>
         r.ok ? r.json() : null
       ),
-      fetch(`/api/marketing/meta-ads-overview?date_range=${encodeURIComponent(metaDateRange)}`).then((r) =>
+      cachedFetch(`/api/marketing/meta-ads-overview?date_range=${encodeURIComponent(metaDateRange)}`).then((r) =>
         r.ok ? r.json() : null
       ),
     ])

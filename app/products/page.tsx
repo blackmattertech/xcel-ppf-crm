@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Product {
   id: string
@@ -55,7 +56,7 @@ export default function ProductsPage() {
 
   async function fetchTotalLeads() {
     try {
-      const response = await fetch('/api/leads')
+      const response = await cachedFetch('/api/leads')
       if (response.ok) {
         const data = await response.json()
         setTotalLeads(data.leads?.length || 0)
@@ -123,7 +124,7 @@ export default function ProductsPage() {
 
   async function fetchProducts() {
     try {
-      const response = await fetch('/api/products?with_stats=true')
+      const response = await cachedFetch('/api/products?with_stats=true')
       if (response.ok) {
         const data = await response.json()
         setProducts(data || [])
@@ -172,7 +173,7 @@ export default function ProductsPage() {
       const formData = new FormData()
       formData.append('file', productImage)
 
-      const response = await fetch('/api/products/upload-image', {
+      const response = await cachedFetch('/api/products/upload-image', {
         method: 'POST',
         body: formData,
       })
@@ -210,7 +211,7 @@ export default function ProductsPage() {
         return
       }
 
-      const response = await fetch('/api/products', {
+      const response = await cachedFetch('/api/products', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -272,7 +273,7 @@ export default function ProductsPage() {
         return
       }
 
-      const response = await fetch(`/api/products/${editingProduct.id}`, {
+      const response = await cachedFetch(`/api/products/${editingProduct.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -323,7 +324,7 @@ export default function ProductsPage() {
     }
 
     try {
-      const response = await fetch(`/api/products/${id}`, {
+      const response = await cachedFetch(`/api/products/${id}`, {
         method: 'DELETE',
       })
 

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
 import { ArrowLeft, Phone, Mail, Calendar, Star, DollarSign, Users, Award, Clock, Play, Download } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Role {
   id: string
@@ -144,7 +145,7 @@ export default function UserDetailPage() {
 
   async function fetchUser() {
     try {
-      const response = await fetch(`/api/users/${userId}`)
+      const response = await cachedFetch(`/api/users/${userId}`)
       if (response.ok) {
         const data = await response.json()
         setUser(data.user)
@@ -274,7 +275,7 @@ export default function UserDetailPage() {
 
   async function fetchCalls() {
     try {
-      const response = await fetch(`/api/calls?user_id=${userId}`)
+      const response = await cachedFetch(`/api/calls?user_id=${userId}`)
       if (response.ok) {
         const data = await response.json()
         setCalls(data.calls || [])
@@ -447,7 +448,7 @@ export default function UserDetailPage() {
         imageFormData.append('file', profileImage)
         imageFormData.append('userId', userId)
 
-        const imageResponse = await fetch('/api/users/upload-profile-image', {
+        const imageResponse = await cachedFetch('/api/users/upload-profile-image', {
           method: 'POST',
           body: imageFormData,
         })
@@ -478,7 +479,7 @@ export default function UserDetailPage() {
         updatePayload.roleId = user?.role?.id || formData.roleId
       }
 
-      const response = await fetch(`/api/users/${userId}`, {
+      const response = await cachedFetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatePayload),

@@ -46,6 +46,7 @@ import {
   CheckCircle,
   Pencil
 } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 // Interactive Time Picker Component
 function TimePicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
@@ -544,7 +545,7 @@ export default function LeadDetailPage() {
 
   async function fetchProducts() {
     try {
-      const response = await fetch('/api/products')
+      const response = await cachedFetch('/api/products')
       if (response.ok) {
         const data = await response.json()
         setProducts(data || [])
@@ -582,7 +583,7 @@ export default function LeadDetailPage() {
 
   async function fetchLeadQuotations() {
     try {
-      const response = await fetch(`/api/quotations?leadId=${leadId}`)
+      const response = await cachedFetch(`/api/quotations?leadId=${leadId}`)
       if (response.ok) {
         const data = await response.json()
         const list = data.quotations || []
@@ -596,7 +597,7 @@ export default function LeadDetailPage() {
 
   async function fetchLead() {
     try {
-      const response = await fetch(`/api/leads/${leadId}`)
+      const response = await cachedFetch(`/api/leads/${leadId}`)
       if (response.ok) {
         const data = await response.json()
         setLead(data.lead)
@@ -625,7 +626,7 @@ export default function LeadDetailPage() {
 
     setUpdatingStatus(true)
     try {
-      const response = await fetch(`/api/leads/${leadId}/status`, {
+      const response = await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -658,7 +659,7 @@ export default function LeadDetailPage() {
 
     setDeletingLead(true)
     try {
-      const response = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+      const response = await cachedFetch(`/api/leads/${leadId}`, { method: 'DELETE' })
       const data = await response.json()
 
       if (response.ok) {
@@ -716,7 +717,7 @@ export default function LeadDetailPage() {
       }
 
       // Create call record
-      const callResponse = await fetch('/api/calls', {
+      const callResponse = await cachedFetch('/api/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -735,7 +736,7 @@ export default function LeadDetailPage() {
       // Handle outcome-specific actions
       if (callOutcome === CALL_OUTCOME.WRONG_NUMBER) {
         // Update status to lost
-        const statusResponse = await fetch(`/api/leads/${leadId}/status`, {
+        const statusResponse = await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -759,7 +760,7 @@ export default function LeadDetailPage() {
       // Update interest level if connected
       if (callOutcome === CALL_OUTCOME.CONNECTED && callInterestLevel && lead) {
         try {
-          const updateResponse = await fetch(`/api/leads/${leadId}`, {
+          const updateResponse = await cachedFetch(`/api/leads/${leadId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -781,7 +782,7 @@ export default function LeadDetailPage() {
         const scheduledAt = new Date(`${callFollowUpDate}T${callFollowUpTime}`)
         
         try {
-          const followUpResponse = await fetch('/api/followups', {
+          const followUpResponse = await cachedFetch('/api/followups', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -805,7 +806,7 @@ export default function LeadDetailPage() {
       // Auto-qualify if connected and new lead
       if (callOutcome === CALL_OUTCOME.CONNECTED && lead?.status === LEAD_STATUS.NEW) {
         try {
-          await fetch(`/api/leads/${leadId}/status`, {
+          await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -859,7 +860,7 @@ export default function LeadDetailPage() {
     setSubmittingCall(true)
     try {
       if (quotationCallOutcome === 'not_accepted') {
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -875,7 +876,7 @@ export default function LeadDetailPage() {
       }
 
       if (quotationCallOutcome === 'negotiation') {
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -891,7 +892,7 @@ export default function LeadDetailPage() {
       }
 
       // accepted: mark deal won, convert to customer, create job card (order), then show payment modal
-      await fetch(`/api/leads/${leadId}/status`, {
+      await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -900,7 +901,7 @@ export default function LeadDetailPage() {
         }),
       })
 
-      const convertRes = await fetch(`/api/leads/${leadId}/convert`, {
+      const convertRes = await cachedFetch(`/api/leads/${leadId}/convert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -947,7 +948,7 @@ export default function LeadDetailPage() {
       const callDuration = Math.floor(diffMs / 1000)
 
       // Create call record first
-      const callResponse = await fetch('/api/calls', {
+      const callResponse = await cachedFetch('/api/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -966,7 +967,7 @@ export default function LeadDetailPage() {
       // Handle sub-options
       if (option === 'not_interested') {
         // Not Interested → Discarded (Lost)
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -987,7 +988,7 @@ export default function LeadDetailPage() {
           return
         }
         const scheduledAt = new Date(`${callFollowUpDate}T${callFollowUpTime}`)
-        await fetch('/api/followups', {
+        await cachedFetch('/api/followups', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1050,7 +1051,7 @@ export default function LeadDetailPage() {
         updates.timeline = interestedPurchaseTimeline
       }
 
-      const updateResponse = await fetch(`/api/leads/${leadId}`, {
+      const updateResponse = await cachedFetch(`/api/leads/${leadId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -1061,7 +1062,7 @@ export default function LeadDetailPage() {
       }
 
       // Update status with notes
-      await fetch(`/api/leads/${leadId}/status`, {
+      await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1092,7 +1093,7 @@ export default function LeadDetailPage() {
     setSubmittingQualify(true)
     try {
       // Update lead with interest level and status
-      const response = await fetch(`/api/leads/${leadId}`, {
+      const response = await cachedFetch(`/api/leads/${leadId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1103,7 +1104,7 @@ export default function LeadDetailPage() {
 
       if (response.ok) {
         // Update status with notes
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1149,7 +1150,7 @@ export default function LeadDetailPage() {
         updates.advance_amount = parseFloat(advanceAmount)
       }
 
-      const response = await fetch(`/api/leads/${leadId}`, {
+      const response = await cachedFetch(`/api/leads/${leadId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -1161,7 +1162,7 @@ export default function LeadDetailPage() {
         if (lastCreatedOrderId) {
           const orderPaymentStatus = paymentStatus === 'fully_paid' ? 'fully_paid' : paymentStatus === 'advance_received' ? 'advance_received' : 'pending'
           try {
-            await fetch(`/api/orders/${lastCreatedOrderId}`, {
+            await cachedFetch(`/api/orders/${lastCreatedOrderId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ payment_status: orderPaymentStatus }),
@@ -1180,7 +1181,7 @@ export default function LeadDetailPage() {
 
           if (alreadyConverted) {
             // We just created job card from Accepted flow - only update status
-            await fetch(`/api/leads/${leadId}/status`, {
+            await cachedFetch(`/api/leads/${leadId}/status`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1197,7 +1198,7 @@ export default function LeadDetailPage() {
           } else {
             // Convert lead to customer and create order (e.g. when opening payment from Deal Won)
             try {
-              const convertResponse = await fetch(`/api/leads/${leadId}/convert`, {
+              const convertResponse = await cachedFetch(`/api/leads/${leadId}/convert`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
@@ -1208,10 +1209,10 @@ export default function LeadDetailPage() {
                 throw new Error(errorData.error || 'Failed to convert lead to customer')
               }
 
-              const resLead = await fetch(`/api/leads/${leadId}`).then(r => r.json())
+              const resLead = await cachedFetch(`/api/leads/${leadId}`).then(r => r.json())
               const currentStatus = resLead.lead?.status ?? resLead.status
               if (currentStatus !== LEAD_STATUS.FULLY_PAID) {
-                await fetch(`/api/leads/${leadId}/status`, {
+                await cachedFetch(`/api/leads/${leadId}/status`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -1225,7 +1226,7 @@ export default function LeadDetailPage() {
               window.location.href = '/customers'
             } catch (convertError) {
               console.error('Failed to convert lead:', convertError)
-              await fetch(`/api/leads/${leadId}/status`, {
+              await cachedFetch(`/api/leads/${leadId}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1253,7 +1254,7 @@ export default function LeadDetailPage() {
         }
 
         if (statusUpdate && paymentStatus !== 'fully_paid') {
-          await fetch(`/api/leads/${leadId}/status`, {
+          await cachedFetch(`/api/leads/${leadId}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1306,7 +1307,7 @@ export default function LeadDetailPage() {
 
     setSubmittingFollowUp(true)
     try {
-      const response = await fetch('/api/followups', {
+      const response = await cachedFetch('/api/followups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1343,7 +1344,7 @@ export default function LeadDetailPage() {
   // Handle follow-up completion
   async function handleCompleteFollowUp(followUpId: string) {
     try {
-      const response = await fetch(`/api/followups/${followUpId}`, {
+      const response = await cachedFetch(`/api/followups/${followUpId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1924,7 +1925,7 @@ export default function LeadDetailPage() {
                 onClick={async () => {
                   setMarkingQuotationShared(true)
                   try {
-                    const res = await fetch(`/api/leads/${leadId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: LEAD_STATUS.QUOTATION_SHARED, notes: 'Quotation shared with lead' }) })
+                    const res = await cachedFetch(`/api/leads/${leadId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: LEAD_STATUS.QUOTATION_SHARED, notes: 'Quotation shared with lead' }) })
                     if (res.ok) await fetchLead()
                     else { const err = await res.json(); alert(err.error || 'Failed to update status') }
                   } catch (e) { console.error(e); alert('Failed to update status') }
@@ -3256,7 +3257,7 @@ export default function LeadDetailPage() {
 
                     setSubmittingQuotation(true)
                     try {
-                      const response = await fetch('/api/quotations', {
+                      const response = await cachedFetch('/api/quotations', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({

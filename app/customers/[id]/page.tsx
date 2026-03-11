@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Customer {
   id: string
@@ -68,7 +69,7 @@ export default function CustomerDetailPage() {
 
   async function fetchCustomer() {
     try {
-      const response = await fetch(`/api/customers/${customerId}`)
+      const response = await cachedFetch(`/api/customers/${customerId}`)
       if (response.ok) {
         const data = await response.json()
         setCustomer(data.customer)

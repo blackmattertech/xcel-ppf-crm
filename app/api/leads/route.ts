@@ -90,12 +90,17 @@ export async function POST(request: NextRequest) {
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
     const lead_id = `LEAD-${timestamp}-${randomSuffix}`
     
-    const leadData = {
+    const leadData: Record<string, unknown> = {
       ...parsedData,
       lead_id,
     }
 
-    const lead = await createLead(leadData as any, true) // Auto-assign enabled
+    // Manual leads: assign to creator so they see the lead in their list (tele_caller filter is by assigned_to)
+    if (parsedData.source === 'manual') {
+      leadData.assigned_to = authResult.user.id
+    }
+
+    const lead = await createLead(leadData as any, true) // Auto-assign enabled (skipped for manual when assigned_to set)
 
     // Invalidate related caches when new lead is created
     await invalidateCachePrefix(CACHE_KEYS.LEADS_LIST)

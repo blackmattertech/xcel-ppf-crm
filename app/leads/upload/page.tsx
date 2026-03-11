@@ -6,6 +6,7 @@ import Layout from '@/components/Layout'
 import { Upload, Download, FileText, CheckCircle, XCircle, AlertCircle, ArrowLeft, X } from 'lucide-react'
 import Papa from 'papaparse'
 import Link from 'next/link'
+import { cachedFetch } from '@/lib/api-client'
 
 interface ParsedLead {
   [key: string]: any
@@ -483,7 +484,7 @@ export default function UploadLeadsPage() {
         }
       })
 
-      const response = await fetch('/api/leads/bulk-upload', {
+      const response = await cachedFetch('/api/leads/bulk-upload', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

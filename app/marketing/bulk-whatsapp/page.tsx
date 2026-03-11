@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Search, Loader2, Send, Users, UserCheck, ListOrdered, MessageCircle, ArrowLeft } from 'lucide-react'
 import type { LeadRecipient, CustomerRecipient, PastedRecipient, Recipient, SendResult, WhatsAppTemplate, MetaTemplateOption } from '../_lib/types'
 import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/utils'
+import { cachedFetch } from '@/lib/api-client'
 
 export default function BulkWhatsAppPage() {
   const [source, setSource] = useState<'leads' | 'customers' | 'paste'>('leads')
@@ -26,7 +27,7 @@ export default function BulkWhatsAppPage() {
   const [templateHeaderParamValues, setTemplateHeaderParamValues] = useState<string[]>([])
 
   useEffect(() => {
-    fetch('/api/marketing/whatsapp/config')
+    cachedFetch('/api/marketing/whatsapp/config')
       .then((res) => (res.ok ? res.json() : { configured: false }))
       .then((data) => setApiConfigured(!!data?.configured))
       .catch(() => setApiConfigured(false))
@@ -35,8 +36,8 @@ export default function BulkWhatsAppPage() {
   useEffect(() => {
     if (!apiConfigured) return
     Promise.all([
-      fetch('/api/marketing/whatsapp/templates?status=approved').then((res) => (res.ok ? res.json() : { templates: [] })),
-      fetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? res.json() : { templates: [] })),
+      cachedFetch('/api/marketing/whatsapp/templates?status=approved').then((res) => (res.ok ? res.json() : { templates: [] })),
+      cachedFetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? res.json() : { templates: [] })),
     ])
       .then(([local, meta]) => {
         setApprovedTemplates(local.templates || [])
@@ -65,7 +66,7 @@ export default function BulkWhatsAppPage() {
     if (source !== 'leads') return
     setLoading(true)
     setLoadError(null)
-    fetch('/api/leads')
+    cachedFetch('/api/leads')
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 403 ? "You don't have access to leads." : 'Failed to load leads')
         return res.json()
@@ -88,7 +89,7 @@ export default function BulkWhatsAppPage() {
     if (source !== 'customers') return
     setLoading(true)
     setLoadError(null)
-    fetch('/api/customers')
+    cachedFetch('/api/customers')
       .then((res) => {
         if (!res.ok) throw new Error(res.status === 403 ? "You don't have access to customers." : 'Failed to load customers')
         return res.json()
@@ -232,7 +233,7 @@ export default function BulkWhatsAppPage() {
       for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
         const batch = recipients.slice(i, i + BATCH_SIZE)
         payload.recipients = batch
-        const res = await fetch('/api/marketing/whatsapp/send-template', {
+        const res = await cachedFetch('/api/marketing/whatsapp/send-template', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

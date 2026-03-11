@@ -10,6 +10,7 @@ import {
   getFirebaseMessaging,
 } from '@/lib/firebase'
 import { onMessage } from 'firebase/messaging'
+import { cachedFetch } from '@/lib/api-client'
 
 const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development'
 
@@ -62,7 +63,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
     }
     if (registeredTokenRef.current === token) return
     try {
-      const res = await fetch('/api/push/register', {
+      const res = await cachedFetch('/api/push/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

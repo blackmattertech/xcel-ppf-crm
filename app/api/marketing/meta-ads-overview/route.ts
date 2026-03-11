@@ -4,8 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
 import {
   getInterestedProductFromMeta,
-  getCityFromMeta,
-  getStateFromMeta,
+  getLocationFromMeta,
 } from '@/shared/utils/lead-meta'
 import { fetchAllLeadsFromMeta } from '@/backend/services/meta-leads.service'
 
@@ -221,8 +220,7 @@ export async function GET(request: NextRequest) {
         const product = getInterestedProductFromMeta(lead.metaData) || 'Not specified'
         const productKey = product.trim() || 'Not specified'
         byProduct[productKey] = (byProduct[productKey] ?? 0) + 1
-        const city = getCityFromMeta(lead.metaData)
-        const state = getStateFromMeta(lead.metaData)
+        const { city, state } = getLocationFromMeta(lead.metaData)
         if (city) byCity[city] = (byCity[city] ?? 0) + 1
         if (state) byState[state] = (byState[state] ?? 0) + 1
         if (city || state) {

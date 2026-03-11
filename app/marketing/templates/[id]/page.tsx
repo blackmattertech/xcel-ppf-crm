@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2, Clock, CheckCircle, XCircle, AlertCircle } from 'lu
 import { TemplatePreview } from '../../_components/TemplatePreview'
 import type { WhatsAppTemplate } from '../../_lib/types'
 import { getLanguageName } from '../../_lib/utils'
+import { cachedFetch } from '@/lib/api-client'
 
 interface StatusHistoryEntry {
   id: string
@@ -41,7 +42,7 @@ export default function TemplateDetailPage({ params }: { params: Promise<{ id: s
     if (!id) return
     setLoading(true)
     setError(null)
-    fetch(`/api/marketing/whatsapp/templates/${id}`, { credentials: 'include' })
+    cachedFetch(`/api/marketing/whatsapp/templates/${id}`, { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {

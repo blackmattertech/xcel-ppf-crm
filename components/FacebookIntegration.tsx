@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { CheckCircle2, XCircle, ExternalLink, Loader2, RefreshCw, ChevronDown } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface FacebookConfig {
   id: string
@@ -37,7 +38,7 @@ export default function FacebookIntegration() {
   async function fetchConfig() {
     try {
       setLoading(true)
-      const response = await fetch('/api/integrations/facebook/config')
+      const response = await cachedFetch('/api/integrations/facebook/config')
       if (response.ok) {
         const data = await response.json()
         setConfig(data.config)
@@ -58,7 +59,7 @@ export default function FacebookIntegration() {
       setError(null)
 
       // Get auth URL
-      const response = await fetch('/api/integrations/facebook/connect')
+      const response = await cachedFetch('/api/integrations/facebook/connect')
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({})) as { error?: string; detail?: string }
         const msg = errorData.detail ? `${errorData.error}: ${errorData.detail}` : (errorData.error || 'Failed to initiate connection')
@@ -116,7 +117,7 @@ export default function FacebookIntegration() {
       setSyncing(true)
       setError(null)
       setSyncResult(null)
-      const response = await fetch('/api/integrations/facebook/leads/sync', { method: 'POST' })
+      const response = await cachedFetch('/api/integrations/facebook/leads/sync', { method: 'POST' })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
         throw new Error(data.error || 'Failed to sync leads from Meta')
@@ -136,7 +137,7 @@ export default function FacebookIntegration() {
   async function loadAdAccounts() {
     try {
       setLoadingAdAccounts(true)
-      const res = await fetch('/api/integrations/facebook/ad-accounts')
+      const res = await cachedFetch('/api/integrations/facebook/ad-accounts')
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Failed to load ad accounts')
       setAdAccounts(data.adAccounts ?? [])
@@ -152,7 +153,7 @@ export default function FacebookIntegration() {
     try {
       setChangingAdAccount(true)
       setError(null)
-      const res = await fetch('/api/integrations/facebook/config', {
+      const res = await cachedFetch('/api/integrations/facebook/config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adAccountId, adAccountName }),
@@ -177,7 +178,7 @@ export default function FacebookIntegration() {
       setDisconnecting(true)
       setError(null)
 
-      const response = await fetch('/api/integrations/facebook/config', {
+      const response = await cachedFetch('/api/integrations/facebook/config', {
         method: 'DELETE',
       })
 

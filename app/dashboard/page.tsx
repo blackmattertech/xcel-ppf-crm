@@ -28,6 +28,7 @@ import LeadsInterestedByProductTable from '@/components/dashboard/LeadsIntereste
 import LeadsOverTimePie from '@/components/dashboard/LeadsOverTimePie'
 import ProductsHeatMap from '@/components/dashboard/ProductsHeatMap'
 import RepPerformancePie from '@/components/dashboard/RepPerformancePie'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Analytics {
   leadsBySource: Record<string, number>
@@ -95,8 +96,8 @@ export default function DashboardPage() {
   async function fetchAnalytics() {
     try {
       const [analyticsRes, productsRes] = await Promise.all([
-        fetch('/api/analytics'),
-        fetch('/api/products?with_stats=true'),
+        cachedFetch('/api/analytics'),
+        cachedFetch('/api/products?with_stats=true'),
       ])
       if (analyticsRes.ok) {
         const data = await analyticsRes.json()
@@ -155,7 +156,7 @@ export default function DashboardPage() {
 
   async function fetchFollowUpAlerts() {
     try {
-      const response = await fetch('/api/followups/notifications')
+      const response = await cachedFetch('/api/followups/notifications')
       if (response.ok) {
         const data = await response.json()
         setFollowUpAlerts({

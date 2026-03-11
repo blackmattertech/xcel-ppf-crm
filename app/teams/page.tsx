@@ -7,6 +7,7 @@ import { useAuthContext } from '@/components/AuthProvider'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
 import { Plus, Table2, LayoutGrid, Phone, Mail, Calendar, Star, Users, UserCheck, Wifi, Award, X, ArrowLeft, DollarSign, Clock, Play, Download, Trash2 } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Role {
   id: string
@@ -129,13 +130,13 @@ export default function TeamsPage() {
 
   async function fetchUsers() {
     try {
-      const response = await fetch('/api/users')
+      const response = await cachedFetch('/api/users')
       if (response.ok) {
         const data = await response.json()
         const usersList: User[] = data.users || []
 
         // Fetch aggregated performance stats once and join with user list.
-        const perfResponse = await fetch('/api/users/performance')
+        const perfResponse = await cachedFetch('/api/users/performance')
         let performanceByUser: Record<string, ReturnType<typeof mapPerfEntry>> = {}
 
         if (perfResponse.ok) {
@@ -216,7 +217,7 @@ export default function TeamsPage() {
     }
     setDeletingUserId(user.id)
     try {
-      const response = await fetch(`/api/users/${user.id}`, { method: 'DELETE' })
+      const response = await cachedFetch(`/api/users/${user.id}`, { method: 'DELETE' })
       if (response.ok) {
         setUsers((prev) => prev.filter((u) => u.id !== user.id))
         if (selectedUser?.id === user.id) {
@@ -261,7 +262,7 @@ export default function TeamsPage() {
     setSaving(true)
     try {
       // Create user first (without image)
-      const response = await fetch('/api/users', {
+      const response = await cachedFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -288,7 +289,7 @@ export default function TeamsPage() {
             imageFormData.append('file', profileImage)
             imageFormData.append('userId', user.id)
 
-            const imageResponse = await fetch('/api/users/upload-profile-image', {
+            const imageResponse = await cachedFetch('/api/users/upload-profile-image', {
               method: 'POST',
               body: imageFormData,
             })
@@ -296,7 +297,7 @@ export default function TeamsPage() {
             if (imageResponse.ok) {
               const imageData = await imageResponse.json()
               // Update user with image URL
-              await fetch(`/api/users/${user.id}`, {
+              await cachedFetch(`/api/users/${user.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -390,7 +391,7 @@ export default function TeamsPage() {
     
     // Fetch full user details, stats, and calls in parallel
     Promise.all([
-      fetch(`/api/users/${user.id}`).then(res => res.ok ? res.json() : null),
+      cachedFetch(`/api/users/${user.id}`).then(res => res.ok ? res.json() : null),
       fetchUserDetailStats(user.id),
       fetchUserCalls(user.id)
     ]).then(([userData]) => {
@@ -504,7 +505,7 @@ export default function TeamsPage() {
 
   async function fetchUserCalls(userId: string) {
     try {
-      const response = await fetch(`/api/calls?user_id=${userId}`)
+      const response = await cachedFetch(`/api/calls?user_id=${userId}`)
       if (response.ok) {
         const data = await response.json()
         setUserCalls(data.calls || [])
@@ -547,7 +548,7 @@ export default function TeamsPage() {
         imageFormData.append('file', detailProfileImage)
         imageFormData.append('userId', selectedUser.id)
 
-        const imageResponse = await fetch('/api/users/upload-profile-image', {
+        const imageResponse = await cachedFetch('/api/users/upload-profile-image', {
           method: 'POST',
           body: imageFormData,
         })
@@ -573,7 +574,7 @@ export default function TeamsPage() {
         roleId: detailFormData.roleId,
       }
 
-      const response = await fetch(`/api/users/${selectedUser.id}`, {
+      const response = await cachedFetch(`/api/users/${selectedUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatePayload),

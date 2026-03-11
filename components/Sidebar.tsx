@@ -9,6 +9,7 @@ import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sid
 import { Bell, ChevronDown, ChevronLeft, ChevronRight, LogOut, User, Settings as SettingsIcon } from 'lucide-react'
 import { useAuthContext } from './AuthProvider'
 import { usePushNotification } from './PushNotificationProvider'
+import { cachedFetch } from '@/lib/api-client'
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -49,7 +50,7 @@ export default function Sidebar() {
 
   async function fetchFollowUpCount() {
     try {
-      const response = await fetch('/api/followups/notifications')
+      const response = await cachedFetch('/api/followups/notifications')
       if (response.ok) {
         const data = await response.json()
         setFollowUpCount(data.totalPending || 0)

@@ -16,6 +16,7 @@ import {
   Mail,
   Phone,
 } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 type CustomerType = 'dealership' | 'individual'
 
@@ -110,7 +111,7 @@ export default function CustomersPage() {
 
   async function fetchCustomers() {
     try {
-      const response = await fetch('/api/customers')
+      const response = await cachedFetch('/api/customers')
       if (response.ok) {
         const data = await response.json()
         setCustomers(data.customers || [])
@@ -201,7 +202,7 @@ export default function CustomersPage() {
       if (createForm.pincode) tags.push(`pincode:${createForm.pincode}`)
       if (createForm.notes) tags.push(`notes:${createForm.notes}`)
 
-      const response = await fetch('/api/customers', {
+      const response = await cachedFetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

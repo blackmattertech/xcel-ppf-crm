@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { createFollowUp, getFollowUps } from '@/backend/services/followup.service'
+import { createFollowUp, getFollowUps, deleteAllFollowUps } from '@/backend/services/followup.service'
 import { sendFollowUpAssignedNotification } from '@/backend/services/push-notification.service'
 import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 import { z } from 'zod'
@@ -90,6 +90,36 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch follow-ups' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const authResult = await requireAuth(request)
+
+    if ('error' in authResult) {
+      return authResult.error
+    }
+
+    const userId = authResult.user.id
+    const userRole = authResult.user.role.name
+    const searchParams = request.nextUrl.searchParams
+    const assignedToParam = searchParams.get('assignedTo') || undefined
+
+    const filters: { assignedTo?: string } = {}
+    if (isAssignedOnlyFollowUpsRole(userRole)) {
+      filters.assignedTo = userId
+    } else if (assignedToParam) {
+      filters.assignedTo = assignedToParam
+    }
+
+    const { deletedCount } = await deleteAllFollowUps(filters)
+    return NextResponse.json({ success: true, deletedCount })
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to delete follow-ups' },
       { status: 500 }
     )
   }

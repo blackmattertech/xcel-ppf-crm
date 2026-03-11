@@ -6,6 +6,7 @@ import { FileText, RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload, Plus, Arro
 import { TemplatePreview } from '../_components/TemplatePreview'
 import type { WhatsAppTemplate } from '../_lib/types'
 import { getLanguageName, META_LANGUAGES } from '../_lib/utils'
+import { cachedFetch } from '@/lib/api-client'
 
 /** Parse response body as JSON without throwing on empty or invalid body (e.g. 502/504 HTML or empty). */
 async function parseJsonResponse(res: Response): Promise<Record<string, unknown>> {
@@ -58,8 +59,8 @@ export default function TemplatesPage() {
     setLoading(true)
     const categoryParam = categoryFilter !== 'ALL' ? `?category=${encodeURIComponent(categoryFilter)}` : ''
     Promise.all([
-      fetch(`/api/marketing/whatsapp/templates${categoryParam}`).then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
-      fetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
+      cachedFetch(`/api/marketing/whatsapp/templates${categoryParam}`).then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
+      cachedFetch('/api/marketing/whatsapp/templates/from-meta').then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve({ templates: [] }))),
     ])
       .then(([local, meta]) => {
         const localTemplates = Array.isArray(local.templates) ? local.templates : []
@@ -96,7 +97,7 @@ export default function TemplatesPage() {
       return
     }
     setPreviewMediaUrl(null)
-    fetch(`/api/marketing/whatsapp/media-url?id=${encodeURIComponent(t.header_media_id)}`, { credentials: 'include' })
+    cachedFetch(`/api/marketing/whatsapp/media-url?id=${encodeURIComponent(t.header_media_id)}`, { credentials: 'include' })
       .then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve(null)))
       .then((data) => data && !('error' in data) && data.url && setPreviewMediaUrl(String(data.url)))
       .catch(() => {})
@@ -113,7 +114,7 @@ export default function TemplatesPage() {
     needsFetch.forEach((t) => {
       const id = (t as { header_media_id?: string }).header_media_id
       if (!id) return
-      fetch(`/api/marketing/whatsapp/media-url?id=${encodeURIComponent(id)}`, { credentials: 'include' })
+      cachedFetch(`/api/marketing/whatsapp/media-url?id=${encodeURIComponent(id)}`, { credentials: 'include' })
         .then((res) => (res.ok ? parseJsonResponse(res) : Promise.resolve(null)))
         .then((data) => {
           if (data && !('error' in data) && data.url) setCardMediaUrls((prev) => ({ ...prev, [t.id]: String(data!.url) }))
@@ -148,7 +149,7 @@ export default function TemplatesPage() {
 
   const handleDeleteTemplate = (id: string) => {
     setDeletingId(id)
-    fetch(`/api/marketing/whatsapp/templates/${id}`, { method: 'DELETE', credentials: 'include' })
+    cachedFetch(`/api/marketing/whatsapp/templates/${id}`, { method: 'DELETE', credentials: 'include' })
       .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) {
@@ -166,7 +167,7 @@ export default function TemplatesPage() {
     setSyncing(true)
     setDiscoverResult(null)
     setPermissionError(null)
-    fetch('/api/marketing/whatsapp/templates/sync', { method: 'POST' })
+    cachedFetch('/api/marketing/whatsapp/templates/sync', { method: 'POST' })
       .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) {
@@ -185,7 +186,7 @@ export default function TemplatesPage() {
   const handleDiscoverWaba = () => {
     setDiscovering(true)
     setDiscoverResult(null)
-    fetch('/api/marketing/whatsapp/waba-discover')
+    cachedFetch('/api/marketing/whatsapp/waba-discover')
       .then((res) => parseJsonResponse(res))
       .then((data) => setDiscoverResult(data as { wabaId?: string; wabaIds?: string[]; error?: string }))
       .finally(() => setDiscovering(false))
@@ -194,7 +195,7 @@ export default function TemplatesPage() {
   const handleSubmitToMeta = (id: string) => {
     setSubmittingId(id)
     setSubmitError(null)
-    fetch(`/api/marketing/whatsapp/templates/${id}/submit`, { method: 'POST' })
+    cachedFetch(`/api/marketing/whatsapp/templates/${id}/submit`, { method: 'POST' })
       .then((res) => parseJsonResponse(res))
       .then((data) => {
         if (data.error) {
@@ -526,7 +527,7 @@ export default function TemplatesPage() {
                             const fd = new FormData()
                             fd.append('file', f)
                             try {
-                              const res = await fetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
+                              const res = await cachedFetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
                               const data = await parseJsonResponse(res) as { handle?: string; id?: string; url?: string; error?: string }
                               if (data.handle || data.id) {
                                 const mediaId = data.id ?? data.handle ?? ''

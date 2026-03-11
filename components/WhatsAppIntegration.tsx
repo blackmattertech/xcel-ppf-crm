@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { CheckCircle2, XCircle, Loader2, MessageCircle, ExternalLink } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface WhatsAppConfig {
   id: string
@@ -38,7 +39,7 @@ export default function WhatsAppIntegration() {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch('/api/integrations/whatsapp/config')
+      const response = await cachedFetch('/api/integrations/whatsapp/config')
       if (response.ok) {
         const data = await response.json()
         setConfig(data.config)
@@ -64,7 +65,7 @@ export default function WhatsAppIntegration() {
       setSaving(true)
       setError(null)
 
-      const response = await fetch('/api/integrations/whatsapp/config', {
+      const response = await cachedFetch('/api/integrations/whatsapp/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -100,7 +101,7 @@ export default function WhatsAppIntegration() {
       setDisconnecting(true)
       setError(null)
 
-      const response = await fetch('/api/integrations/whatsapp/config', { method: 'DELETE' })
+      const response = await cachedFetch('/api/integrations/whatsapp/config', { method: 'DELETE' })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to disconnect')

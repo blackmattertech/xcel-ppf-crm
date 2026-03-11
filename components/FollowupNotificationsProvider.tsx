@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuthContext } from './AuthProvider'
 import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
+import { cachedFetch } from '@/lib/api-client'
 
 type FollowUp = {
   id: string
@@ -60,7 +61,7 @@ export function FollowupNotificationsProvider({ children }: { children: React.Re
       try {
         if (!isMounted) return
         setLoading(true)
-        const response = await fetch('/api/followups/notifications')
+        const response = await cachedFetch('/api/followups/notifications')
         if (!isMounted) return
         if (response.ok) {
           const json = await response.json()
