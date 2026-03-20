@@ -81,6 +81,55 @@ export async function GET(request: NextRequest) {
 }
 
 /**
+ * PATCH /api/integrations/facebook/config
+ * Update ad account (change which ad account to use)
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const authResult = await requireAuth(request)
+    if ('error' in authResult) return authResult.error
+
+    const { user } = authResult
+    const body = await request.json().catch(() => ({})) as { adAccountId?: string; adAccountName?: string }
+
+    if (!body.adAccountId || typeof body.adAccountId !== 'string') {
+      return NextResponse.json(
+        { error: 'adAccountId is required' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = createServiceClient()
+    const { error } = await supabase
+      .from('facebook_business_settings')
+      // @ts-expect-error - facebook_business_settings Update type not inferred correctly
+      .update({
+        ad_account_id: body.adAccountId,
+        ad_account_name: body.adAccountName ?? body.adAccountId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('created_by', user.id)
+      .eq('is_active', true)
+
+    if (error) {
+      console.error('Error updating ad account:', error)
+      return NextResponse.json(
+        { error: 'Failed to update ad account.' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Facebook config PATCH error:', error)
+    return NextResponse.json(
+      { error: 'Unexpected error while updating ad account.' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
  * DELETE /api/integrations/facebook/config
  * Disconnect Facebook Business account
  */
@@ -98,7 +147,7 @@ export async function DELETE(request: NextRequest) {
     // Deactivate instead of deleting to preserve history
     const { error } = await supabase
       .from('facebook_business_settings')
-      // @ts-ignore - Supabase type inference issue
+      // @ts-expect-error - facebook_business_settings Update type not inferred correctly
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq('created_by', user.id)
       .eq('is_active', true)

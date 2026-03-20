@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { getInterestedProductFromMeta } from '@/shared/utils/lead-meta'
 
 export interface Product {
   id: string
@@ -75,8 +76,32 @@ function extractKeyWords(text: string): string[] {
 }
 
 /**
+ * Get a string value from meta_data: top-level key or from field_data array (Meta sync stores in field_data)
+ */
+function getMetaDataFieldValue(leadMetaData: any, ...fieldNames: string[]): string | null {
+  if (!leadMetaData || typeof leadMetaData !== 'object') return null
+  for (const fieldName of fieldNames) {
+    if (leadMetaData[fieldName] != null) {
+      const v = String(leadMetaData[fieldName]).trim()
+      if (v) return v
+    }
+    const arr = leadMetaData.field_data
+    if (Array.isArray(arr)) {
+      const item = arr.find((e: { name?: string }) => e && e.name === fieldName)
+      const val = (item as { values?: string[] })?.values?.[0]
+      if (val != null) {
+        const v = String(val).trim()
+        if (v) return v
+      }
+    }
+  }
+  return null
+}
+
+/**
  * Check if a product name matches a lead's requirement or meta_data
  * Handles variations like "Paint Protection Film (PPF)" matching "paint_protection_film"
+ * Reads from meta_data top-level or from meta_data.field_data (Meta Lead Ads sync)
  */
 function productMatchesLead(productTitle: string, leadRequirement: string | null, leadMetaData: any): boolean {
   const normalizedProduct = normalizeProductName(productTitle)
@@ -106,40 +131,28 @@ function productMatchesLead(productTitle: string, leadRequirement: string | null
     }
   }
   
-  // Check meta_data for product/service fields
-  if (leadMetaData && typeof leadMetaData === 'object') {
-    const serviceFields = [
-      'what_services_are_you_looking_for?',
-      'what_services_are_you_looking_for',
-      'service',
-      'product',
-      'requirement'
-    ]
-    
-    for (const field of serviceFields) {
-      const value = leadMetaData[field]
-      if (value && typeof value === 'string') {
-        const normalizedValue = normalizeProductName(value)
-        
-        // Direct normalized match
-        if (normalizedValue === normalizedProduct) {
-          return true
-        }
-        
-        // Substring match
-        if (normalizedValue.includes(normalizedProduct) || normalizedProduct.includes(normalizedValue)) {
-          return true
-        }
-        
-        // Check if key words from product appear in the value
-        const valueKeyWords = extractKeyWords(value)
-        const matchingWords = productKeyWords.filter(word => 
-          valueKeyWords.some(vw => vw.includes(word) || word.includes(vw))
-        )
-        if (matchingWords.length >= Math.min(2, productKeyWords.length)) {
-          return true
-        }
-      }
+  // Check meta_data for product/service (direct keys + field_data array from Meta Lead Ads)
+  const interestedProduct = getInterestedProductFromMeta(leadMetaData)
+  if (interestedProduct) {
+    const normalizedValue = normalizeProductName(interestedProduct)
+
+    // Direct normalized match
+    if (normalizedValue === normalizedProduct) {
+      return true
+    }
+
+    // Substring match
+    if (normalizedValue.includes(normalizedProduct) || normalizedProduct.includes(normalizedValue)) {
+      return true
+    }
+
+    // Check if key words from product appear in the value
+    const valueKeyWords = extractKeyWords(interestedProduct)
+    const matchingWords = productKeyWords.filter(word =>
+      valueKeyWords.some(vw => vw.includes(word) || word.includes(vw))
+    )
+    if (matchingWords.length >= Math.min(2, productKeyWords.length)) {
+      return true
     }
   }
   

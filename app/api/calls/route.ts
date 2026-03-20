@@ -133,25 +133,6 @@ export async function POST(request: NextRequest) {
         .eq('id', lead_id)
     }
 
-    // LEAD JOURNEY: Auto-create follow-up for not_reachable or call_later
-    if ((outcome === 'not_reachable' || outcome === 'call_later') && lead.assigned_to) {
-      try {
-        const followUpDate = new Date()
-        followUpDate.setHours(followUpDate.getHours() + 24) // Default to 24 hours later
-
-        await supabase.from('follow_ups').insert({
-          lead_id,
-          assigned_to: lead.assigned_to,
-          scheduled_at: followUpDate.toISOString(),
-          notes: `Auto-scheduled follow-up after call: ${outcome === 'not_reachable' ? 'Not Reachable' : 'Call Later'}`,
-          status: 'pending',
-        } as any)
-      } catch (followUpError) {
-        // Log but don't fail the call creation
-        console.error('Failed to create automatic follow-up:', followUpError)
-      }
-    }
-
     return NextResponse.json({ call: data }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {

@@ -62,6 +62,10 @@ const pwaConfig = withPWA({
       },
     },
     {
+      urlPattern: /\/api\/followups\/notifications/i,
+      handler: 'NetworkOnly',
+    },
+    {
       urlPattern: /\/api\/.*/i,
       handler: 'NetworkFirst',
       options: {

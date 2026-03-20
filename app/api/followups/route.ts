@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { createFollowUp, getFollowUps } from '@/backend/services/followup.service'
+import { createFollowUp, getFollowUps, deleteAllFollowUps } from '@/backend/services/followup.service'
 import { sendFollowUpAssignedNotification } from '@/backend/services/push-notification.service'
+import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 import { z } from 'zod'
 
 const createFollowUpSchema = z.object({
@@ -61,8 +62,17 @@ export async function GET(request: NextRequest) {
       return authResult.error
     }
 
+    const userId = authResult.user.id
+    const userRole = authResult.user.role.name
+
     const searchParams = request.nextUrl.searchParams
-    const filters = {
+    const filters: {
+      assignedTo?: string
+      leadId?: string
+      status?: string
+      scheduledBefore?: string
+      scheduledAfter?: string
+    } = {
       assignedTo: searchParams.get('assignedTo') || undefined,
       leadId: searchParams.get('leadId') || undefined,
       status: searchParams.get('status') || undefined,
@@ -70,11 +80,46 @@ export async function GET(request: NextRequest) {
       scheduledAfter: searchParams.get('scheduledAfter') || undefined,
     }
 
+    // Tele-callers and sales roles only see follow-ups assigned to them
+    if (isAssignedOnlyFollowUpsRole(userRole)) {
+      filters.assignedTo = userId
+    }
+
     const followUps = await getFollowUps(filters)
     return NextResponse.json({ followUps })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch follow-ups' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const authResult = await requireAuth(request)
+
+    if ('error' in authResult) {
+      return authResult.error
+    }
+
+    const userId = authResult.user.id
+    const userRole = authResult.user.role.name
+    const searchParams = request.nextUrl.searchParams
+    const assignedToParam = searchParams.get('assignedTo') || undefined
+
+    const filters: { assignedTo?: string } = {}
+    if (isAssignedOnlyFollowUpsRole(userRole)) {
+      filters.assignedTo = userId
+    } else if (assignedToParam) {
+      filters.assignedTo = assignedToParam
+    }
+
+    const { deletedCount } = await deleteAllFollowUps(filters)
+    return NextResponse.json({ success: true, deletedCount })
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to delete follow-ups' },
       { status: 500 }
     )
   }

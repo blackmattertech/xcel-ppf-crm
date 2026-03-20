@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
+import { getInterestedProductFromMeta, getCarModelFromMeta } from '@/shared/utils/lead-meta'
 import { 
   LEAD_STATUS, 
   LEAD_STATUS_LABELS, 
@@ -45,6 +46,7 @@ import {
   CheckCircle,
   Pencil
 } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 // Interactive Time Picker Component
 function TimePicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
@@ -455,7 +457,17 @@ interface Lead {
 export default function LeadDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const leadId = params.id as string
+
+  // Go back to list: read fromPage from current URL at click time so it's never stale
+  function goBackToLeads() {
+    const fromPage =
+      searchParams.get('fromPage') ??
+      (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('fromPage') : null)
+    if (fromPage) router.push(`/leads?page=${fromPage}`)
+    else router.back()
+  }
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -502,6 +514,7 @@ export default function LeadDetailPage() {
   const [followUpNotes, setFollowUpNotes] = useState('')
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [deletingLead, setDeletingLead] = useState(false)
   const [showStatusUpdateModal, setShowStatusUpdateModal] = useState(false)
   const [showQuotationModal, setShowQuotationModal] = useState(false)
   const [products, setProducts] = useState<any[]>([])
@@ -542,7 +555,7 @@ export default function LeadDetailPage() {
 
   async function fetchProducts() {
     try {
-      const response = await fetch('/api/products')
+      const response = await cachedFetch('/api/products')
       if (response.ok) {
         const data = await response.json()
         setProducts(data || [])
@@ -580,7 +593,7 @@ export default function LeadDetailPage() {
 
   async function fetchLeadQuotations() {
     try {
-      const response = await fetch(`/api/quotations?leadId=${leadId}`)
+      const response = await cachedFetch(`/api/quotations?leadId=${leadId}`)
       if (response.ok) {
         const data = await response.json()
         const list = data.quotations || []
@@ -594,7 +607,7 @@ export default function LeadDetailPage() {
 
   async function fetchLead() {
     try {
-      const response = await fetch(`/api/leads/${leadId}`)
+      const response = await cachedFetch(`/api/leads/${leadId}`)
       if (response.ok) {
         const data = await response.json()
         setLead(data.lead)
@@ -623,7 +636,7 @@ export default function LeadDetailPage() {
 
     setUpdatingStatus(true)
     try {
-      const response = await fetch(`/api/leads/${leadId}/status`, {
+      const response = await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -648,6 +661,28 @@ export default function LeadDetailPage() {
       alert('Failed to update status')
     } finally {
       setUpdatingStatus(false)
+    }
+  }
+
+  async function handleDeleteLead() {
+    if (!confirm('Are you sure you want to delete this lead? This action cannot be undone.')) return
+
+    setDeletingLead(true)
+    try {
+      const response = await cachedFetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+      const data = await response.json()
+
+      if (response.ok) {
+        goBackToLeads()
+        alert('Lead deleted successfully')
+      } else {
+        alert(data.error || 'Failed to delete lead')
+      }
+    } catch (error) {
+      console.error('Failed to delete lead:', error)
+      alert('Failed to delete lead')
+    } finally {
+      setDeletingLead(false)
     }
   }
 
@@ -692,7 +727,7 @@ export default function LeadDetailPage() {
       }
 
       // Create call record
-      const callResponse = await fetch('/api/calls', {
+      const callResponse = await cachedFetch('/api/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -711,7 +746,7 @@ export default function LeadDetailPage() {
       // Handle outcome-specific actions
       if (callOutcome === CALL_OUTCOME.WRONG_NUMBER) {
         // Update status to lost
-        const statusResponse = await fetch(`/api/leads/${leadId}/status`, {
+        const statusResponse = await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -735,7 +770,7 @@ export default function LeadDetailPage() {
       // Update interest level if connected
       if (callOutcome === CALL_OUTCOME.CONNECTED && callInterestLevel && lead) {
         try {
-          const updateResponse = await fetch(`/api/leads/${leadId}`, {
+          const updateResponse = await cachedFetch(`/api/leads/${leadId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -757,7 +792,7 @@ export default function LeadDetailPage() {
         const scheduledAt = new Date(`${callFollowUpDate}T${callFollowUpTime}`)
         
         try {
-          const followUpResponse = await fetch('/api/followups', {
+          const followUpResponse = await cachedFetch('/api/followups', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -781,7 +816,7 @@ export default function LeadDetailPage() {
       // Auto-qualify if connected and new lead
       if (callOutcome === CALL_OUTCOME.CONNECTED && lead?.status === LEAD_STATUS.NEW) {
         try {
-          await fetch(`/api/leads/${leadId}/status`, {
+          await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -835,7 +870,7 @@ export default function LeadDetailPage() {
     setSubmittingCall(true)
     try {
       if (quotationCallOutcome === 'not_accepted') {
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -851,7 +886,7 @@ export default function LeadDetailPage() {
       }
 
       if (quotationCallOutcome === 'negotiation') {
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -867,7 +902,7 @@ export default function LeadDetailPage() {
       }
 
       // accepted: mark deal won, convert to customer, create job card (order), then show payment modal
-      await fetch(`/api/leads/${leadId}/status`, {
+      await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -876,7 +911,7 @@ export default function LeadDetailPage() {
         }),
       })
 
-      const convertRes = await fetch(`/api/leads/${leadId}/convert`, {
+      const convertRes = await cachedFetch(`/api/leads/${leadId}/convert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -904,7 +939,9 @@ export default function LeadDetailPage() {
 
   // LEAD JOURNEY: Handle Connected sub-option selection
   async function handleConnectedSubOption(option: 'interested' | 'not_interested' | 'call_later') {
-    if (!callStartTime || !callEndTime) {
+    // Call start/end time are only required for "interested" and "not_interested" (to record call duration).
+    // For "call_later" we only need follow-up date/time; call_duration can be null.
+    if (option !== 'call_later' && (!callStartTime || !callEndTime)) {
       alert('Please select both start and end time for the call')
       return
     }
@@ -921,7 +958,7 @@ export default function LeadDetailPage() {
       const callDuration = Math.floor(diffMs / 1000)
 
       // Create call record first
-      const callResponse = await fetch('/api/calls', {
+      const callResponse = await cachedFetch('/api/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -940,7 +977,7 @@ export default function LeadDetailPage() {
       // Handle sub-options
       if (option === 'not_interested') {
         // Not Interested → Discarded (Lost)
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -961,7 +998,7 @@ export default function LeadDetailPage() {
           return
         }
         const scheduledAt = new Date(`${callFollowUpDate}T${callFollowUpTime}`)
-        await fetch('/api/followups', {
+        await cachedFetch('/api/followups', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1024,7 +1061,7 @@ export default function LeadDetailPage() {
         updates.timeline = interestedPurchaseTimeline
       }
 
-      const updateResponse = await fetch(`/api/leads/${leadId}`, {
+      const updateResponse = await cachedFetch(`/api/leads/${leadId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -1035,7 +1072,7 @@ export default function LeadDetailPage() {
       }
 
       // Update status with notes
-      await fetch(`/api/leads/${leadId}/status`, {
+      await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1066,7 +1103,7 @@ export default function LeadDetailPage() {
     setSubmittingQualify(true)
     try {
       // Update lead with interest level and status
-      const response = await fetch(`/api/leads/${leadId}`, {
+      const response = await cachedFetch(`/api/leads/${leadId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1077,7 +1114,7 @@ export default function LeadDetailPage() {
 
       if (response.ok) {
         // Update status with notes
-        await fetch(`/api/leads/${leadId}/status`, {
+        await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1123,7 +1160,7 @@ export default function LeadDetailPage() {
         updates.advance_amount = parseFloat(advanceAmount)
       }
 
-      const response = await fetch(`/api/leads/${leadId}`, {
+      const response = await cachedFetch(`/api/leads/${leadId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -1135,7 +1172,7 @@ export default function LeadDetailPage() {
         if (lastCreatedOrderId) {
           const orderPaymentStatus = paymentStatus === 'fully_paid' ? 'fully_paid' : paymentStatus === 'advance_received' ? 'advance_received' : 'pending'
           try {
-            await fetch(`/api/orders/${lastCreatedOrderId}`, {
+            await cachedFetch(`/api/orders/${lastCreatedOrderId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ payment_status: orderPaymentStatus }),
@@ -1154,7 +1191,7 @@ export default function LeadDetailPage() {
 
           if (alreadyConverted) {
             // We just created job card from Accepted flow - only update status
-            await fetch(`/api/leads/${leadId}/status`, {
+            await cachedFetch(`/api/leads/${leadId}/status`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1171,7 +1208,7 @@ export default function LeadDetailPage() {
           } else {
             // Convert lead to customer and create order (e.g. when opening payment from Deal Won)
             try {
-              const convertResponse = await fetch(`/api/leads/${leadId}/convert`, {
+              const convertResponse = await cachedFetch(`/api/leads/${leadId}/convert`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
@@ -1182,10 +1219,10 @@ export default function LeadDetailPage() {
                 throw new Error(errorData.error || 'Failed to convert lead to customer')
               }
 
-              const resLead = await fetch(`/api/leads/${leadId}`).then(r => r.json())
+              const resLead = await cachedFetch(`/api/leads/${leadId}`).then(r => r.json())
               const currentStatus = resLead.lead?.status ?? resLead.status
               if (currentStatus !== LEAD_STATUS.FULLY_PAID) {
-                await fetch(`/api/leads/${leadId}/status`, {
+                await cachedFetch(`/api/leads/${leadId}/status`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -1199,7 +1236,7 @@ export default function LeadDetailPage() {
               window.location.href = '/customers'
             } catch (convertError) {
               console.error('Failed to convert lead:', convertError)
-              await fetch(`/api/leads/${leadId}/status`, {
+              await cachedFetch(`/api/leads/${leadId}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1227,7 +1264,7 @@ export default function LeadDetailPage() {
         }
 
         if (statusUpdate && paymentStatus !== 'fully_paid') {
-          await fetch(`/api/leads/${leadId}/status`, {
+          await cachedFetch(`/api/leads/${leadId}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1280,7 +1317,7 @@ export default function LeadDetailPage() {
 
     setSubmittingFollowUp(true)
     try {
-      const response = await fetch('/api/followups', {
+      const response = await cachedFetch('/api/followups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1317,7 +1354,7 @@ export default function LeadDetailPage() {
   // Handle follow-up completion
   async function handleCompleteFollowUp(followUpId: string) {
     try {
-      const response = await fetch(`/api/followups/${followUpId}`, {
+      const response = await cachedFetch(`/api/followups/${followUpId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1354,7 +1391,7 @@ export default function LeadDetailPage() {
   if (error || !lead) {
     return (
       <Layout>
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => router.push('/leads')} />
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" onClick={() => goBackToLeads()} />
         <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
           <div className="bg-white shadow-2xl rounded-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto pointer-events-auto p-6">
             <div className="text-center">
@@ -1362,7 +1399,7 @@ export default function LeadDetailPage() {
               {error || 'Lead not found'}
             </div>
             <button
-              onClick={() => router.push('/leads')}
+              onClick={() => goBackToLeads()}
               className="text-indigo-600 hover:text-indigo-800"
             >
               ← Back to Leads
@@ -1376,20 +1413,12 @@ export default function LeadDetailPage() {
 
   const availableStatuses = getAvailableStatuses()
   const canUpdateStatus = userRole === 'tele_caller' || userRole === 'admin' || userRole === 'super_admin'
+  const canDeleteLead = userRole === 'admin' || userRole === 'super_admin'
 
-  // Raw product/interest string (requirement or meta) — may contain "| Car Model: X"
+  // Raw product/interest string (requirement or meta_data) — may contain "| Car Model: X"
   function getRawProductInterest(): string {
     if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
-    if (lead?.meta_data) {
-      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] ||
-                             lead.meta_data['what_services_are_you_looking_for'] ||
-                             lead.meta_data['What services are you looking for?'] ||
-                             lead.meta_data['product_interest'] ||
-                             lead.meta_data['service'] ||
-                             null
-      if (productInterest) return String(productInterest).replace(/_/g, ' ')
-    }
-    return ''
+    return getInterestedProductFromMeta(lead?.meta_data ?? null)
   }
 
   // Extract "Car Model: X" from string (e.g. "paint protection film | Car Model: nexon" -> "nexon")
@@ -1405,14 +1434,10 @@ export default function LeadDetailPage() {
     return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
   }
 
-  // Car model: from meta_data first, else from product string
+  // Car model: from meta_data (direct keys or field_data), else from product string
   function getLeadCarModel(): string {
-    if (lead?.meta_data) {
-      const carModel = lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
-                       lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
-                       lead.meta_data['vehicle'] || lead.meta_data['Vehicle'] || null
-      if (carModel) return String(carModel).replace(/_/g, ' ')
-    }
+    const fromMeta = getCarModelFromMeta(lead?.meta_data ?? null)
+    if (fromMeta) return fromMeta
     return extractCarModelFromString(getRawProductInterest())
   }
 
@@ -1421,23 +1446,15 @@ export default function LeadDetailPage() {
     return stripCarModelFromProductString(getRawProductInterest())
   }
 
-  // Get vehicle name from requirement or meta_data (for header: show car model when present)
+  // Get vehicle name from meta_data or product string
   function getVehicleName() {
-    const fromMeta = lead?.meta_data && (
-      lead.meta_data['car_model'] || lead.meta_data['Car Model'] ||
-      lead.meta_data['vehicle_model'] || lead.meta_data['Vehicle Model'] ||
-      lead.meta_data['vehicle'] || lead.meta_data['Vehicle']
-    )
-    if (fromMeta) return String(fromMeta).replace(/_/g, ' ')
+    const fromMeta = getCarModelFromMeta(lead?.meta_data ?? null)
+    if (fromMeta) return fromMeta
     const fromProduct = extractCarModelFromString(getRawProductInterest())
     if (fromProduct) return fromProduct
-    if (lead?.requirement) return lead.requirement.replace(/_/g, ' ')
-    if (lead?.meta_data) {
-      const vehicle = lead.meta_data['what_services_are_you_looking_for?'] ||
-                     lead.meta_data['what_services_are_you_looking_for'] || null
-      if (vehicle) return String(vehicle).replace(/_/g, ' ')
-    }
-    return null
+    const fromRequirement = lead?.requirement ? lead.requirement.replace(/_/g, ' ') : ''
+    if (fromRequirement) return fromRequirement
+    return getInterestedProductFromMeta(lead?.meta_data ?? null) || ''
   }
 
   // Get estimated value from meta_data
@@ -1510,14 +1527,14 @@ export default function LeadDetailPage() {
     return []
   }
 
-  // Get status badge color
+  // Get status badge color (Figma: Negotiation #fce4e0/#dd3f3c, High #fbf4d9/#604927)
   function getStatusBadgeColor(status: string) {
     const statusLower = status.toLowerCase()
     if (statusLower.includes('review') || statusLower.includes('qualified')) {
-      return 'bg-yellow-100 text-yellow-800'
+      return 'bg-[#fbf4d9] text-[#604927]'
     }
     if (statusLower.includes('negotiation')) {
-      return 'bg-orange-100 text-orange-800'
+      return 'bg-[#fce4e0] text-[#dd3f3c]'
     }
     if (statusLower.includes('new')) {
       return 'bg-blue-100 text-blue-800'
@@ -1604,418 +1621,357 @@ export default function LeadDetailPage() {
       {/* Blur Overlay */}
       <div 
         className="fixed inset-0 bg-black/20 backdrop-blur-md z-40"
-        onClick={() => router.push('/leads')}
+        onClick={() => goBackToLeads()}
       />
       
-      {/* Centered Modal */}
+      {/* Centered Modal - Figma design (800px, border #eaecee) */}
       <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none p-4">
-        <div className="bg-white shadow-2xl rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto" style={{ fontFamily: 'Poppins, sans-serif' }}>
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 z-10 px-8 py-6">
-          <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-              {/* Name and Vehicle */}
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">{lead?.name || 'Loading...'}</h1>
-                {getVehicleName() && (
-                <p className="text-base text-gray-600 mb-4">{getVehicleName()}</p>
-                )}
-                
-                {/* Status Tags */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {lead?.status && (
-                    <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusBadgeColor(lead.status)}`}>
-                      {formatStatusName(lead.status)}
-                    </span>
-                  )}
-                  {lead?.interest_level === 'hot' && (
-                    <span className="px-3 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 flex items-center gap-1">
-                      <Flame size={12} />
-                      Hot
-                    </span>
-                  )}
-                  {lead?.interest_level === 'warm' && (
-                    <span className="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                      Warm
-                    </span>
-                  )}
-                  {lead?.interest_level === 'cold' && (
-                    <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                      Cold
-                    </span>
-                  )}
-                  {/* High Priority Tag */}
-                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                    High Priority
+        <div className="bg-white shadow-2xl rounded-[12px] w-full max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto border border-[#eaecee]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+        {/* Header - Figma: name, vehicle, status pills, date + close */}
+        <div className="sticky top-0 bg-white border-b border-[#eaecee] z-10 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-[20px] font-bold text-black leading-tight mb-0.5">{lead?.name || 'Loading...'}</h1>
+              {getVehicleName() && (
+                <p className="text-[14px] text-black/80 leading-[1.5] mb-3">{getVehicleName()}</p>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {lead?.status && (
+                  <span className={`px-2.5 py-1 text-[10px] font-medium rounded-[3px] ${getStatusBadgeColor(lead.status)}`}>
+                    {formatStatusName(lead.status)}
                   </span>
-              </div>
-            </div>
-            
-            {/* Close Button */}
-            <button
-              onClick={() => router.push('/leads')}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-            >
-                <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Content - Two Column Layout */}
-        <div className="px-8 py-6 overflow-y-auto flex-1">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column - Main Details */}
-            <div className="lg:col-span-2 space-y-6">
-          {/* Contact Information */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <User size={18} className="text-gray-600" />
-                  Contact Information
-                </h2>
-                <div className="space-y-4">
-              {lead?.phone && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <Phone size={16} className="text-gray-400" />
-                      <span className="text-sm">{lead.phone.replace(/^(p|tel|phone|mobile):/i, '').trim()}</span>
-                </div>
-              )}
-              {lead?.email && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <Mail size={16} className="text-gray-400" />
-                      <span className="text-sm">{lead.email}</span>
-                </div>
-              )}
-                  {lead?.meta_data?.company && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <Building2 size={16} className="text-gray-400" />
-                      <span className="text-sm">{lead.meta_data.company}</span>
-            </div>
-                  )}
-                  {lead?.meta_data?.location && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <MapPin size={16} className="text-gray-400" />
-                      <span className="text-sm">{lead.meta_data.location}</span>
-                  </div>
                 )}
-                </div>
-              </div>
-
-          {/* Lead Details */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <FileText size={18} className="text-gray-600" />
-                  Lead Details
-                </h2>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 text-gray-700">
-                    <TrendingUp size={16} className="text-gray-400" />
-                    <span className="text-sm">
-                      <span className="font-medium">Source: </span>
-                <span className="capitalize">{lead?.source || 'N/A'}</span>
-                    </span>
-              </div>
-              {getEstimatedValue() && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <DollarSign size={16} className="text-gray-400" />
-                      <span className="text-sm">
-                        <span className="font-medium">Estimated Value: </span>
-                  <span>{getEstimatedValue()}</span>
-                      </span>
-                </div>
-              )}
-              {lead?.created_at && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <Calendar size={16} className="text-gray-400" />
-                      <span className="text-sm">
-                        <span className="font-medium">Created At: </span>
-                  <span>{new Date(lead.created_at).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}</span>
-                      </span>
-                </div>
-              )}
-              {getLastContactedTime() && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <Clock size={16} className="text-gray-400" />
-                      <span className="text-sm">
-                        <span className="font-medium">Last Contacted: </span>
-                  <span>{getLastContactedTime()}</span>
-                      </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Interests */}
-          {getInterests().length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                  <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Gem size={18} className="text-gray-600" />
-                    Interests
-                  </h2>
-              <div className="flex flex-wrap gap-2">
-                {getInterests().map((interest, index) => (
-                  <span
-                    key={index}
-                        className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium"
-                  >
-                    {String(interest).replace(/_/g, ' ')}
+                {lead?.interest_level === 'hot' && (
+                  <span className="px-2.5 py-1 text-[10px] font-medium rounded-[3px] bg-[#fbf4d9] text-[#604927] flex items-center gap-1">
+                    <TrendingUp size={12} className="opacity-90" />
+                    High
                   </span>
-                ))}
+                )}
+                {lead?.interest_level === 'warm' && (
+                  <span className="px-2.5 py-1 text-[10px] font-medium rounded-[3px] bg-[#fbf4d9] text-[#604927]">Warm</span>
+                )}
+                {lead?.interest_level === 'cold' && (
+                  <span className="px-2.5 py-1 text-[10px] font-medium rounded-[3px] bg-blue-100 text-blue-800">Cold</span>
+                )}
+                <span className="px-2.5 py-1 text-[10px] font-medium rounded-[3px] bg-red-100 text-red-800">High Priority</span>
               </div>
             </div>
-          )}
-
-              {/* Assigned To */}
-              {lead?.assigned_user && (
-                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                  <h2 className="text-base font-semibold text-gray-900 mb-4">Assigned To</h2>
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      {lead.assigned_user.profile_image_url ? (
-                        <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                          <Image
-                            src={lead.assigned_user.profile_image_url}
-                            alt={lead.assigned_user.name}
-                            width={40}
-                            height={40}
-                            className="w-10 h-10 rounded-full object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-[#de0510] flex items-center justify-center text-white font-medium flex-shrink-0">
-                          {lead.assigned_user.name.charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      {/* Online Status Indicator */}
-                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-sm">{lead.assigned_user.name}</p>
-                      <p className="text-xs text-gray-500">Sales Executive</p>
-                      <div className="flex items-center gap-1 mt-1">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="text-xs text-green-600">Online</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Information - Car model & Interested product */}
-              {lead && (
-                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                  <h2 className="text-base font-semibold text-gray-900 mb-4">Information</h2>
-                  <div className="space-y-3 text-sm">
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <span className="font-medium text-gray-600 block mb-1">Car model</span>
-                      <span className="text-gray-900">{getLeadCarModel() || '-'}</span>
-                    </div>
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <span className="font-medium text-gray-600 block mb-1">Interested product</span>
-                      <span className="text-gray-900">{getLeadProductInterest() || '-'}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Next Follow-up */}
-              {getNextFollowUp() && (
-                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                  <h2 className="text-base font-semibold text-gray-900 mb-4">Next Follow-up</h2>
-                  <div className="flex items-center gap-2">
-                    <Calendar size={16} className="text-yellow-600" />
-                    <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">
-                      {getNextFollowUp()}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Right Column - Recent Activity */}
-            <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900 mb-4">Recent Activity</h2>
-                <div className="space-y-5">
-              {/* Status History */}
-              {lead?.status_history && lead.status_history.length > 0 && (
-                    <>
-                      {lead.status_history.slice(0, 3).map((history, index) => {
-                        const date = new Date(history.created_at)
-                        const now = new Date()
-                        const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-                        const timeStr = diffDays === 0 
-                          ? `Today, ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                          : diffDays === 1 
-                          ? '1 day ago'
-                          : `${diffDays} days ago`
-                        
-                        return (
-                          <div key={history.id} className="relative pl-4">
-                            <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${
-                              index === 0 ? 'bg-green-500' : 
-                              index === 1 ? 'bg-blue-500' : 
-                              'bg-gray-400'
-                            }`}></div>
-                            <div className="text-sm text-gray-700">
-                              <p className="font-medium text-gray-900 mb-1">
-                                {timeStr}
-                              </p>
-                              <p className="text-xs text-gray-600">
-                                Lead status updated to <span className="font-medium">{formatStatusName(history.new_status)}</span>
-                                {history.notes && (
-                                  <span className="block mt-1">{history.notes}</span>
-                        )}
-                      </p>
-                    </div>
-                </div>
-                        )
-                      })}
-                    </>
-              )}
-              
-              {/* Call History */}
-              {lead?.calls && lead.calls.length > 0 && (
-                    <>
-                      {lead.calls.slice(0, 3).map((call, index) => {
-                        const date = new Date(call.created_at)
-                        const now = new Date()
-                        const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-                        const timeStr = diffDays === 0 
-                          ? `Today, ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                          : diffDays === 1 
-                          ? '1 day ago'
-                          : `${diffDays} days ago`
-                        
-                        return (
-                          <div key={call.id} className="relative pl-4">
-                            <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${
-                              call.outcome === 'connected' ? 'bg-green-500' : 
-                              call.outcome === 'not_reachable' ? 'bg-yellow-500' : 
-                              'bg-gray-400'
-                            }`}></div>
-                            <div className="text-sm text-gray-700">
-                              <p className="font-medium text-gray-900 mb-1">
-                                {timeStr}
-                              </p>
-                              <p className="text-xs text-gray-600">
-                                {call.outcome === 'connected' 
-                                  ? `Phone call with customer - ${call.notes || 'Discussed details'}`
-                                  : call.outcome === 'not_reachable'
-                                  ? `Call attempted - Not reachable`
-                                  : `Email sent with product brochure and pricing details`
-                                }
-                      </p>
-                    </div>
-                </div>
-                        )
-                      })}
-                    </>
-                  )}
-                  
-                  {(!lead?.status_history || lead.status_history.length === 0) && 
-                   (!lead?.calls || lead.calls.length === 0) && (
-                    <p className="text-sm text-gray-500 text-center py-4">No recent activity</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer Buttons */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-8 py-6 flex gap-4 rounded-b-2xl">
-          <button
-            onClick={() => setShowCallModal(true)}
-            className="flex-1 bg-[#de0510] text-white px-6 py-3.5 rounded-xl hover:bg-[#c0040e] font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
-          >
-            <Phone size={18} />
-            Make Call
-          </button>
-          {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
-            <>
-              <Link
-                href={`/quotations/${leadQuotations[0].id}`}
-                className="flex-1 bg-blue-600 text-white px-6 py-3.5 rounded-xl hover:bg-blue-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
-              >
-                <Eye size={18} />
-                View Quotation
-              </Link>
-              <Link
-                href={`/quotations/${leadQuotations[0].id}`}
-                className="flex-1 bg-indigo-600 text-white px-6 py-3.5 rounded-xl hover:bg-indigo-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
-              >
-                <Pencil size={18} />
-                Update Quotation
-              </Link>
-            </>
-          )}
-          {(lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
-            <button
-              type="button"
-              onClick={() => {
-                setFollowUpNotes('Follow-up for quotation / negotiation')
-                setShowFollowUpModal(true)
-              }}
-              className="flex-1 bg-sky-600 text-white px-6 py-3.5 rounded-xl hover:bg-sky-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
-            >
-              <Calendar size={18} />
-              Schedule Follow-up
-            </button>
-          )}
-          {lead?.status === LEAD_STATUS.QUALIFIED && (
-            <>
-              {leadQuotations.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] text-[#393941] leading-[1.5]">
+                Date: {lead?.created_at ? new Date(lead.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}
+              </span>
+              {canDeleteLead && (
                 <button
-                  onClick={async () => {
-                    setMarkingQuotationShared(true)
-                    try {
-                      const res = await fetch(`/api/leads/${leadId}/status`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          status: LEAD_STATUS.QUOTATION_SHARED,
-                          notes: 'Quotation shared with lead'
-                        })
-                      })
-                      if (res.ok) {
-                        await fetchLead()
-                      } else {
-                        const err = await res.json()
-                        alert(err.error || 'Failed to update status')
-                      }
-                    } catch (e) {
-                      console.error(e)
-                      alert('Failed to update status')
-                    } finally {
-                      setMarkingQuotationShared(false)
-                    }
-                  }}
-                  disabled={markingQuotationShared}
-                  className="flex-1 bg-amber-600 text-white px-6 py-3.5 rounded-xl hover:bg-amber-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                  onClick={handleDeleteLead}
+                  disabled={deletingLead}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50"
+                  title="Delete lead"
                 >
-                  <Share2 size={18} />
-                  {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
+                  <Trash2 size={18} />
                 </button>
               )}
               <button
+                onClick={() => goBackToLeads()}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Content - slightly larger text and spacing */}
+        <div className="px-6 py-6 overflow-y-auto flex-1">
+          <div className="grid gap-6 grid-cols-1 md:grid-cols-[360px_170px_170px] max-w-[800px] mx-auto">
+            {/* Column 1 (360px) - Contact, Lead Details, Interests, Buttons */}
+            <div className="flex flex-col gap-6">
+              {/* Contact Information */}
+              <div>
+                <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
+                  <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
+                    <User size={12} className="text-[#dd3f3c]" />
+                  </span>
+                  Contact Information
+                </h2>
+                <div className="bg-[#fafafa] rounded-[5px] p-4 min-h-[100px]">
+                  {lead?.phone && (
+                    <div className="flex items-start gap-2 mb-3">
+                      <Phone size={15} className="text-[#717d8a] shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[10px] text-[#717d8a] leading-[1.3]">Mobile</p>
+                        <p className="text-[12px] font-semibold text-black leading-[1.3]">{lead.phone.replace(/^(p|tel|phone|mobile):/i, '').trim()}</p>
+                      </div>
+                    </div>
+                  )}
+                  {(lead?.meta_data?.company || lead?.meta_data?.Company) && (
+                    <>
+                      <div className="border-t border-[#e0e0e0] my-2" />
+                      <div className="flex items-start gap-2 mb-3">
+                        <Building2 size={15} className="text-[#717d8a] shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-[10px] text-[#717d8a] leading-[1.3]">Company</p>
+                          <p className="text-[12px] font-semibold text-black leading-[1.3]">{lead.meta_data?.company || lead.meta_data?.Company}</p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {lead?.email && (
+                    <div className="flex items-start gap-2 mb-3">
+                      <Mail size={15} className="text-[#717d8a] shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[10px] text-[#717d8a] leading-[1.3]">Email</p>
+                        <p className="text-[12px] font-semibold text-black leading-[1.3]">{lead.email}</p>
+                      </div>
+                    </div>
+                  )}
+                  {(lead?.meta_data?.location || lead?.meta_data?.city) && (
+                    <div className="flex items-start gap-2">
+                      <MapPin size={14} className="text-[#717d8a] shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[10px] text-[#717d8a] leading-[1.3]">Location</p>
+                        <p className="text-[12px] font-semibold text-black leading-[1.3]">{lead?.meta_data?.location || (lead?.meta_data?.city && lead?.meta_data?.country ? `${lead.meta_data!.city}, ${lead.meta_data!.country}` : '-')}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Lead Details */}
+              <div>
+                <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
+                  <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
+                    <TrendingUp size={12} className="text-[#dd3f3c]" />
+                  </span>
+                  Lead Details
+                </h2>
+                <div className="bg-[#fafafa] rounded-[5px] p-4 min-h-[100px]">
+                  <div className="mb-3">
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3]">Source</p>
+                    <p className="text-[12px] font-semibold text-black leading-[1.3] capitalize">{lead?.source || 'N/A'}</p>
+                  </div>
+                  <div className="border-t border-[#e0e0e0] my-2" />
+                  <div className="mb-3">
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3]">Created At</p>
+                    <p className="text-[12px] font-semibold text-black leading-[1.3]">{lead?.created_at ? new Date(lead.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}</p>
+                  </div>
+                  <div className="mb-3">
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3]">ad_name</p>
+                    <p className="text-[12px] font-semibold text-black leading-[1.3]">{lead?.ad_name || '-'}</p>
+                  </div>
+                  <div className="mb-3">
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3]">campaign_name</p>
+                    <p className="text-[12px] font-semibold text-black leading-[1.3]">{lead?.campaign_name || '-'}</p>
+                  </div>
+                  {getEstimatedValue() && (
+                    <div className="mb-3">
+                      <p className="text-[10px] text-[#717d8a] leading-[1.3]">Estimated Value</p>
+                      <p className="text-[12px] font-semibold text-black leading-[1.3]">{getEstimatedValue()}</p>
+                    </div>
+                  )}
+                  {getLastContactedTime() && (
+                    <div>
+                      <p className="text-[10px] text-[#717d8a] leading-[1.3]">Last Contacted</p>
+                      <p className="text-[12px] font-semibold text-black leading-[1.3]">{getLastContactedTime()}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Interests - pills + Car model & Interested product (same detail as before) */}
+              <div>
+                <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
+                  <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
+                    <Gem size={12} className="text-[#dd3f3c]" />
+                  </span>
+                  Interests
+                </h2>
+                <div className="bg-[#fafafa] rounded-[5px] p-4 space-y-3">
+                  {getInterests().length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-2">Tags</p>
+                      <div className="flex flex-wrap gap-2">
+                        {getInterests().map((interest, index) => (
+                          <span key={index} className="px-3 py-1.5 bg-[#e6fbd9] text-[#38a646] rounded-[3px] text-[11px] font-medium leading-none">
+                            {String(interest).replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3]">Car model</p>
+                    <p className="text-[12px] font-semibold text-black leading-[1.3]">{getLeadCarModel() || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3]">Interested product</p>
+                    <p className="text-[12px] font-semibold text-black leading-[1.3]">{getLeadProductInterest() || '—'}</p>
+                  </div>
+                  {getInterests().length === 0 && !getLeadCarModel() && !getLeadProductInterest() && (
+                    <p className="text-[11px] text-[#717d8a]">No interests recorded</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-3 pt-1">
+                <button onClick={() => setShowCallModal(true)} className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+                  <Phone size={16} />
+                  Make call
+                </button>
+                {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
+                  <Link href={`/quotations/${leadQuotations[0].id}`} className="h-10 px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+                    <Eye size={18} />
+                    View Quotation
+                  </Link>
+                )}
+                <button onClick={() => router.push(`/leads/${leadId}/history`)} className="h-10 px-5 rounded-[6px] bg-[#fafafa] border border-[#e0e0e0] text-black font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+                  View full History
+                </button>
+              </div>
+            </div>
+
+            {/* Column 2 (170px) - Assigned To + Next Follow-up */}
+            <div className="flex flex-col gap-6">
+              <div className="min-h-[100px]">
+                <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
+                  <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
+                    <User size={13} className="text-[#dd3f3c]" />
+                  </span>
+                  Assigned To
+                </h2>
+                {lead?.assigned_user ? (
+                  <div className="flex items-center gap-2">
+                    <div className="relative shrink-0">
+                      {lead.assigned_user.profile_image_url ? (
+                        <Image src={lead.assigned_user.profile_image_url} alt={lead.assigned_user.name} width={43} height={43} className="w-[43px] h-[43px] rounded-full object-cover" />
+                      ) : (
+                        <div className="w-[43px] h-[43px] rounded-full bg-[#ed1b24] flex items-center justify-center text-white font-bold text-sm">
+                          {lead.assigned_user.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-bold text-black leading-[1.4] truncate">{lead.assigned_user.name}</p>
+                      <p className="text-[12px] text-black leading-[1.4]">Sales Executive</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-[#717d8a]">Unassigned</p>
+                )}
+              </div>
+
+              <div className="min-h-[100px]">
+                <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
+                  <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
+                    <Calendar size={14} className="text-[#dd3f3c]" />
+                  </span>
+                  Next Follow-up
+                </h2>
+                <p className="text-[14px] text-black leading-[1.3]">
+                  {(() => { const n = getNextFollowUp(); return n ? n.replace(/,/g, ' | ') : '—'; })()}
+                </p>
+              </div>
+            </div>
+
+            {/* Column 3 (170px) - Notes + Recent Activity, with red vertical bar */}
+            <div className="relative flex flex-col gap-6">
+              <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-[#dd3f3c]" />
+              <div className="min-h-[100px] pr-1">
+                <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
+                  <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
+                    <FileText size={14} className="text-[#dd3f3c]" />
+                  </span>
+                  Notes
+                </h2>
+                <div className="text-[11px] text-black leading-[1.4] whitespace-pre-wrap line-clamp-5">
+                  {(lead?.requirement || lead?.meta_data?.notes || 'No notes yet.').replace(/_/g, ' ')}
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
+                  <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
+                    <TrendingUp size={12} className="text-[#dd3f3c]" />
+                  </span>
+                  Recent Activity
+                </h2>
+                <div className="space-y-3 text-[11px]">
+                  {lead?.status_history && lead.status_history.length > 0 && lead.status_history.slice(0, 2).map((history) => {
+                    const date = new Date(history.created_at)
+                    const timeStr = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)) === 0
+                      ? `Today, ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                      : `${Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60))} hours ago`
+                    return (
+                      <div key={history.id}>
+                        <p className="text-[#717d8a] leading-[1.3]">{timeStr}</p>
+                        <p className="font-semibold text-black leading-[1.3]">Lead status updated to {formatStatusName(history.new_status)}</p>
+                      </div>
+                    )
+                  })}
+                  {lead?.calls && lead.calls.length > 0 && lead.calls.slice(0, 2).map((call) => {
+                    const timeStr = `${Math.floor((Date.now() - new Date(call.created_at).getTime()) / (1000 * 60 * 60))} hours ago`
+                    return (
+                      <div key={call.id}>
+                        <p className="text-[#717d8a] leading-[1.3]">{timeStr}</p>
+                        <p className="font-semibold text-black leading-[1.3]">Phone call with customer - {call.notes || 'Discussed pricing and features'}</p>
+                      </div>
+                    )
+                  })}
+                  {(!lead?.status_history || lead.status_history.length === 0) && (!lead?.calls || lead.calls.length === 0) && (
+                    <p className="text-[#717d8a]">No recent activity</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer - extra actions only (main actions are in content per Figma) */}
+        {(lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0) || (lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) ? (
+          <div className="sticky bottom-0 bg-white border-t border-[#eaecee] px-6 py-4 flex flex-wrap gap-3 rounded-b-[12px]">
+            {lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0 && (
+              <button
+                onClick={async () => {
+                  setMarkingQuotationShared(true)
+                  try {
+                    const res = await cachedFetch(`/api/leads/${leadId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: LEAD_STATUS.QUOTATION_SHARED, notes: 'Quotation shared with lead' }) })
+                    if (res.ok) await fetchLead()
+                    else { const err = await res.json(); alert(err.error || 'Failed to update status') }
+                  } catch (e) { console.error(e); alert('Failed to update status') }
+                  finally { setMarkingQuotationShared(false) }
+                }}
+                disabled={markingQuotationShared}
+                className="h-[37px] px-5 rounded-[6px] bg-amber-600 text-white font-bold text-[15px] hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ fontFamily: 'Roboto, sans-serif' }}
+              >
+                <Share2 size={18} />
+                {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
+              </button>
+            )}
+            {lead?.status === LEAD_STATUS.QUALIFIED && (
+              <button
                 onClick={() => setShowQuotationModal(true)}
-                className="flex-1 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
+                className="h-[37px] px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] hover:bg-[#45a050] flex items-center justify-center gap-2"
+                style={{ fontFamily: 'Roboto, sans-serif' }}
               >
                 <FilePlus size={18} />
                 {leadQuotations.length > 0 ? 'Create Another Quotation' : 'Create Quotation'}
               </button>
-            </>
-          )}
-          <button
-            onClick={() => router.push(`/leads/${leadId}/history`)}
-            className="flex-1 bg-white text-gray-700 px-6 py-3.5 rounded-xl border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium transition-colors"
-          >
-            View Full History
-          </button>
-        </div>
+            )}
+            {(lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
+              <button
+                type="button"
+                onClick={() => { setFollowUpNotes('Follow-up for quotation / negotiation'); setShowFollowUpModal(true) }}
+                className="h-[37px] px-5 rounded-[6px] bg-sky-600 text-white font-bold text-[15px] hover:bg-sky-700 flex items-center justify-center gap-2"
+                style={{ fontFamily: 'Roboto, sans-serif' }}
+              >
+                <Calendar size={18} />
+                Schedule Follow-up
+              </button>
+            )}
+          </div>
+        ) : null}
         </div>
       </div>
 
@@ -2207,11 +2163,36 @@ export default function LeadDetailPage() {
                   {/* Conditional Expansion Based on Outcome */}
                   {callOutcome && (
                     <div className="border-t pt-6 space-y-4 animate-slideUp">
-                      {/* Connected Flow - Show Sub-Options */}
+                      {/* Connected Flow - Call timing then Sub-Options */}
                       {callOutcome === CALL_OUTCOME.CONNECTED && !connectedSubOption && (
-                        <div>
-                          <h4 className="text-base font-medium text-gray-900 mb-4">What was the outcome of the call?</h4>
-                          <div className="space-y-3">
+                        <div className="space-y-6">
+                          <div>
+                            <h4 className="text-base font-medium text-gray-900 mb-3">Call timing</h4>
+                            <p className="text-sm text-gray-600 mb-3">When did the call start and end? (Required for Interested / Not Interested)</p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
+                                <input
+                                  type="time"
+                                  value={callStartTime}
+                                  onChange={(e) => setCallStartTime(e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">End time</label>
+                                <input
+                                  type="time"
+                                  value={callEndTime}
+                                  onChange={(e) => setCallEndTime(e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="text-base font-medium text-gray-900 mb-4">What was the outcome of the call?</h4>
+                            <div className="space-y-3">
                             {/* Interested */}
                             <button
                               type="button"
@@ -2286,6 +2267,7 @@ export default function LeadDetailPage() {
                                 </div>
                               </div>
                             </button>
+                          </div>
                           </div>
                         </div>
                       )}
@@ -3285,7 +3267,7 @@ export default function LeadDetailPage() {
 
                     setSubmittingQuotation(true)
                     try {
-                      const response = await fetch('/api/quotations', {
+                      const response = await cachedFetch('/api/quotations', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({

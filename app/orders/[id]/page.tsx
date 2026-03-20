@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Order {
   id: string
@@ -80,7 +81,7 @@ export default function OrderDetailPage() {
 
   async function fetchOrder() {
     try {
-      const response = await fetch(`/api/orders/${orderId}`)
+      const response = await cachedFetch(`/api/orders/${orderId}`)
       if (response.ok) {
         const data = await response.json()
         setOrder(data.order)
@@ -104,7 +105,7 @@ export default function OrderDetailPage() {
 
     setSubmittingPayment(true)
     try {
-      const response = await fetch(`/api/orders/${orderId}`, {
+      const response = await cachedFetch(`/api/orders/${orderId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -137,7 +138,7 @@ export default function OrderDetailPage() {
 
     setSubmittingStatus(true)
     try {
-      const response = await fetch(`/api/orders/${orderId}`, {
+      const response = await cachedFetch(`/api/orders/${orderId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
+import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
 
 /**
  * GET /api/integrations/facebook/callback
@@ -55,26 +56,27 @@ export async function GET(request: NextRequest) {
 
     // Exchange code for access token
     const tokenResponse = await fetch(
-      `https://graph.facebook.com/v18.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`,
+      `https://graph.facebook.com/v25.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`,
       { method: 'GET' }
     )
 
+    const tokenParsed = await safeParseJsonResponse<{
+      access_token?: string
+      expires_in?: number
+    }>(tokenResponse)
     if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.json().catch(() => ({}))
-      console.error('Facebook token exchange error:', errorData)
+      console.error('Facebook token exchange error:', tokenParsed.ok ? tokenParsed.data : tokenParsed.error)
       return NextResponse.redirect(
         new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
       )
     }
-
-    const tokenData = await tokenResponse.json()
-    const accessToken = tokenData.access_token
-
-    if (!accessToken) {
+    if (!tokenParsed.ok || !tokenParsed.data?.access_token) {
       return NextResponse.redirect(
         new URL('/settings?error=no_access_token&integration=facebook', request.url)
       )
     }
+    const tokenData = tokenParsed.data
+    const accessToken = tokenData.access_token!
 
     // Get token expiration
     const expiresIn = tokenData.expires_in
@@ -82,32 +84,37 @@ export async function GET(request: NextRequest) {
       ? new Date(Date.now() + expiresIn * 1000).toISOString()
       : null
 
-    // Fetch user's pages and ad accounts
+    // Fetch user's pages (with Page Access Token for each) and ad accounts
     const [pagesResponse, adAccountsResponse] = await Promise.all([
-      fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`),
-      fetch(`https://graph.facebook.com/v18.0/me/adaccounts?access_token=${accessToken}&fields=id,name,account_id`),
+      fetch(`https://graph.facebook.com/v25.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(accessToken)}`),
+      fetch(`https://graph.facebook.com/v25.0/me/adaccounts?access_token=${encodeURIComponent(accessToken)}&fields=id,name,account_id`),
     ])
 
     let pageId: string | null = null
     let pageName: string | null = null
+    /** Page Access Token – required for leadgen API; User token cannot be used for /page/leadgen_forms or /form/leads */
+    let pageAccessToken: string | null = null
+
     let adAccountId: string | null = null
     let adAccountName: string | null = null
     let businessId: string | null = null
     let businessName: string | null = null
 
     if (pagesResponse.ok) {
-      const pagesData = await pagesResponse.json()
-      if (pagesData.data && pagesData.data.length > 0) {
-        pageId = pagesData.data[0].id
-        pageName = pagesData.data[0].name
+      const pagesParsed = await safeParseJsonResponse<{ data?: Array<{ id: string; name: string; access_token?: string }> }>(pagesResponse)
+      if (pagesParsed.ok && pagesParsed.data?.data?.length) {
+        const firstPage = pagesParsed.data.data[0]
+        pageId = firstPage.id
+        pageName = firstPage.name
+        pageAccessToken = firstPage.access_token || null
       }
     }
 
     if (adAccountsResponse.ok) {
-      const adAccountsData = await adAccountsResponse.json()
-      if (adAccountsData.data && adAccountsData.data.length > 0) {
-        adAccountId = adAccountsData.data[0].id
-        adAccountName = adAccountsData.data[0].name
+      const adAccountsParsed = await safeParseJsonResponse<{ data?: Array<{ id: string; name: string }> }>(adAccountsResponse)
+      if (adAccountsParsed.ok && adAccountsParsed.data?.data?.length) {
+        adAccountId = adAccountsParsed.data.data[0].id
+        adAccountName = adAccountsParsed.data.data[0].name
       }
     }
 
@@ -115,18 +122,20 @@ export async function GET(request: NextRequest) {
     if (adAccountId) {
       try {
         const businessResponse = await fetch(
-          `https://graph.facebook.com/v18.0/${adAccountId}?access_token=${accessToken}&fields=business`
+          `https://graph.facebook.com/v25.0/${adAccountId}?access_token=${accessToken}&fields=business`
         )
         if (businessResponse.ok) {
-          const businessData = await businessResponse.json()
-          if (businessData.business) {
-            businessId = businessData.business.id
+          const businessParsed = await safeParseJsonResponse<{ business?: { id: string } }>(businessResponse)
+          if (businessParsed.ok && businessParsed.data?.business) {
+            businessId = businessParsed.data.business.id
             const businessInfoResponse = await fetch(
-              `https://graph.facebook.com/v18.0/${businessId}?access_token=${accessToken}&fields=name`
+              `https://graph.facebook.com/v25.0/${businessId}?access_token=${accessToken}&fields=name`
             )
             if (businessInfoResponse.ok) {
-              const businessInfo = await businessInfoResponse.json()
-              businessName = businessInfo.name
+              const businessInfoParsed = await safeParseJsonResponse<{ name?: string }>(businessInfoResponse)
+              if (businessInfoParsed.ok && businessInfoParsed.data?.name) {
+                businessName = businessInfoParsed.data.name
+              }
             }
           }
         }
@@ -145,11 +154,11 @@ export async function GET(request: NextRequest) {
       .eq('created_by', user.id)
       .eq('is_active', true)
       .maybeSingle()
-    
     const existing = existingData as { id: string } | null
 
     const settingsData = {
       access_token: accessToken,
+      page_access_token: pageAccessToken,
       page_id: pageId,
       page_name: pageName,
       ad_account_id: adAccountId,
@@ -163,10 +172,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (existing) {
-      // Update existing connection
+      // Update existing connection (Supabase infers 'never' for untyped table)
       const { error: updateError } = await supabase
         .from('facebook_business_settings')
-        // @ts-ignore - Supabase type inference issue
+        // @ts-expect-error - facebook_business_settings Update type not inferred correctly
         .update(settingsData)
         .eq('id', existing.id)
 

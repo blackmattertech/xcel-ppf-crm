@@ -513,6 +513,94 @@ export interface Database {
           assignment_count?: number
         }
       }
+      whatsapp_templates: {
+        Row: {
+          id: string
+          name: string
+          language: string
+          category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+          body_text: string
+          header_text: string | null
+          footer_text: string | null
+          header_format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+          header_media_url: string | null
+          buttons: Json | null
+          status: 'draft' | 'pending' | 'approved' | 'rejected'
+          meta_id: string | null
+          rejection_reason: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          language: string
+          category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+          body_text: string
+          header_text?: string | null
+          footer_text?: string | null
+          header_format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+          header_media_url?: string | null
+          buttons?: Json | null
+          status?: 'draft' | 'pending' | 'approved' | 'rejected'
+          meta_id?: string | null
+          rejection_reason?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          language?: string
+          category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+          body_text?: string
+          header_text?: string | null
+          footer_text?: string | null
+          header_format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+          header_media_url?: string | null
+          buttons?: Json | null
+          status?: 'draft' | 'pending' | 'approved' | 'rejected'
+          meta_id?: string | null
+          rejection_reason?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      whatsapp_messages: {
+        Row: {
+          id: string
+          lead_id: string | null
+          phone: string
+          direction: string
+          body: string
+          meta_message_id: string | null
+          status: 'sent' | 'delivered' | 'read' | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          phone: string
+          direction: string
+          body: string
+          meta_message_id?: string | null
+          status?: 'sent' | 'delivered' | 'read' | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          phone?: string
+          direction?: string
+          body?: string
+          meta_message_id?: string | null
+          status?: 'sent' | 'delivered' | 'read' | null
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

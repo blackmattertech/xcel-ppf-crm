@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import { Users, TrendingUp, CheckCircle, AlertTriangle } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { useAuthContext } from '@/components/AuthProvider'
+import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 import KPICard from '@/components/dashboard/KPICard'
 import DashboardCard from '@/components/dashboard/DashboardCard'
 import ViewSwitcher, { viewOptions, type ViewMode } from '@/components/dashboard/ViewSwitcher'
@@ -27,6 +28,7 @@ import LeadsInterestedByProductTable from '@/components/dashboard/LeadsIntereste
 import LeadsOverTimePie from '@/components/dashboard/LeadsOverTimePie'
 import ProductsHeatMap from '@/components/dashboard/ProductsHeatMap'
 import RepPerformancePie from '@/components/dashboard/RepPerformancePie'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Analytics {
   leadsBySource: Record<string, number>
@@ -82,9 +84,11 @@ export default function DashboardPage() {
     const roleName = role?.name ?? null
     setUserRole(roleName)
 
-    if (roleName === 'tele_caller' || roleName === 'admin' || roleName === 'super_admin') {
+    const isAssignedOnlyRole = isAssignedOnlyFollowUpsRole(roleName)
+    const isAdmin = roleName === 'admin' || roleName === 'super_admin'
+    if (isAssignedOnlyRole || isAdmin) {
       fetchFollowUpAlerts()
-      const interval = setInterval(fetchFollowUpAlerts, 5 * 60 * 1000)
+      const interval = setInterval(fetchFollowUpAlerts, 30 * 1000)
       return () => clearInterval(interval)
     }
   }
@@ -92,8 +96,8 @@ export default function DashboardPage() {
   async function fetchAnalytics() {
     try {
       const [analyticsRes, productsRes] = await Promise.all([
-        fetch('/api/analytics'),
-        fetch('/api/products?with_stats=true'),
+        cachedFetch('/api/analytics'),
+        cachedFetch('/api/products?with_stats=true'),
       ])
       if (analyticsRes.ok) {
         const data = await analyticsRes.json()
@@ -152,7 +156,7 @@ export default function DashboardPage() {
 
   async function fetchFollowUpAlerts() {
     try {
-      const response = await fetch('/api/followups/notifications')
+      const response = await cachedFetch('/api/followups/notifications')
       if (response.ok) {
         const data = await response.json()
         setFollowUpAlerts({
@@ -217,8 +221,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Follow-up Alerts for Tele-callers */}
-          {userRole === 'tele_caller' && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
+          {/* Follow-up Alerts for Tele-callers and Sales */}
+          {isAssignedOnlyFollowUpsRole(userRole) && followUpAlerts && (followUpAlerts.overdue > 0 || followUpAlerts.upcoming > 0) && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}

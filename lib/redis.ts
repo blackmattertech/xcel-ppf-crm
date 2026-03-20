@@ -27,8 +27,8 @@ export function getRedisClient(): Redis | null {
 
   // Check if Redis is configured
   // Priority: REDIS_URL > Upstash REST variables
-  let redisUrl = process.env.REDIS_URL
-  let redisToken = process.env.REDIS_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
+  const redisUrl = process.env.REDIS_URL
+  const redisToken = process.env.REDIS_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
 
   // If using Upstash REST variables, we need to convert to Redis protocol URL
   // Upstash provides REST API (https://) but ioredis needs Redis protocol (rediss://)
@@ -55,7 +55,7 @@ export function getRedisClient(): Redis | null {
     const isUpstash = redisUrl.includes('upstash.io')
     const isTLS = redisUrl.startsWith('rediss://')
 
-    let options: any = {
+    const options: any = {
       maxRetriesPerRequest: 3,
       retryStrategy: (times: number) => {
         // Exponential backoff: 50ms, 100ms, 200ms, 400ms, max 3s

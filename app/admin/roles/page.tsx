@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Permission {
   id: string
@@ -88,7 +89,7 @@ export default function RolesPage() {
 
   async function fetchRoles() {
     try {
-      const response = await fetch('/api/roles')
+      const response = await cachedFetch('/api/roles')
       if (response.ok) {
         const data = await response.json()
         setRoles(data.roles || [])
@@ -102,7 +103,7 @@ export default function RolesPage() {
 
   async function fetchPermissions() {
     try {
-      const response = await fetch('/api/permissions')
+      const response = await cachedFetch('/api/permissions')
       const data = await response.json()
       
       if (response.ok) {
@@ -125,7 +126,7 @@ export default function RolesPage() {
 
     setSyncingPermissions(true)
     try {
-      const response = await fetch('/api/permissions/sync', {
+      const response = await cachedFetch('/api/permissions/sync', {
         method: 'POST',
       })
 
@@ -162,7 +163,7 @@ export default function RolesPage() {
     
     try {
       console.log('Creating role with data:', formData)
-      const response = await fetch('/api/roles', {
+      const response = await cachedFetch('/api/roles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -197,7 +198,7 @@ export default function RolesPage() {
     }
     
     try {
-      const response = await fetch(`/api/roles/${editingRole.id}`, {
+      const response = await cachedFetch(`/api/roles/${editingRole.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -246,7 +247,7 @@ export default function RolesPage() {
     }
 
     try {
-      const response = await fetch(`/api/roles/${roleId}`, {
+      const response = await cachedFetch(`/api/roles/${roleId}`, {
         method: 'DELETE',
       })
 

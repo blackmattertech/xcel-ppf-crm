@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { CheckCircle2, XCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { CheckCircle2, XCircle, ExternalLink, Loader2, RefreshCw, ChevronDown } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface FacebookConfig {
   id: string
@@ -22,7 +23,13 @@ export default function FacebookIntegration() {
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; failed: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showAdAccountPicker, setShowAdAccountPicker] = useState(false)
+  const [adAccounts, setAdAccounts] = useState<Array<{ id: string; name: string }>>([])
+  const [loadingAdAccounts, setLoadingAdAccounts] = useState(false)
+  const [changingAdAccount, setChangingAdAccount] = useState(false)
 
   useEffect(() => {
     fetchConfig()
@@ -31,7 +38,7 @@ export default function FacebookIntegration() {
   async function fetchConfig() {
     try {
       setLoading(true)
-      const response = await fetch('/api/integrations/facebook/config')
+      const response = await cachedFetch('/api/integrations/facebook/config')
       if (response.ok) {
         const data = await response.json()
         setConfig(data.config)
@@ -52,10 +59,11 @@ export default function FacebookIntegration() {
       setError(null)
 
       // Get auth URL
-      const response = await fetch('/api/integrations/facebook/connect')
+      const response = await cachedFetch('/api/integrations/facebook/connect')
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to initiate connection')
+        const errorData = await response.json().catch(() => ({})) as { error?: string; detail?: string }
+        const msg = errorData.detail ? `${errorData.error}: ${errorData.detail}` : (errorData.error || 'Failed to initiate connection')
+        throw new Error(msg)
       }
 
       const { authUrl } = await response.json()
@@ -104,6 +112,63 @@ export default function FacebookIntegration() {
     }
   }
 
+  async function handleSyncLeads() {
+    try {
+      setSyncing(true)
+      setError(null)
+      setSyncResult(null)
+      const response = await cachedFetch('/api/integrations/facebook/leads/sync', { method: 'POST' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to sync leads from Meta')
+      }
+      setSyncResult({
+        synced: data.synced ?? 0,
+        skipped: data.skipped ?? 0,
+        failed: data.failed ?? 0,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync leads from Meta')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function loadAdAccounts() {
+    try {
+      setLoadingAdAccounts(true)
+      const res = await cachedFetch('/api/integrations/facebook/ad-accounts')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to load ad accounts')
+      setAdAccounts(data.adAccounts ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load ad accounts')
+      setAdAccounts([])
+    } finally {
+      setLoadingAdAccounts(false)
+    }
+  }
+
+  async function handleChangeAdAccount(adAccountId: string, adAccountName: string) {
+    try {
+      setChangingAdAccount(true)
+      setError(null)
+      const res = await cachedFetch('/api/integrations/facebook/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adAccountId, adAccountName }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to update ad account')
+      setConfig((prev) => prev ? { ...prev, adAccountId, adAccountName } : null)
+      setShowAdAccountPicker(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to change ad account')
+    } finally {
+      setChangingAdAccount(false)
+    }
+  }
+
   async function handleDisconnect() {
     if (!confirm('Are you sure you want to disconnect your Facebook Business account? This will stop syncing leads from Facebook.')) {
       return
@@ -113,7 +178,7 @@ export default function FacebookIntegration() {
       setDisconnecting(true)
       setError(null)
 
-      const response = await fetch('/api/integrations/facebook/config', {
+      const response = await cachedFetch('/api/integrations/facebook/config', {
         method: 'DELETE',
       })
 
@@ -192,9 +257,63 @@ export default function FacebookIntegration() {
             {config.adAccountName && (
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Ad Account</p>
-                <p className="text-sm font-medium text-gray-900">{config.adAccountName}</p>
-                {config.adAccountId && (
-                  <p className="text-xs text-gray-500 mt-1">ID: {config.adAccountId}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{config.adAccountName}</p>
+                    {config.adAccountId && (
+                      <p className="text-xs text-gray-500 mt-1">ID: {config.adAccountId}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdAccountPicker(true)
+                      loadAdAccounts()
+                    }}
+                    disabled={config.isExpired}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Change <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {showAdAccountPicker && (
+                  <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-xs text-gray-600 mb-2">Select an ad account:</p>
+                    {loadingAdAccounts ? (
+                      <div className="flex items-center gap-2 py-2 text-sm text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading...
+                      </div>
+                    ) : adAccounts.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-2">No ad accounts found.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                        {adAccounts.map((acc) => (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => handleChangeAdAccount(acc.id, acc.name)}
+                            disabled={changingAdAccount || acc.id === config.adAccountId}
+                            className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                              acc.id === config.adAccountId
+                                ? 'bg-blue-100 text-blue-800 font-medium'
+                                : 'hover:bg-gray-200 text-gray-900'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {acc.name}
+                            {acc.id === config.adAccountId && ' (current)'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowAdAccountPicker(false)}
+                      className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -222,7 +341,33 @@ export default function FacebookIntegration() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
+          {syncResult && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+              <p className="text-sm text-green-800">
+                Sync complete: <strong>{syncResult.synced}</strong> new lead(s) imported, {syncResult.skipped} already in CRM.
+                {syncResult.failed > 0 && ` ${syncResult.failed} failed.`}
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 pt-4 border-t border-gray-200 flex-wrap">
+            <button
+              onClick={handleSyncLeads}
+              disabled={syncing || config.isExpired}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Syncing from Meta...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  Sync leads from Meta
+                </>
+              )}
+            </button>
             <button
               onClick={handleDisconnect}
               disabled={disconnecting}

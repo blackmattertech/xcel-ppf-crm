@@ -92,6 +92,26 @@ export async function getFollowUps(filters?: {
   return data
 }
 
+/** Get follow-up counts per lead (single query). Returns Record<leadId, count>. */
+export async function getFollowUpCountsByLeadIds(leadIds: string[]): Promise<Record<string, number>> {
+  if (leadIds.length === 0) return {}
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('follow_ups')
+    .select('lead_id')
+    .in('lead_id', leadIds)
+  if (error) {
+    throw new Error(`Failed to fetch follow-up counts: ${error.message}`)
+  }
+  const counts: Record<string, number> = {}
+  for (const id of leadIds) counts[id] = 0
+  for (const row of Array.isArray(data) ? data : []) {
+    const lid = (row as { lead_id?: string }).lead_id
+    if (lid) counts[lid] = (counts[lid] ?? 0) + 1
+  }
+  return counts
+}
+
 export async function updateFollowUp(id: string, updates: Partial<FollowUpInsert>) {
   const supabase = createServiceClient()
 
@@ -132,6 +152,66 @@ export async function completeFollowUp(id: string, notes?: string) {
     completed_at: new Date().toISOString(),
     notes: notes || undefined,
   })
+}
+
+export async function deleteFollowUp(id: string) {
+  const supabase = createServiceClient()
+  const { error } = await supabase.from('follow_ups').delete().eq('id', id)
+  if (error) {
+    throw new Error(`Failed to delete follow-up: ${error.message}`)
+  }
+  return { deleted: true }
+}
+
+export async function deleteAllFollowUps(filters?: { assignedTo?: string }): Promise<{ deletedCount: number }> {
+  const supabase = createServiceClient()
+  // Supabase requires a WHERE clause on DELETE; fetch ids first then delete by id.in()
+  let selectQuery = supabase.from('follow_ups').select('id')
+  if (filters?.assignedTo) {
+    selectQuery = selectQuery.eq('assigned_to', filters.assignedTo)
+  }
+  const { data: rows, error: selectError } = await selectQuery
+  if (selectError) {
+    throw new Error(`Failed to fetch follow-ups for delete: ${selectError.message}`)
+  }
+  const rowList: { id: string }[] = Array.isArray(rows) ? rows : []
+  const ids = rowList.map((r) => r.id).filter(Boolean)
+  if (ids.length === 0) {
+    return { deletedCount: 0 }
+  }
+  const { data, error } = await supabase.from('follow_ups').delete().select('id').in('id', ids)
+  if (error) {
+    throw new Error(`Failed to delete follow-ups: ${error.message}`)
+  }
+  const deletedCount = Array.isArray(data) ? data.length : 0
+  return { deletedCount }
+}
+
+/**
+ * Delete follow-ups by IDs. When allowedAssignedTo is set, only deletes rows where assigned_to matches (for permission check).
+ */
+export async function deleteFollowUpsByIds(
+  ids: string[],
+  allowedAssignedTo?: string | null
+): Promise<{ deletedCount: number }> {
+  if (ids.length === 0) return { deletedCount: 0 }
+  const supabase = createServiceClient()
+  let selectQuery = supabase.from('follow_ups').select('id').in('id', ids)
+  if (allowedAssignedTo != null) {
+    selectQuery = selectQuery.eq('assigned_to', allowedAssignedTo)
+  }
+  const { data: rows, error: selectError } = await selectQuery
+  if (selectError) {
+    throw new Error(`Failed to fetch follow-ups: ${selectError.message}`)
+  }
+  const rowList: { id: string }[] = Array.isArray(rows) ? rows : []
+  const allowedIds = rowList.map((r) => r.id).filter(Boolean)
+  if (allowedIds.length === 0) return { deletedCount: 0 }
+  const { data, error } = await supabase.from('follow_ups').delete().select('id').in('id', allowedIds)
+  if (error) {
+    throw new Error(`Failed to delete follow-ups: ${error.message}`)
+  }
+  return { deletedCount: Array.isArray(data) ? data.length : 0 }
 }
 
 export async function getPendingFollowUps(assignedTo?: string) {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Customer {
   id: string
@@ -15,6 +16,21 @@ interface Customer {
   lead_id: string | null
   created_at: string
   updated_at: string
+  source?: 'external'
+  car_number?: string | null
+  chassis_number?: string | null
+  service_type?: string | null
+  series?: string | null
+  service_date?: string | null
+  service_location?: string | null
+  dealer_name?: string | null
+  warranty_years?: number | null
+  ppf_warranty_years?: number | null
+  car_name?: string | null
+  car_model?: string | null
+  car_photo_url?: string | null
+  chassis_photo_url?: string | null
+  dealer_invoice_url?: string | null
 }
 
 interface Order {
@@ -53,7 +69,7 @@ export default function CustomerDetailPage() {
 
   async function fetchCustomer() {
     try {
-      const response = await fetch(`/api/customers/${customerId}`)
+      const response = await cachedFetch(`/api/customers/${customerId}`)
       if (response.ok) {
         const data = await response.json()
         setCustomer(data.customer)
@@ -113,8 +129,11 @@ export default function CustomerDetailPage() {
 
           {/* Customer Information */}
           <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
               <h2 className="text-xl font-semibold text-gray-900">Customer Information</h2>
+              {customer.source === 'external' && (
+                <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">Warranty Claims</span>
+              )}
             </div>
             <div className="px-6 py-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -142,12 +161,14 @@ export default function CustomerDetailPage() {
                     {new Date(customer.created_at).toLocaleString()}
                   </p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Total Purchase Value</label>
-                  <p className="mt-1 text-sm font-semibold text-green-700">
-                    ₹{totalRevenue.toLocaleString('en-IN')}
-                  </p>
-                </div>
+                {customer.source !== 'external' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Total Purchase Value</label>
+                    <p className="mt-1 text-sm font-semibold text-green-700">
+                      ₹{totalRevenue.toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                )}
                 {customer.lead_id && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Lead ID</label>
@@ -162,6 +183,137 @@ export default function CustomerDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Car & Service (external/claims) */}
+          {(customer.source === 'external' && (customer.car_number || customer.car_name || customer.service_type || customer.dealer_name)) && (
+            <>
+              <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h2 className="text-xl font-semibold text-gray-900">Car Details</h2>
+                </div>
+                <div className="px-6 py-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {customer.car_name != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Car Name</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.car_name}</p>
+                      </div>
+                    )}
+                    {customer.car_model != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Car Model</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.car_model}</p>
+                      </div>
+                    )}
+                    {customer.car_number != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Car Number</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.car_number}</p>
+                      </div>
+                    )}
+                    {customer.chassis_number != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Chassis Number</label>
+                        <p className="mt-1 text-sm text-gray-900 font-mono text-xs">{customer.chassis_number}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h2 className="text-xl font-semibold text-gray-900">Service Details</h2>
+                </div>
+                <div className="px-6 py-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {customer.service_type != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Service Type</label>
+                        <p className="mt-1 text-sm text-gray-900 capitalize">{customer.service_type}</p>
+                      </div>
+                    )}
+                    {customer.series != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Series</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.series}</p>
+                      </div>
+                    )}
+                    {customer.service_date != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Service Date</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.service_date}</p>
+                      </div>
+                    )}
+                    {customer.service_location != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Service Location</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.service_location}</p>
+                      </div>
+                    )}
+                    {customer.dealer_name != null && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">Dealer Name</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.dealer_name}</p>
+                      </div>
+                    )}
+                    {customer.warranty_years != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Warranty (years)</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.warranty_years}</p>
+                      </div>
+                    )}
+                    {customer.ppf_warranty_years != null && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">PPF Warranty (years)</label>
+                        <p className="mt-1 text-sm text-gray-900">{customer.ppf_warranty_years}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {(customer.car_photo_url || customer.chassis_photo_url || customer.dealer_invoice_url) && (
+                <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h2 className="text-xl font-semibold text-gray-900">Images</h2>
+                  </div>
+                  <div className="px-6 py-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {customer.car_photo_url && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Car Photo</label>
+                          <a href={customer.car_photo_url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-gray-200 overflow-hidden hover:opacity-90">
+                            <img src={customer.car_photo_url} alt="Car" className="w-full h-48 object-cover" />
+                          </a>
+                        </div>
+                      )}
+                      {customer.chassis_photo_url && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Chassis Photo</label>
+                          <a href={customer.chassis_photo_url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-gray-200 overflow-hidden hover:opacity-90">
+                            <img src={customer.chassis_photo_url} alt="Chassis" className="w-full h-48 object-cover" />
+                          </a>
+                        </div>
+                      )}
+                      {customer.dealer_invoice_url && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Dealer Invoice</label>
+                          <a href={customer.dealer_invoice_url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-gray-200 overflow-hidden hover:opacity-90">
+                            {customer.dealer_invoice_url.toLowerCase().endsWith('.pdf') ? (
+                              <div className="w-full h-48 bg-gray-100 flex items-center justify-center text-gray-500">
+                                PDF – click to open
+                              </div>
+                            ) : (
+                              <img src={customer.dealer_invoice_url} alt="Dealer invoice" className="w-full h-48 object-cover" />
+                            )}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
           {/* Orders */}
           <div className="bg-white rounded-lg shadow overflow-hidden">

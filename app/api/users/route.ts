@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/backend/middleware/auth'
 import { getAllUsers, createUser } from '@/backend/services/user.service'
 import { redistributeNewLeadsAmongTeleCallers } from '@/backend/services/assignment.service'
+import { ASSIGNABLE_LEAD_ROLES } from '@/shared/constants/roles'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
@@ -60,16 +61,16 @@ export async function POST(request: NextRequest) {
       doj || null
     )
 
-    // When a new tele_caller is created, redistribute existing "new" leads in round-robin
+    // When a new assignable user (tele_caller or sales) is created, redistribute existing "new" leads in round-robin
     const roleName = (user as any).role?.name ?? (Array.isArray((user as any).role) ? (user as any).role?.[0]?.name : null)
-    if (roleName === 'tele_caller' && authResult && !('error' in authResult) && authResult.user?.id) {
+    if (roleName && ASSIGNABLE_LEAD_ROLES.includes(roleName as any) && authResult && !('error' in authResult) && authResult.user?.id) {
       try {
         const count = await redistributeNewLeadsAmongTeleCallers(authResult.user.id)
         if (count > 0) {
           (user as any)._redistributedLeads = count
         }
       } catch (err) {
-        console.error('Failed to redistribute new leads after creating tele_caller:', err)
+        console.error('Failed to redistribute new leads after creating assignable user:', err)
       }
     }
 

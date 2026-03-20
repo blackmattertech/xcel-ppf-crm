@@ -1,18 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import Layout from '@/components/Layout'
-import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2, Check, MessageCircle, FileText } from 'lucide-react'
+import { Bell, Search, MoreVertical, Plus, Download, Upload, Settings, List, Columns, Grid, ChevronDown, Phone, Mail, TrendingUp, TrendingDown, DollarSign, Calendar, Building2, MapPin, Snowflake, X, LogOut, Trash2, Check, MessageCircle, FileText, RefreshCw, GripVertical } from 'lucide-react'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { LEAD_STATUS, LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
 import { SIDEBAR_MENU_ITEMS, type SidebarMenuItem } from '@/shared/constants/sidebar'
+import { getInterestedProductFromMeta, getCarModelFromMeta } from '@/shared/utils/lead-meta'
 import { useAuthContext } from '@/components/AuthProvider'
 import MobileHeader from '@/components/MobileHeader'
 import MobileBottomNav from '@/components/MobileBottomNav'
+import { cachedFetch } from '@/lib/api-client'
 
 // New lead modal is quite heavy; load it only when the user actually opens it
 // so the main Leads list and filters become interactive faster.
@@ -60,8 +62,8 @@ function SourceIcon({ platform, source }: { platform?: string | null; source: st
       alt={platform || source}
       width={32}
       height={32}
-      className="w-8 h-8 object-contain"
-      style={{ width: 'auto', height: 'auto' }}
+      className="object-contain"
+      style={{ width: 24, height: 24 }}
       onError={() => setImgError(true)}
     />
   )
@@ -101,6 +103,8 @@ interface Lead {
   status: string
   interest_level: string | null
   requirement: string | null
+  ad_name: string | null
+  campaign_name: string | null
   meta_data: Record<string, any> | null
   assigned_user: {
     id: string
@@ -135,7 +139,11 @@ function GridView({
   getLastContactedTime,
   formatStageName,
   getStageBadgeColor,
-  router
+  router,
+  currentPage,
+  onDeleteLead,
+  canDeleteLeads,
+  deletingLeadId,
 }: {
   leads: Lead[]
   getVehicleName: (lead: Lead) => string
@@ -144,6 +152,10 @@ function GridView({
   formatStageName: (status: string) => string
   getStageBadgeColor: (status: string) => string
   router: ReturnType<typeof useRouter>
+  currentPage: number
+  onDeleteLead?: (leadId: string) => void
+  canDeleteLeads?: boolean
+  deletingLeadId?: string | null
 }) {
   // Get budget/amount from meta_data
   function getBudget(lead: Lead): string {
@@ -275,12 +287,24 @@ function GridView({
                     </p>
                   )}
                 </div>
-                {/* Red wavy line icon for hot leads */}
-                {isHot && (
-                  <div className="flex-shrink-0">
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {canDeleteLeads && onDeleteLead && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteLead(lead.id)
+                      }}
+                      disabled={deletingLeadId === lead.id}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
+                      title="Delete lead"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  {isHot && (
                     <TrendingUp className="w-4 h-4 text-[#ed1b24]" />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
               
               {/* Stage & Priority Badges */}
@@ -301,7 +325,9 @@ function GridView({
               {/* Platform/Instagram */}
               {platform && (
                 <div className="flex items-center gap-2 text-xs text-[#717d8a]">
-                  {platformIcon}
+                  <span className="flex items-center justify-center" style={{ fontSize: 28, lineHeight: 1 }}>
+                    {platformIcon}
+                  </span>
                   <span className="uppercase">{String(platform).toUpperCase()}</span>
                 </div>
               )}
@@ -402,7 +428,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}`)
+                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#ed1b24] text-white rounded-md text-[10px] font-medium hover:bg-[#c0040e] transition-colors"
                 >
@@ -411,7 +437,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}`)
+                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-[#eaecee] text-[#717d8a] rounded-md text-[10px] font-medium hover:bg-[#f5f5f5] transition-colors"
                 >
@@ -436,7 +462,8 @@ function KanbanBoard({
   getVehicleName,
   getProductInterest,
   getTimeAgo,
-  router
+  router,
+  currentPage,
 }: {
   leads: Lead[]
   allLeads: Lead[]
@@ -446,6 +473,7 @@ function KanbanBoard({
   getProductInterest: (lead: Lead) => string
   getTimeAgo: (date: string | null) => string
   router: ReturnType<typeof useRouter>
+  currentPage: number
 }) {
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
@@ -544,6 +572,8 @@ function KanbanBoard({
       case 'interest_level': return lead.interest_level
       case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
+      case 'ad_name': return lead.ad_name ?? null
+      case 'campaign_name': return lead.campaign_name ?? null
       default: return null
     }
   }
@@ -625,7 +655,7 @@ function KanbanBoard({
       const newInterestLevel = interestLevelMap[groupKey]
       if (newInterestLevel !== undefined && newInterestLevel !== draggedLead.interest_level) {
         // Update lead's interest_level
-        fetch(`/api/leads/${draggedLead.id}`, {
+        cachedFetch(`/api/leads/${draggedLead.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -639,7 +669,7 @@ function KanbanBoard({
       // Find user ID by name
       const targetUser = allLeads.find(lead => lead.assigned_user?.name === groupKey)?.assigned_user
       if (targetUser && targetUser.id !== draggedLead.assigned_user?.id) {
-        fetch(`/api/leads/${draggedLead.id}`, {
+        cachedFetch(`/api/leads/${draggedLead.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -755,7 +785,7 @@ function KanbanBoard({
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => router.push(`/leads/${lead.id}`)}
+                      onClick={() => router.push(`/leads/${lead.id}?fromPage=${currentPage}`)}
                       className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-[#eaecee]"
                     >
                       {/* Name and Product */}
@@ -826,9 +856,10 @@ function KanbanBoard({
   )
 }
 
-export default function LeadsPage() {
+function LeadsPageContent() {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { loading: authLoading, userId, role, profile } = useAuthContext()
   const userRole = role?.name ?? null
   const userPermissions = role?.permissions ?? []
@@ -884,9 +915,18 @@ export default function LeadsPage() {
   const [bulkReassignTeleCaller, setBulkReassignTeleCaller] = useState<string>('')
   const [bulkReassignLoading, setBulkReassignLoading] = useState(false)
   
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1)
+  // Delete state
+  const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false)
+  const [metaSyncLoading, setMetaSyncLoading] = useState(false)
+  
+  // Pagination: current page is derived from URL so closing lead detail always shows the right page
+  const pageParam = searchParams.get('page')
+  const currentPage = !pageParam ? 1 : Math.max(1, parseInt(pageParam, 10) || 1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
+  const PAGINATION_STORAGE_KEY = 'leads-list-pagination'
 
   // Column customization state
   interface ColumnConfig {
@@ -904,6 +944,8 @@ export default function LeadsPage() {
     { key: 'status', label: 'Lead stage', visible: true, width: 130 },
     { key: 'interest_level', label: 'Lead type', visible: true, width: 120 },
     { key: 'source', label: 'Source', visible: true, width: 120 },
+    { key: 'ad_name', label: 'ad_name', visible: true, width: 160 },
+    { key: 'campaign_name', label: 'campaign_name', visible: true, width: 160 },
     { key: 'assigned_to', label: 'Assigned to', visible: true, width: 180 },
     { key: 'last_contacted', label: 'Last contacted', visible: true, width: 140 },
     { key: 'phone', label: 'Mobile number', visible: true, width: 160 },
@@ -915,25 +957,20 @@ export default function LeadsPage() {
       if (saved) {
         try {
           const savedColumns = JSON.parse(saved)
-          // Filter to only include columns that are in defaultColumns
           const validColumnKeys = new Set(defaultColumns.map(col => col.key))
-          const filteredColumns = savedColumns.filter((col: ColumnConfig) => validColumnKeys.has(col.key))
-          
-          // Merge with defaultColumns to ensure all default columns are present with correct properties
-          const mergedColumns = defaultColumns.map(defaultCol => {
-            const savedCol = filteredColumns.find((col: ColumnConfig) => col.key === defaultCol.key)
-            if (savedCol) {
-              // Use saved column but ensure it has all required properties
-              return {
-                ...defaultCol,
-                visible: savedCol.visible !== undefined ? savedCol.visible : defaultCol.visible,
-                width: savedCol.width || defaultCol.width
-              }
-            }
-            return defaultCol
-          })
-          
-          return mergedColumns
+          const defaultByKey = Object.fromEntries(defaultColumns.map(col => [col.key, col]))
+          // Preserve saved column order; only include valid keys; merge with defaults for visible/width
+          const filteredInOrder = savedColumns
+            .filter((col: ColumnConfig) => validColumnKeys.has(col.key))
+            .map((col: ColumnConfig) => {
+              const d = defaultByKey[col.key]
+              return d ? { ...d, visible: col.visible !== undefined ? col.visible : d.visible, width: col.width || d.width } : null
+            })
+            .filter(Boolean) as ColumnConfig[]
+          // Append any default column not in saved order
+          const haveKeys = new Set(filteredInOrder.map(c => c.key))
+          const missing = defaultColumns.filter(d => !haveKeys.has(d.key))
+          return [...filteredInOrder, ...missing]
         } catch (e) {
           return defaultColumns
         }
@@ -945,6 +982,8 @@ export default function LeadsPage() {
   const [customizeModalOpen, setCustomizeModalOpen] = useState(false)
   const [customizeMode, setCustomizeMode] = useState<'select' | 'adjust-width' | null>(null)
   const [resizingColumn, setResizingColumn] = useState<string | null>(null)
+  const [draggedColumnKey, setDraggedColumnKey] = useState<string | null>(null)
+  const [dragOverColumnKey, setDragOverColumnKey] = useState<string | null>(null)
   const [resizeStartX, setResizeStartX] = useState(0)
   const [resizeStartWidth, setResizeStartWidth] = useState(0)
 
@@ -981,7 +1020,7 @@ export default function LeadsPage() {
   async function fetchLeadFollowups(leadId: string) {
     setLoadingFollowups(true)
     try {
-      const response = await fetch(`/api/followups?leadId=${leadId}`)
+      const response = await cachedFetch(`/api/followups?leadId=${leadId}`)
       if (response.ok) {
         const data = await response.json()
         setLeadFollowups(data.followUps || [])
@@ -1059,42 +1098,25 @@ export default function LeadsPage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Fetch followups counts for visible leads only (optimized)
+  // Fetch follow-up counts in one batch (single API call for visible leads)
   useEffect(() => {
     if (leads.length === 0) return
-    
-    async function fetchVisibleFollowupsCounts() {
-      try {
-        const counts: Record<string, number> = {}
-        const leadIds = leads.map(lead => lead.id)
-        
-        // Fetch followups for visible leads only
-        const promises = leadIds.map(async (leadId) => {
-          try {
-            const response = await fetch(`/api/followups?leadId=${leadId}`)
-            if (response.ok) {
-              const data = await response.json()
-              return { leadId, count: data.followUps?.length || 0 }
-            }
-            return { leadId, count: 0 }
-          } catch (error) {
-            return { leadId, count: 0 }
-          }
-        })
-        
-        const results = await Promise.all(promises)
-        const newCounts: Record<string, number> = {}
-        results.forEach(({ leadId, count }) => {
-          newCounts[leadId] = count
-        })
-        
-        setLeadFollowupsCounts(prev => ({ ...prev, ...newCounts }))
-      } catch (error) {
-        console.error('Failed to fetch followups counts:', error)
-      }
-    }
-    
-    fetchVisibleFollowupsCounts()
+    const leadIds = leads.map((lead) => lead.id)
+    if (leadIds.length === 0) return
+    let cancelled = false
+    cachedFetch('/api/followups/counts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds }),
+    }, 15000)
+      .then((res) => (res.ok ? res.json() : { counts: {} }))
+      .then((data) => {
+        if (!cancelled && data.counts) {
+          setLeadFollowupsCounts((prev) => ({ ...prev, ...data.counts }))
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [leads])
 
   // Save container styles to localStorage whenever they change
@@ -1119,31 +1141,81 @@ export default function LeadsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
   
-  // Reset to first page when filters change
+  // On initial load only: when URL has no ?page=, restore from sessionStorage (e.g. refresh on /leads). Never overwrite if the browser URL already has page=. Only run the redirect once per mount so clicking "Page 1" later is not overwritten.
+  const hasRestoredFromStorageOnce = useRef(false)
   useEffect(() => {
-    setCurrentPage(1)
+    if (pageParam) {
+      hasRestoredFromStorageOnce.current = true
+      return
+    }
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('page')) {
+      hasRestoredFromStorageOnce.current = true
+      return
+    }
+    if (hasRestoredFromStorageOnce.current) return
+    hasRestoredFromStorageOnce.current = true
+    try {
+      const raw = sessionStorage.getItem(PAGINATION_STORAGE_KEY)
+      if (raw) {
+        const { page, itemsPerPage: ipp } = JSON.parse(raw) as { page?: number; itemsPerPage?: number }
+        if (ipp != null && [10, 25, 50, 100].includes(ipp)) setItemsPerPage(ipp)
+        if (page != null && page >= 1) {
+          router.replace(pathname + `?page=${page}`, { scroll: false })
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [pageParam, pathname, router])
+
+  // Reset to first page when filters change (skip initial mount so we don't overwrite ?page= when returning from lead detail)
+  const isFirstFilterEffect = useRef(true)
+  const mountTime = useRef(0)
+  useEffect(() => {
+    if (mountTime.current === 0) mountTime.current = Date.now()
+    if (isFirstFilterEffect.current) {
+      isFirstFilterEffect.current = false
+      return
+    }
+    // Right after mount, don't overwrite URL (we may have just landed from lead detail with ?page=32)
+    const justLanded = Date.now() - mountTime.current < 800
+    const urlHasPage = typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('page')
+    if (justLanded && urlHasPage) return
+    router.replace(pathname + '?page=1', { scroll: false })
   }, [filterConditions, sortColumn, sortDirection, activeQuickFilter])
 
-  // Clean up columns on mount to ensure only valid columns are shown
+  // Persist pagination to sessionStorage for refresh
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(PAGINATION_STORAGE_KEY, JSON.stringify({ page: currentPage, itemsPerPage }))
+    } catch {
+      // ignore
+    }
+  }, [currentPage, itemsPerPage])
+
+  // Update URL when user changes page (closing lead detail then lands on this URL)
+  function goToPage(page: number) {
+    router.replace(pathname + (page === 1 ? '' : `?page=${page}`), { scroll: false })
+  }
+
+  // Clean up columns on mount to ensure only valid columns are shown; preserve column order
   useEffect(() => {
     const validColumnKeys = new Set(defaultColumns.map(col => col.key))
     const hasInvalidColumns = columns.some(col => !validColumnKeys.has(col.key))
     const hasMissingColumns = defaultColumns.some(defaultCol => !columns.find(col => col.key === defaultCol.key))
     
     if (hasInvalidColumns || hasMissingColumns) {
-      // Filter to only include valid columns and merge with defaults
-      const validColumns = defaultColumns.map(defaultCol => {
-        const existingCol = columns.find(col => col.key === defaultCol.key)
-        if (existingCol) {
-          return {
-            ...defaultCol,
-            visible: existingCol.visible !== undefined ? existingCol.visible : defaultCol.visible,
-            width: existingCol.width || defaultCol.width
-          }
-        }
-        return defaultCol
-      })
-      setColumns(validColumns)
+      const defaultByKey = Object.fromEntries(defaultColumns.map(col => [col.key, col]))
+      const validOrdered = columns
+        .filter(col => validColumnKeys.has(col.key))
+        .map(col => {
+          const d = defaultByKey[col.key]
+          return d ? { ...d, visible: col.visible !== undefined ? col.visible : d.visible, width: col.width || d.width } : null
+        })
+        .filter(Boolean) as ColumnConfig[]
+      const haveKeys = new Set(validOrdered.map(c => c.key))
+      const missing = defaultColumns.filter(d => !haveKeys.has(d.key))
+      setColumns([...validOrdered, ...missing])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run on mount
@@ -1376,6 +1448,8 @@ export default function LeadsPage() {
       case 'interest_level': return lead.interest_level
       case 'requirement': return lead.requirement || getProductInterest(lead)
       case 'assigned_to': return lead.assigned_user?.name || 'Unassigned'
+      case 'ad_name': return lead.ad_name ?? null
+      case 'campaign_name': return lead.campaign_name ?? null
       case 'created_at': return lead.created_at
       case 'updated_at': return lead.updated_at
       case 'first_contact_at': return lead.first_contact_at
@@ -1677,7 +1751,7 @@ export default function LeadsPage() {
 
   async function fetchTeleCallers() {
     try {
-      const response = await fetch('/api/users/tele-callers')
+      const response = await cachedFetch('/api/users/tele-callers')
       if (response.ok) {
         const data = await response.json()
         setTeleCallers(data.teleCallers || [])
@@ -1689,7 +1763,7 @@ export default function LeadsPage() {
 
   async function fetchLeads() {
     try {
-      const response = await fetch('/api/leads')
+      const response = await cachedFetch('/api/leads')
       if (response.ok) {
         const data = await response.json()
         setAllLeads(data.leads || [])
@@ -1701,23 +1775,12 @@ export default function LeadsPage() {
     }
   }
 
-  // Get raw product/interest string (requirement or meta) — may contain "| Car Model: X"
+  // Get raw product/interest string (requirement or meta_data) — may contain "| Car Model: X"
   function getRawProductInterest(lead: Lead): string {
     if (lead.requirement) {
       return lead.requirement.replace(/_/g, ' ')
     }
-    if (lead.meta_data) {
-      const productInterest = lead.meta_data['what_services_are_you_looking_for?'] ||
-                             lead.meta_data['what_services_are_you_looking_for'] ||
-                             lead.meta_data['What services are you looking for?'] ||
-                             lead.meta_data['product_interest'] ||
-                             lead.meta_data['service'] ||
-                             null
-      if (productInterest) {
-        return String(productInterest).replace(/_/g, ' ')
-      }
-    }
-    return ''
+    return getInterestedProductFromMeta(lead.meta_data)
   }
 
   // Extract "Car Model: X" from a string (e.g. "paint protection film | Car Model: creta" -> "creta")
@@ -1733,22 +1796,11 @@ export default function LeadsPage() {
     return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
   }
 
-  // Get car model: from meta_data first, else from product string (e.g. "| Car Model: creta")
+  // Get car model: from meta_data (direct keys or field_data), else from product string
   function getVehicleName(lead: Lead): string {
-    if (lead.meta_data) {
-      const carModel = lead.meta_data['car_model'] ||
-                     lead.meta_data['Car Model'] ||
-                     lead.meta_data['vehicle_model'] ||
-                     lead.meta_data['Vehicle Model'] ||
-                     lead.meta_data['vehicle'] ||
-                     lead.meta_data['Vehicle'] ||
-                     null
-      if (carModel) {
-        return String(carModel).replace(/_/g, ' ')
-      }
-    }
-    const fromProduct = extractCarModelFromString(getRawProductInterest(lead))
-    return fromProduct || ''
+    const fromMeta = getCarModelFromMeta(lead.meta_data)
+    if (fromMeta) return fromMeta
+    return extractCarModelFromString(getRawProductInterest(lead))
   }
 
   // Get product/service interest only — car model is shown in Car model column
@@ -1862,7 +1914,7 @@ export default function LeadsPage() {
 
     setBulkReassignLoading(true)
     try {
-      const response = await fetch('/api/leads/bulk-reassign', {
+      const response = await cachedFetch('/api/leads/bulk-reassign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1893,7 +1945,7 @@ export default function LeadsPage() {
   // Handle lead move in Kanban (drag and drop)
   async function handleLeadMove(leadId: string, newStatus: string) {
     try {
-      const response = await fetch(`/api/leads/${leadId}/status`, {
+      const response = await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -1919,7 +1971,7 @@ export default function LeadsPage() {
 
     setReassignLoading(true)
     try {
-      const response = await fetch(`/api/leads/${leadId}/reassign`, {
+      const response = await cachedFetch(`/api/leads/${leadId}/reassign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assigned_to: selectedTeleCaller.trim() }),
@@ -1940,6 +1992,128 @@ export default function LeadsPage() {
       alert('Failed to reassign lead')
     } finally {
       setReassignLoading(false)
+    }
+  }
+
+  // Handle single lead delete
+  async function handleDeleteLead(leadId: string | null) {
+    if (!leadId) return
+    if (!confirm('Are you sure you want to delete this lead? This action cannot be undone.')) return
+
+    setDeleteLoading(true)
+    setDeletingLeadId(leadId)
+    try {
+      const response = await cachedFetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+      const data = await response.json()
+
+      if (response.ok) {
+        await fetchLeads()
+        setDeletingLeadId(null)
+        alert('Lead deleted successfully')
+      } else {
+        alert(data.error || 'Failed to delete lead')
+      }
+    } catch (error) {
+      console.error('Failed to delete lead:', error)
+      alert('Failed to delete lead')
+    } finally {
+      setDeleteLoading(false)
+      setDeletingLeadId(null)
+    }
+  }
+
+  // Handle bulk delete (confirmation is via modal)
+  async function handleBulkDelete() {
+    if (selectedLeadIds.size === 0) {
+      alert('Please select at least one lead to delete')
+      return
+    }
+
+    setBulkDeleteLoading(true)
+    try {
+      const response = await cachedFetch('/api/leads/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_ids: Array.from(selectedLeadIds) }),
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success > 0) {
+        await fetchLeads()
+        setSelectedLeadIds(new Set())
+        setBulkDeleteModalOpen(false)
+        alert(`Successfully deleted ${data.success} lead(s)`)
+      } else {
+        alert(data.error || 'Failed to bulk delete leads')
+      }
+    } catch (error) {
+      console.error('Failed to bulk delete leads:', error)
+      alert('Failed to bulk delete leads')
+    } finally {
+      setBulkDeleteLoading(false)
+    }
+  }
+
+  async function handleSyncFromMeta() {
+    setMetaSyncLoading(true)
+    try {
+      const response = await cachedFetch('/api/integrations/facebook/sync-leads', { method: 'POST' })
+      const contentType = response.headers.get('content-type') || ''
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        alert(data.error || 'Failed to sync leads from Meta')
+        return
+      }
+
+      // Handle non-streaming response (e.g. no forms found)
+      if (!contentType.includes('ndjson') || !response.body) {
+        const data = await response.json()
+        alert(data.message || `Synced ${data.synced || 0} lead(s) from Meta.`)
+        if (data.synced > 0) await fetchLeads()
+        return
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let finalSynced = 0
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const msg = JSON.parse(line)
+            if (msg.type === 'lead' && msg.data) {
+              setAllLeads((prev) => [msg.data as Lead, ...prev])
+            } else if (msg.type === 'done') {
+              finalSynced = msg.synced ?? 0
+              const parts = [`Synced ${finalSynced} lead(s) from Meta`]
+              if (msg.skipped) parts.push(`${msg.skipped} skipped (no phone)`)
+              if (msg.failed) parts.push(`${msg.failed} failed`)
+              alert(parts.join('. '))
+            } else if (msg.type === 'error') {
+              alert(msg.error || 'Sync failed')
+            }
+          } catch {
+            // ignore parse errors for partial lines
+          }
+        }
+      }
+
+      if (finalSynced > 0) await fetchLeads()
+    } catch (error) {
+      console.error('Failed to sync from Meta:', error)
+      alert('Failed to sync leads from Meta')
+    } finally {
+      setMetaSyncLoading(false)
     }
   }
 
@@ -1990,7 +2164,45 @@ export default function LeadsPage() {
     setColumns(defaultColumns)
   }
 
+  // Column reorder: drag and drop in customize modal
+  function handleColumnDragStart(e: React.DragEvent, columnKey: string) {
+    setDraggedColumnKey(columnKey)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', columnKey)
+  }
+  function handleColumnDragOver(e: React.DragEvent, columnKey: string) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (draggedColumnKey && draggedColumnKey !== columnKey) setDragOverColumnKey(columnKey)
+  }
+  function handleColumnDragLeave() {
+    setDragOverColumnKey(null)
+  }
+  function handleColumnDrop(e: React.DragEvent, targetKey: string) {
+    e.preventDefault()
+    setDraggedColumnKey(null)
+    setDragOverColumnKey(null)
+    const sourceKey = e.dataTransfer.getData('text/plain')
+    if (!sourceKey || sourceKey === targetKey) return
+    setColumns(prev => {
+      const from = prev.findIndex(c => c.key === sourceKey)
+      const to = prev.findIndex(c => c.key === targetKey)
+      if (from === -1 || to === -1) return prev
+      const next = [...prev]
+      const [removed] = next.splice(from, 1)
+      next.splice(to, 0, removed)
+      return next
+    })
+  }
+  function handleColumnDragEnd() {
+    setDraggedColumnKey(null)
+    setDragOverColumnKey(null)
+  }
+
   const isAdmin = (userRole || userRoleState) === 'admin' || (userRole || userRoleState) === 'super_admin'
+  const canDeleteLeads = isAdmin
+  // Show "Add Lead" / "New Lead" when user has leads.create or leads.manage (e.g. tele_caller), not only admin/super_admin
+  const canCreateLeads = isAdmin || (Array.isArray(userPermissions) && (userPermissions.includes('leads.create') || userPermissions.includes('leads.manage')))
   
   // Helper function for search (safe version)
   const searchLeads = (leads: Lead[], query: string): Lead[] => {
@@ -2056,25 +2268,12 @@ export default function LeadsPage() {
 
   // Filter menu items based on user role and permissions (same logic as Sidebar)
   const filteredMenuItems = SIDEBAR_MENU_ITEMS.filter((item) => {
-    // Super admin and admin can see all items
-    if (userRole === 'super_admin' || userRole === 'admin') {
-      return true
-    }
-
-    // Items that don't require permissions are visible to all authenticated users
-    if (!item.requiresPermissions) {
-      return true
-    }
-
-    // If item has specific roles, check if user role matches
-    if (item.roles && userRole && item.roles.includes(userRole)) {
-      return true
-    }
-
-    // Check if user has required permissions
+    const roleLower = userRole?.toLowerCase() ?? ''
+    if (roleLower === 'super_admin' || roleLower === 'admin') return true
+    if (!item.requiresPermissions) return true
+    if (item.roles && userRole && item.roles.some((r) => r.toLowerCase() === roleLower)) return true
     const hasReadPermission = userPermissions.includes(`${item.resource}.read`)
     const hasManagePermission = userPermissions.includes(`${item.resource}.manage`)
-    
     return hasReadPermission || hasManagePermission
   })
 
@@ -2084,7 +2283,7 @@ export default function LeadsPage() {
       <div className="md:hidden bg-[#f5f5f5] min-h-screen pb-20 relative">
         <MobileHeader 
           title="My Leads"
-          showAddButton={isAdmin}
+          showAddButton={canCreateLeads}
           onAddClick={() => setNewLeadModalOpen(true)}
         />
 
@@ -2519,6 +2718,8 @@ export default function LeadsPage() {
                   { key: 'date', label: 'Date' },
                   { key: 'name', label: 'Name' },
                   { key: 'status', label: 'Lead Stage' },
+                  { key: 'ad_name', label: 'Ad Name' },
+                  { key: 'campaign_name', label: 'Campaign Name' },
                   { key: 'last_contacted', label: 'Last Contacted' },
                   { key: 'phone', label: 'Phone' },
                 ].map((col) => (
@@ -2692,7 +2893,7 @@ export default function LeadsPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-          {isAdmin && (
+          {canCreateLeads && (
               <button
                 onClick={() => setNewLeadModalOpen(true)}
                 className="bg-[#ed1b24] text-white px-5 py-2.5 rounded-md hover:bg-[#d11820] flex items-center gap-2 font-medium text-base"
@@ -3044,6 +3245,8 @@ export default function LeadsPage() {
                           { key: 'phone', label: 'Phone' },
                           { key: 'email', label: 'Email' },
                           { key: 'source', label: 'Source' },
+                          { key: 'ad_name', label: 'Ad Name' },
+                          { key: 'campaign_name', label: 'Campaign Name' },
                           { key: 'status', label: 'Status' },
                           { key: 'interest_level', label: 'Lead Type' },
                           { key: 'requirement', label: 'Requirement' },
@@ -3097,7 +3300,7 @@ export default function LeadsPage() {
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value)
-                    setCurrentPage(1)
+                    goToPage(1)
                   }}
                   className="w-full pl-10 pr-4 py-2.5 text-base border rounded-md focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all"
                   style={{ 
@@ -3155,6 +3358,21 @@ export default function LeadsPage() {
                 <Upload size={18} style={{ color: containerStyles.iconColor }} />
                 Import
               </Link>
+              <button
+                type="button"
+                onClick={handleSyncFromMeta}
+                disabled={metaSyncLoading}
+                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all disabled:opacity-50"
+                style={{ 
+                  color: containerStyles.textColor,
+                  backgroundColor: containerStyles.backgroundColor,
+                  borderColor: containerStyles.textColor + '30',
+                }}
+                title="Sync leads from Meta (Facebook) Lead Ads"
+              >
+                <RefreshCw size={18} className={metaSyncLoading ? 'animate-spin' : ''} style={{ color: containerStyles.iconColor }} />
+                Sync from Meta
+              </button>
               <button
                 type="button"
                 onClick={handleExportLeads}
@@ -3280,20 +3498,17 @@ export default function LeadsPage() {
                 {columns.filter(col => col.visible).map((column) => (
                   <th
                     key={column.key}
-                    className={`px-4 md:px-6 py-3 md:py-4 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider relative ${column.key === 'name' ? '' : 'whitespace-nowrap'}`}
-                    style={column.key === 'name' ? {
-                      width: `${column.width}px`,
-                      minWidth: `${column.width}px`,
-                    } : {
+                    className="px-4 md:px-6 py-3 md:py-4 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider relative truncate"
+                    style={{
                       width: `${column.width}px`,
                       minWidth: `${column.width}px`,
                       maxWidth: `${column.width}px`
                     }}
                   >
-                    <div className="flex items-center">
+                    <div className="flex items-center truncate min-w-0">
                       {column.label}
                       {(column.key === 'date' || column.key === 'status' || column.key === 'last_contacted' || column.key === 'phone' || column.key === 'car_model') && (
-                        <ChevronDown size={16} className="inline ml-1" />
+                        <ChevronDown size={16} className="inline ml-1 shrink-0" />
                       )}
                     </div>
                     {customizeMode === 'adjust-width' && (
@@ -3316,12 +3531,17 @@ export default function LeadsPage() {
                     )}
                   </th>
                 ))}
+                {canDeleteLeads && (
+                  <th className="px-4 md:px-6 py-3 md:py-4 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap" style={{ width: '80px' }}>
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {leads.length === 0 ? (
                 <tr>
-                  <td colSpan={(isAdmin ? 1 : 0) + columns.filter(col => col.visible).length} className="px-6 py-12 text-center text-base text-gray-500">
+                  <td colSpan={(isAdmin ? 1 : 0) + columns.filter(col => col.visible).length + (canDeleteLeads ? 1 : 0)} className="px-6 py-12 text-center text-base text-gray-500">
                     No leads found
                   </td>
                 </tr>
@@ -3335,56 +3555,56 @@ export default function LeadsPage() {
                     switch (column.key) {
                       case 'date':
                         return (
-                          <span className="text-base text-gray-700">
+                          <span className="text-base text-gray-700 truncate block">
                             {lead.created_at ? new Date(lead.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
                           </span>
                         )
                       case 'name':
                         return (
-                          <div className="text-base font-medium text-gray-900 break-words">
+                          <div className="text-base font-medium text-gray-900 truncate">
                             {lead.name}
                           </div>
                         )
                       case 'car_model':
                         return (
-                          <div className="text-base text-gray-900">
+                          <div className="text-base text-gray-900 truncate">
                             {vehicleName || '-'}
                           </div>
                         )
                       case 'interest':
                         return (
-                          <div className="text-base text-gray-900">
+                          <div className="text-base text-gray-900 truncate">
                             {productInterest || '-'}
                           </div>
                         )
                       case 'status':
                         return (
-                          <span className={`px-3 py-1.5 text-sm font-semibold rounded-full ${getStageBadgeColor(lead.status)}`}>
+                          <span className={`px-3 py-1.5 text-sm font-semibold rounded-full truncate inline-block max-w-full ${getStageBadgeColor(lead.status)}`}>
                             {formatStageName(lead.status)}
                           </span>
                         )
                       case 'interest_level':
                         return (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 truncate min-w-0">
                             {isHot ? (
                               <>
-                                <TrendingUp size={16} className="text-[#ed1b24]" />
-                                <span className="text-base text-gray-900">Hot</span>
+                                <TrendingUp size={16} className="text-[#ed1b24] shrink-0" />
+                                <span className="text-base text-gray-900 truncate">Hot</span>
                               </>
                             ) : (
                               <>
-                                <span className="text-base">❄️</span>
-                                <span className="text-base text-gray-900">Cold</span>
+                                <span className="text-base shrink-0">❄️</span>
+                                <span className="text-base text-gray-900 truncate">Cold</span>
                               </>
                             )}
                           </div>
                         )
                       case 'source':
                         return (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 truncate min-w-0">
                             <SourceIcon platform={lead.meta_data?.platform || lead.meta_data?.Platform} source={lead.source} />
                             {(lead.meta_data?.platform || lead.meta_data?.Platform) && (
-                              <span className="text-base text-gray-900 capitalize">
+                              <span className="text-base text-gray-900 capitalize truncate">
                                 {String(lead.meta_data?.platform || lead.meta_data?.Platform).toUpperCase()}
                               </span>
                             )}
@@ -3392,40 +3612,52 @@ export default function LeadsPage() {
                         )
                       case 'assigned_to':
                         return lead.assigned_user ? (
-                          <div className="flex items-center gap-2">
-                            <div className="relative">
+                          <div className="flex items-center gap-2 truncate min-w-0">
+                            <div className="relative shrink-0">
                               <UserAvatar 
                                 profileImageUrl={lead.assigned_user.profile_image_url}
                                 name={lead.assigned_user.name}
                               />
                               <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                             </div>
-                            <div>
-                              <div className="text-base font-bold text-gray-900">{lead.assigned_user.name}</div>
-                              <div className="text-sm text-gray-500">Sales Executive</div>
+                            <div className="min-w-0 truncate">
+                              <div className="text-base font-bold text-gray-900 truncate">{lead.assigned_user.name}</div>
+                              <div className="text-sm text-gray-500 truncate">Sales Executive</div>
                             </div>
                           </div>
                         ) : (
-                          <span className="text-base text-gray-500">Unassigned</span>
+                          <span className="text-base text-gray-500 truncate block">Unassigned</span>
                         )
                       case 'last_contacted':
                         return (
-                          <span className="text-base text-gray-500">
+                          <span className="text-base text-gray-500 truncate block">
                             {getTimeAgo(getLastContactedTime(lead))}
                           </span>
                         )
                       case 'phone':
                         return (
-                          <div className="flex items-center gap-1.5 text-base text-gray-500">
-                            <Phone size={16} />
-                            <span className="break-all">{lead.phone}</span>
+                          <div className="flex items-center gap-1.5 text-base text-gray-500 truncate min-w-0">
+                            <Phone size={16} className="shrink-0" />
+                            <span className="truncate">{lead.phone}</span>
                           </div>
                         )
                       case 'email':
                         return (
-                          <div className="flex items-center gap-1.5 text-base text-gray-500">
-                            <Mail size={16} />
-                            <span className="break-all">{lead.email || '-'}</span>
+                          <div className="flex items-center gap-1.5 text-base text-gray-500 truncate min-w-0">
+                            <Mail size={16} className="shrink-0" />
+                            <span className="truncate">{lead.email || '-'}</span>
+                          </div>
+                        )
+                      case 'ad_name':
+                        return (
+                          <div className="text-base text-gray-900 truncate">
+                            {lead.ad_name || '-'}
+                          </div>
+                        )
+                      case 'campaign_name':
+                        return (
+                          <div className="text-base text-gray-900 truncate">
+                            {lead.campaign_name || '-'}
                           </div>
                         )
                       default:
@@ -3444,7 +3676,7 @@ export default function LeadsPage() {
                             (e.target as HTMLElement).closest('button')) {
                           return
                         }
-                        router.push(`/leads/${lead.id}`)
+                        router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
                       }}
                     >
                     {isAdmin && (
@@ -3460,11 +3692,8 @@ export default function LeadsPage() {
                       {columns.filter(col => col.visible).map((column) => (
                         <td
                           key={column.key}
-                          className={`px-4 md:px-6 py-3 md:py-4 ${column.key === 'name' ? '' : 'whitespace-nowrap'}`}
-                          style={column.key === 'name' ? {
-                            width: `${column.width}px`,
-                            minWidth: `${column.width}px`,
-                          } : {
+                          className="px-4 md:px-6 py-3 md:py-4 truncate align-top"
+                          style={{
                             width: `${column.width}px`,
                             minWidth: `${column.width}px`,
                             maxWidth: `${column.width}px`
@@ -3473,6 +3702,21 @@ export default function LeadsPage() {
                           {renderCell(column)}
                     </td>
                       ))}
+                    {canDeleteLeads && (
+                      <td className="px-4 md:px-6 py-3 md:py-4 whitespace-nowrap" style={{ width: '80px' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteLead(lead.id)
+                          }}
+                          disabled={deletingLeadId === lead.id}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
+                          title="Delete lead"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                   )
                 })
@@ -3483,11 +3727,27 @@ export default function LeadsPage() {
         </div>
 
           {/* Pagination */}
-        {totalPages > 1 && (
-            <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex justify-between items-center">
+        {totalPages >= 1 && (
+            <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex flex-wrap justify-between items-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-600">Show</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value))
+                  goToPage(1)
+                }}
+                className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-700 bg-white focus:ring-2 focus:ring-[#ed1b24] focus:border-transparent"
+              >
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <span className="text-sm text-gray-600">per page</span>
+            </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                onClick={() => goToPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
                 className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -3503,7 +3763,7 @@ export default function LeadsPage() {
                     return (
                       <button
                         key={page}
-                        onClick={() => setCurrentPage(page)}
+                        onClick={() => goToPage(page)}
                         className={`px-3 py-2 text-base font-medium rounded-md ${
                           currentPage === page
                             ? 'bg-[#ed1b24] text-white'
@@ -3520,7 +3780,7 @@ export default function LeadsPage() {
                 })}
               </div>
               <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                onClick={() => goToPage(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
                 className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -3537,7 +3797,7 @@ export default function LeadsPage() {
 
           {/* Kanban View */}
           {viewMode === 'kanban' && (
-            <KanbanBoard 
+            <KanbanBoard
               leads={leads}
               allLeads={allLeads}
               groupBy={groupBy}
@@ -3546,13 +3806,14 @@ export default function LeadsPage() {
               getProductInterest={getProductInterest}
               getTimeAgo={getTimeAgo}
               router={router}
+              currentPage={currentPage}
             />
           )}
 
           {/* Grid View */}
           {viewMode === 'grid' && (
             <>
-              <GridView 
+              <GridView
                 leads={leads}
                 getVehicleName={getVehicleName}
                 getTimeAgo={getTimeAgo}
@@ -3560,13 +3821,33 @@ export default function LeadsPage() {
                 formatStageName={formatStageName}
                 getStageBadgeColor={getStageBadgeColor}
                 router={router}
+                currentPage={currentPage}
+                onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
+                canDeleteLeads={canDeleteLeads}
+                deletingLeadId={deletingLeadId}
               />
               {/* Pagination for Grid View */}
-              {totalPages > 1 && (
-                <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex justify-between items-center">
+              {totalPages >= 1 && (
+                <div className="bg-white rounded-lg shadow-sm mt-4 p-4 flex flex-wrap justify-between items-center gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-600">Show</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value))
+                        goToPage(1)
+                      }}
+                      className="rounded-md border border-gray-300 px-3 py-2 text-base text-gray-700 bg-white focus:ring-2 focus:ring-[#ed1b24] focus:border-transparent"
+                    >
+                      {[10, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm text-gray-600">per page</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      onClick={() => goToPage(Math.max(1, currentPage - 1))}
                       disabled={currentPage === 1}
                       className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -3580,9 +3861,9 @@ export default function LeadsPage() {
                           (page >= currentPage - 1 && page <= currentPage + 1)
                         ) {
                           return (
-                            <button
+<button
                               key={page}
-                              onClick={() => setCurrentPage(page)}
+                              onClick={() => goToPage(page)}
                               className={`px-3 py-2 text-base font-medium rounded-md ${
                                 currentPage === page
                                   ? 'bg-[#ed1b24] text-white'
@@ -3597,9 +3878,9 @@ export default function LeadsPage() {
                         }
                         return null
                       })}
-        </div>
+                    </div>
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      onClick={() => goToPage(Math.min(totalPages, currentPage + 1))}
                       disabled={currentPage === totalPages}
                       className="px-4 py-2 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -3614,17 +3895,24 @@ export default function LeadsPage() {
             </>
           )}
 
-          {/* Bulk Reassign Button */}
+          {/* Bulk Actions: Reassign & Delete (admin only - only admins can select leads) */}
           {isAdmin && selectedLeadIds.size > 0 && (
-            <div className="fixed bottom-6 right-6">
+            <div className="fixed bottom-6 right-6 flex gap-3">
               <button
                 onClick={() => setBulkReassignModalOpen(true)}
                 className="bg-[#ed1b24] text-white px-6 py-3 rounded-md hover:bg-[#d11820] shadow-lg font-medium text-base"
               >
                 Bulk Reassign ({selectedLeadIds.size})
               </button>
-          </div>
-        )}
+              <button
+                onClick={() => setBulkDeleteModalOpen(true)}
+                className="bg-red-600 text-white px-6 py-3 rounded-md hover:bg-red-700 shadow-lg font-medium text-base flex items-center gap-2"
+              >
+                <Trash2 size={18} />
+                Bulk Delete ({selectedLeadIds.size})
+              </button>
+            </div>
+          )}
             </div>
           </div>
         </Layout>
@@ -3722,6 +4010,36 @@ export default function LeadsPage() {
         </div>
       )}
 
+      {/* Bulk Delete Modal */}
+      {bulkDeleteModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold mb-4">
+              Bulk Delete Leads ({selectedLeadIds.size} selected)
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete {selectedLeadIds.size} lead(s)? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setBulkDeleteModalOpen(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleteLoading}
+                className="px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                <Trash2 size={16} />
+                {bulkDeleteLoading ? 'Deleting...' : `Delete ${selectedLeadIds.size} Lead(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Customize Columns Modal - Initial Selection */}
       {customizeModalOpen && customizeMode === null && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3795,24 +4113,35 @@ export default function LeadsPage() {
 
                   <div className="mb-4">
                     <p className="text-sm text-gray-600 mb-4">
-                      Select which columns to display in the table.
+                      Select which columns to display and drag to reorder. Order here sets the table column sequence.
                     </p>
                     
                     <div className="space-y-3">
                       {columns.map((column) => (
                         <div
                           key={column.key}
-                          className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+                          draggable
+                          onDragStart={(e) => handleColumnDragStart(e, column.key)}
+                          onDragOver={(e) => handleColumnDragOver(e, column.key)}
+                          onDragLeave={handleColumnDragLeave}
+                          onDrop={(e) => handleColumnDrop(e, column.key)}
+                          onDragEnd={handleColumnDragEnd}
+                          className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors ${
+                            draggedColumnKey === column.key ? 'opacity-50' : ''
+                          } ${dragOverColumnKey === column.key ? 'border-[#ed1b24] bg-red-50/50' : 'border-gray-200'}`}
                         >
-                          <div className="flex items-center gap-3 flex-1">
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <span className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600" title="Drag to reorder">
+                              <GripVertical size={18} />
+                            </span>
                             <input
                               type="checkbox"
                               checked={column.visible}
                               onChange={() => toggleColumnVisibility(column.key)}
-                              className="rounded border-gray-300 text-[#ed1b24] focus:ring-[#ed1b24] w-4 h-4"
+                              className="rounded border-gray-300 text-[#ed1b24] focus:ring-[#ed1b24] w-4 h-4 shrink-0"
                             />
                             <label 
-                              className="text-base font-medium text-gray-900 cursor-pointer flex-1" 
+                              className="text-base font-medium text-gray-900 cursor-pointer flex-1 truncate" 
                               onClick={() => toggleColumnVisibility(column.key)}
                             >
                               {column.label}
@@ -3914,7 +4243,10 @@ export default function LeadsPage() {
       {/* Modals - Outside desktop view, at fragment level */}
       {/* New Lead Modal */}
       {newLeadModalOpen && (
-        <NewLeadForm onClose={() => setNewLeadModalOpen(false)} />
+        <NewLeadForm
+          onClose={() => setNewLeadModalOpen(false)}
+          onSuccess={() => fetchLeads()}
+        />
       )}
 
       {/* Container Customization Modal */}
@@ -4111,5 +4443,13 @@ export default function LeadsPage() {
         </div>
       )}
     </>
+  )
+}
+
+export default function LeadsPage() {
+  return (
+    <Suspense fallback={<Layout><div className="min-h-screen flex items-center justify-center"><div className="text-lg">Loading...</div></div></Layout>}>
+      <LeadsPageContent />
+    </Suspense>
   )
 }

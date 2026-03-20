@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuthContext } from '@/components/AuthProvider'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
-import { Plus, Table2, LayoutGrid, Phone, Mail, Calendar, Star, Users, UserCheck, Wifi, Award, X, ArrowLeft, DollarSign, Clock, Play, Download } from 'lucide-react'
+import { Plus, Table2, LayoutGrid, Phone, Mail, Calendar, Star, Users, UserCheck, Wifi, Award, X, ArrowLeft, DollarSign, Clock, Play, Download, Trash2 } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface Role {
   id: string
@@ -63,7 +64,7 @@ interface Call {
 
 export default function TeamsPage() {
   const router = useRouter()
-  const { isAuthenticated, role } = useAuthContext()
+  const { isAuthenticated, role, userId: currentUserId } = useAuthContext()
   const [users, setUsers] = useState<UserWithStats[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
@@ -102,6 +103,7 @@ export default function TeamsPage() {
   const [showLanguagePicker, setShowLanguagePicker] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingDetail, setSavingDetail] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -128,13 +130,13 @@ export default function TeamsPage() {
 
   async function fetchUsers() {
     try {
-      const response = await fetch('/api/users')
+      const response = await cachedFetch('/api/users')
       if (response.ok) {
         const data = await response.json()
         const usersList: User[] = data.users || []
 
         // Fetch aggregated performance stats once and join with user list.
-        const perfResponse = await fetch('/api/users/performance')
+        const perfResponse = await cachedFetch('/api/users/performance')
         let performanceByUser: Record<string, ReturnType<typeof mapPerfEntry>> = {}
 
         if (perfResponse.ok) {
@@ -204,6 +206,35 @@ export default function TeamsPage() {
     }
   }
 
+  async function handleDeleteUser(user: UserWithStats, e?: React.MouseEvent) {
+    e?.stopPropagation()
+    if (user.id === currentUserId) {
+      alert('You cannot delete your own account.')
+      return
+    }
+    if (!confirm(`Are you sure you want to remove ${user.name} from the team? This action cannot be undone.`)) {
+      return
+    }
+    setDeletingUserId(user.id)
+    try {
+      const response = await cachedFetch(`/api/users/${user.id}`, { method: 'DELETE' })
+      if (response.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== user.id))
+        if (selectedUser?.id === user.id) {
+          setSelectedUser(null)
+        }
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to delete team member')
+      }
+    } catch (error) {
+      console.error('Failed to delete user:', error)
+      alert('Failed to delete team member')
+    } finally {
+      setDeletingUserId(null)
+    }
+  }
+
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) {
@@ -231,7 +262,7 @@ export default function TeamsPage() {
     setSaving(true)
     try {
       // Create user first (without image)
-      const response = await fetch('/api/users', {
+      const response = await cachedFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -258,7 +289,7 @@ export default function TeamsPage() {
             imageFormData.append('file', profileImage)
             imageFormData.append('userId', user.id)
 
-            const imageResponse = await fetch('/api/users/upload-profile-image', {
+            const imageResponse = await cachedFetch('/api/users/upload-profile-image', {
               method: 'POST',
               body: imageFormData,
             })
@@ -266,7 +297,7 @@ export default function TeamsPage() {
             if (imageResponse.ok) {
               const imageData = await imageResponse.json()
               // Update user with image URL
-              await fetch(`/api/users/${user.id}`, {
+              await cachedFetch(`/api/users/${user.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -335,32 +366,6 @@ export default function TeamsPage() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
-  async function handleDeleteUser(userId: string, userName: string) {
-    if (!confirm(`Are you sure you want to delete ${userName}? This action cannot be undone.`)) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        await fetchUsers()
-        if (selectedUser?.id === userId) {
-          setSelectedUser(null)
-        }
-        alert('User deleted successfully')
-      } else {
-        const error = await response.json()
-        alert(error.error || 'Failed to delete user')
-      }
-    } catch (error) {
-      console.error('Failed to delete user:', error)
-      alert('Failed to delete user')
-    }
-  }
-
   async function openUserDetail(user: UserWithStats) {
     // Set user immediately with existing data
     setSelectedUser(user)
@@ -386,7 +391,7 @@ export default function TeamsPage() {
     
     // Fetch full user details, stats, and calls in parallel
     Promise.all([
-      fetch(`/api/users/${user.id}`).then(res => res.ok ? res.json() : null),
+      cachedFetch(`/api/users/${user.id}`).then(res => res.ok ? res.json() : null),
       fetchUserDetailStats(user.id),
       fetchUserCalls(user.id)
     ]).then(([userData]) => {
@@ -500,7 +505,7 @@ export default function TeamsPage() {
 
   async function fetchUserCalls(userId: string) {
     try {
-      const response = await fetch(`/api/calls?user_id=${userId}`)
+      const response = await cachedFetch(`/api/calls?user_id=${userId}`)
       if (response.ok) {
         const data = await response.json()
         setUserCalls(data.calls || [])
@@ -543,7 +548,7 @@ export default function TeamsPage() {
         imageFormData.append('file', detailProfileImage)
         imageFormData.append('userId', selectedUser.id)
 
-        const imageResponse = await fetch('/api/users/upload-profile-image', {
+        const imageResponse = await cachedFetch('/api/users/upload-profile-image', {
           method: 'POST',
           body: imageFormData,
         })
@@ -569,7 +574,7 @@ export default function TeamsPage() {
         roleId: detailFormData.roleId,
       }
 
-      const response = await fetch(`/api/users/${selectedUser.id}`, {
+      const response = await cachedFetch(`/api/users/${selectedUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatePayload),
@@ -861,6 +866,7 @@ export default function TeamsPage() {
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Email</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Performance</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Joined</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -929,6 +935,20 @@ export default function TeamsPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {formatDate(user.doj || user.created_at)}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            disabled={user.id === currentUserId || deletingUserId === user.id}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Remove from team"
+                          >
+                            {deletingUserId === user.id ? (
+                              <div className="w-5 h-5 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <Trash2 size={18} />
+                            )}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -943,8 +963,25 @@ export default function TeamsPage() {
               {users.map((user) => (
                 <div 
                   key={user.id} 
-                  className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow relative cursor-pointer"
+                  onClick={() => openUserDetail(user)}
                 >
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteUser(user, e)
+                    }}
+                    disabled={user.id === currentUserId || deletingUserId === user.id}
+                    className="absolute top-2 right-2 z-10 p-2 text-white/90 hover:text-white hover:bg-white/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Remove from team"
+                  >
+                    {deletingUserId === user.id ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 size={16} />
+                    )}
+                  </button>
                   {/* Card Header */}
                   <div className="bg-[#de0510] h-20 relative">
                     <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
@@ -1200,17 +1237,34 @@ export default function TeamsPage() {
                         </button>
                         <h2 className="text-2xl font-bold text-gray-900">User Profile</h2>
                       </div>
-                      <button
-                        onClick={() => {
-                          setSelectedUser(null)
-                          setDetailProfileImage(null)
-                          setDetailProfileImagePreview(null)
-                          setShowLanguagePicker(false)
-                        }}
-                        className="text-gray-400 hover:text-gray-600"
-                      >
-                        <X size={24} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {selectedUser.id !== currentUserId && (
+                          <button
+                            onClick={() => handleDeleteUser(selectedUser)}
+                            disabled={deletingUserId === selectedUser.id}
+                            className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                            title="Remove from team"
+                          >
+                            {deletingUserId === selectedUser.id ? (
+                              <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <Trash2 size={18} />
+                            )}
+                            Remove from team
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setSelectedUser(null)
+                            setDetailProfileImage(null)
+                            setDetailProfileImagePreview(null)
+                            setShowLanguagePicker(false)
+                          }}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <X size={24} />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="p-6 space-y-6">
@@ -1584,18 +1638,11 @@ export default function TeamsPage() {
                       {/* Save Button */}
                       <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-between items-center">
                         <button
-                          onClick={() => {
-                            if (selectedUser && confirm(`Are you sure you want to delete ${selectedUser.name}? This action cannot be undone.`)) {
-                              handleDeleteUser(selectedUser.id, selectedUser.name)
-                              setSelectedUser(null)
-                              setDetailProfileImage(null)
-                              setDetailProfileImagePreview(null)
-                              setShowLanguagePicker(false)
-                            }
-                          }}
-                          className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                          onClick={() => selectedUser && handleDeleteUser(selectedUser)}
+                          disabled={selectedUser?.id === currentUserId || deletingUserId === selectedUser?.id}
+                          className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                         >
-                          Delete User
+                          {deletingUserId === selectedUser?.id ? 'Deleting...' : 'Delete User'}
                         </button>
                         <div className="flex gap-3">
                           <button

@@ -2,6 +2,7 @@
 
 import Layout from '@/components/Layout'
 import { FormEvent, useEffect, useState } from 'react'
+import { cachedFetch } from '@/lib/api-client'
 
 type MailjetStatus = 'disconnected' | 'connected'
 
@@ -54,7 +55,7 @@ function MailjetIntegrationCard() {
     const init = async () => {
       try {
         // Try loading from backend first (shared config)
-        const res = await fetch('/api/integrations/mailjet/config')
+        const res = await cachedFetch('/api/integrations/mailjet/config')
         if (res.ok) {
           const data = await res.json()
           if (data?.config) {
@@ -97,7 +98,7 @@ function MailjetIntegrationCard() {
     setSaving(true)
     try {
       // Persist to backend (shared) and mirror in localStorage (per-browser)
-      const res = await fetch('/api/integrations/mailjet/config', {
+      const res = await cachedFetch('/api/integrations/mailjet/config', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -127,7 +128,7 @@ function MailjetIntegrationCard() {
     setError(null)
     setSuccess(null)
     // Clear backend and local cache
-    fetch('/api/integrations/mailjet/config', { method: 'DELETE' }).catch((err) =>
+    cachedFetch('/api/integrations/mailjet/config', { method: 'DELETE' }).catch((err) =>
       console.error('Failed to clear Mailjet config on server:', err)
     )
     saveMailjetConfig(null)
@@ -151,7 +152,7 @@ function MailjetIntegrationCard() {
 
     setTesting(true)
     try {
-      const res = await fetch('/api/integrations/mailjet/test-send', {
+      const res = await cachedFetch('/api/integrations/mailjet/test-send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

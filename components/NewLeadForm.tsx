@@ -17,9 +17,12 @@ import {
   Check,
   AlertCircle,
 } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 interface NewLeadFormProps {
   onClose: () => void
+  /** Called after lead is created successfully; use to refetch list without full reload */
+  onSuccess?: () => void
 }
 
 interface FormData {
@@ -47,7 +50,7 @@ interface FormErrors {
   source?: string
 }
 
-export default function NewLeadForm({ onClose }: NewLeadFormProps) {
+export default function NewLeadForm({ onClose, onSuccess }: NewLeadFormProps) {
   const [formData, setFormData] = useState<FormData>({
     name: '',
     phone: '',
@@ -204,7 +207,7 @@ export default function NewLeadForm({ onClose }: NewLeadFormProps) {
         leadData.email = formData.email.trim()
       }
 
-      const response = await fetch('/api/leads', {
+      const response = await cachedFetch('/api/leads', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -214,9 +217,8 @@ export default function NewLeadForm({ onClose }: NewLeadFormProps) {
 
       if (response.ok) {
         alert('Lead created successfully!')
+        onSuccess?.()
         onClose()
-        // Reload the page to show the new lead
-        window.location.reload()
       } else {
         const errorData = await response.json()
         alert(errorData.error || 'Failed to create lead')

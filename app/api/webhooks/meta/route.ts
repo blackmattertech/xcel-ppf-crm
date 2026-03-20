@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { parseMetaWebhook } from '@/backend/services/meta-webhook.service'
 import { createLead } from '@/backend/services/lead.service'
+import { buildRequirementFromMeta } from '@/shared/utils/lead-meta'
 import { MetaWebhookPayload } from '@/shared/types/meta-lead'
 
 export async function POST(request: NextRequest) {
@@ -33,6 +34,8 @@ export async function POST(request: NextRequest) {
         const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
         const lead_id = `LEAD-${timestamp}-${randomSuffix}`
         
+        const requirement = buildRequirementFromMeta(parsedLead.metaData) || undefined
+
         const lead = await createLead({
           lead_id,
           name: parsedLead.name,
@@ -47,6 +50,7 @@ export async function POST(request: NextRequest) {
           ad_name: parsedLead.adName || null,
           campaign_name: parsedLead.campaignName || null,
           meta_data: parsedLead.metaData,
+          requirement: requirement || undefined,
           status: 'new',
         } as any, true) // Auto-assign enabled
 

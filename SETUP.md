@@ -11,6 +11,16 @@
 
 This will create all necessary tables, roles, and permissions.
 
+### Fix User Deletion (Foreign Key Constraints)
+
+If you get "Unable to delete row as it is currently referenced by a foreign key constraint from the table leads" when deleting users, run migration 015:
+
+1. Go to **Supabase Dashboard** → **SQL Editor** → **New query**
+2. Copy the contents of `database/migrations/015_user_delete_cascade_fks.sql`
+3. Paste and click **Run**
+
+This adds `ON DELETE SET NULL` to user foreign keys so the database automatically clears references when a user is deleted.
+
 ### Syncing Permissions from Sidebar
 
 When you add new features to the sidebar, you can automatically sync permissions:

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, requirePermission } from '@/backend/middleware/auth'
 import { getUserById, updateUser, deleteUser } from '@/backend/services/user.service'
 import { redistributeNewLeadsAmongTeleCallers } from '@/backend/services/assignment.service'
+import { ASSIGNABLE_LEAD_ROLES } from '@/shared/constants/roles'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
@@ -100,16 +101,16 @@ export async function PUT(
       languagesKnown || null
     )
 
-    // When a user's role is updated to tele_caller, redistribute existing "new" leads in round-robin
+    // When a user's role is updated to tele_caller or sales, redistribute existing "new" leads in round-robin
     const roleName = (user as any).role?.name ?? (Array.isArray((user as any).role) ? (user as any).role?.[0]?.name : null)
-    if (roleName === 'tele_caller' && !('error' in authResult) && authResult.user?.id) {
+    if (roleName && ASSIGNABLE_LEAD_ROLES.includes(roleName as any) && !('error' in authResult) && authResult.user?.id) {
       try {
         const count = await redistributeNewLeadsAmongTeleCallers(authResult.user.id)
         if (count > 0) {
           (user as any)._redistributedLeads = count
         }
       } catch (err) {
-        console.error('Failed to redistribute new leads after updating user to tele_caller:', err)
+        console.error('Failed to redistribute new leads after updating user to assignable role:', err)
       }
     }
 
@@ -129,19 +130,32 @@ export async function PUT(
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    const normalizedId = typeof id === 'string' ? id.trim().toLowerCase() : ''
+
+    if (!normalizedId || !UUID_REGEX.test(normalizedId)) {
+      return NextResponse.json(
+        { error: 'Invalid user ID format' },
+        { status: 400 }
+      )
+    }
+
     const authResult = await requirePermission(request, PERMISSIONS.USERS_DELETE)
     
     if ('error' in authResult) {
       return authResult.error
     }
 
-    await deleteUser(id)
+    // Pass current user id to reassign records (quotations, etc.) before deletion
+    const reassignToUserId = authResult.user.id !== normalizedId ? authResult.user.id : undefined
+    await deleteUser(normalizedId, reassignToUserId)
     return NextResponse.json({ message: 'User deleted successfully' })
   } catch (error) {
     return NextResponse.json(

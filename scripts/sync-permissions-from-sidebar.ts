@@ -7,9 +7,9 @@
 
 import { createServiceClient } from '@/lib/supabase/service'
 import {
-  SIDEBAR_MENU_ITEMS,
   generatePermissionsForResource,
   getResourcesRequiringPermissions,
+  getAllSidebarResources,
 } from '@/shared/constants/sidebar'
 
 async function syncPermissions() {
@@ -17,10 +17,8 @@ async function syncPermissions() {
 
   const supabase = createServiceClient()
 
-  // All unique resources from sidebar (every item is permission-gated)
-  const allResources = Array.from(
-    new Set(SIDEBAR_MENU_ITEMS.map((item) => item.resource))
-  )
+  // All unique resources from sidebar (including dropdown children)
+  const allResources = getAllSidebarResources()
   const crudResources = getResourcesRequiringPermissions()
 
   console.log(`📋 Sidebar resources (all): ${allResources.join(', ')}`)

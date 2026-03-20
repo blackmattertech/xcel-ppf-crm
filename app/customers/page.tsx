@@ -16,6 +16,7 @@ import {
   Mail,
   Phone,
 } from 'lucide-react'
+import { cachedFetch } from '@/lib/api-client'
 
 type CustomerType = 'dealership' | 'individual'
 
@@ -28,6 +29,21 @@ interface Customer {
   tags: string[] | null
   created_at: string
   total_revenue?: number
+  source?: 'external'
+  car_number?: string | null
+  chassis_number?: string | null
+  service_type?: string | null
+  series?: string | null
+  service_date?: string | null
+  service_location?: string | null
+  dealer_name?: string | null
+  warranty_years?: number | null
+  ppf_warranty_years?: number | null
+  car_name?: string | null
+  car_model?: string | null
+  car_photo_url?: string | null
+  chassis_photo_url?: string | null
+  dealer_invoice_url?: string | null
 }
 
 type FilterType = 'all' | 'dealership' | 'individual'
@@ -64,6 +80,8 @@ export default function CustomersPage() {
     notes: '',
   })
   const [creating, setCreating] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(25)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -93,7 +111,7 @@ export default function CustomersPage() {
 
   async function fetchCustomers() {
     try {
-      const response = await fetch('/api/customers')
+      const response = await cachedFetch('/api/customers')
       if (response.ok) {
         const data = await response.json()
         setCustomers(data.customers || [])
@@ -133,6 +151,16 @@ export default function CustomersPage() {
     if (filter === 'all') return filtered
     return filtered.filter((c) => getUiType(c) === filter)
   }, [customers, filter, activeStatsFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / itemsPerPage))
+  const paginatedCustomers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage
+    return filteredCustomers.slice(start, start + itemsPerPage)
+  }, [filteredCustomers, currentPage, itemsPerPage])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [filter, activeStatsFilter, itemsPerPage])
 
   const stats = useMemo(() => {
     const total = customers.length
@@ -174,7 +202,7 @@ export default function CustomersPage() {
       if (createForm.pincode) tags.push(`pincode:${createForm.pincode}`)
       if (createForm.notes) tags.push(`notes:${createForm.notes}`)
 
-      const response = await fetch('/api/customers', {
+      const response = await cachedFetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -391,8 +419,8 @@ export default function CustomersPage() {
 
           {/* Table */}
           <section className="rounded-[12px] bg-white border border-[#eaecee] shadow-sm overflow-hidden">
-            <div className="hidden md:block">
-              <table className="min-w-full">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="min-w-full whitespace-nowrap">
                 <thead className="bg-[#fafafa]">
                   <tr>
                     <th className="px-6 py-3 text-left text-[11px] font-medium text-[#4f5b67]">
@@ -408,6 +436,15 @@ export default function CustomersPage() {
                       Contact
                     </th>
                     <th className="px-6 py-3 text-left text-[11px] font-medium text-[#4f5b67]">
+                      Dealer
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-medium text-[#4f5b67]">
+                      Service Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-medium text-[#4f5b67]">
+                      Car Model
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-medium text-[#4f5b67]">
                       Total Purchase
                     </th>
                     <th className="px-6 py-3 text-left text-[11px] font-medium text-[#4f5b67]">
@@ -419,7 +456,7 @@ export default function CustomersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f1f1] bg-white">
-                  {filteredCustomers.map((customer) => {
+                  {paginatedCustomers.map((customer) => {
                     const uiType = getUiType(customer)
                     const { label: statusLabel, variant } = getUiStatus(customer)
 
@@ -435,8 +472,11 @@ export default function CustomersPage() {
                               {customer.name.charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm font-semibold text-[#242d35] truncate">
+                              <p className="text-sm font-semibold text-[#242d35] truncate flex items-center gap-2">
                                 {customer.name}
+                                {customer.source === 'external' && (
+                                  <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">Warranty Claims</span>
+                                )}
                               </p>
                               {customer.email && (
                                 <p className="text-xs text-[#717d8a] truncate">
@@ -484,6 +524,23 @@ export default function CustomersPage() {
                             )}
                           </div>
                         </td>
+                        <td className="px-6 py-4 text-sm text-[#4f5b67] max-w-[180px]">
+                          <span className="truncate block" title={customer.dealer_name ?? ''}>
+                            {customer.dealer_name || '—'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-[#4f5b67] whitespace-nowrap">
+                          {customer.service_type ? (
+                            <span className="capitalize">{customer.service_type}</span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-[#4f5b67] max-w-[140px]">
+                          <span className="truncate block" title={customer.car_model ?? ''}>
+                            {customer.car_model || customer.car_name || '—'}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-sm text-[#44C13C] whitespace-nowrap font-semibold">
                           {customer.total_revenue && customer.total_revenue > 0
                             ? `₹${customer.total_revenue.toLocaleString('en-IN')}`
@@ -508,10 +565,10 @@ export default function CustomersPage() {
                     )
                   })}
 
-                  {filteredCustomers.length === 0 && (
+                  {paginatedCustomers.length === 0 && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={10}
                         className="px-6 py-10 text-center text-sm text-[#717d8a]"
                       >
                         No customers found for this filter.
@@ -522,9 +579,50 @@ export default function CustomersPage() {
               </table>
             </div>
 
+            {/* Pagination (desktop) */}
+            <div className="hidden md:flex flex-wrap items-center justify-between gap-4 px-4 py-3 border-t border-[#eaecee] bg-[#fafafa]">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-[#4f5b67]">Show</span>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => {
+                    setItemsPerPage(Number(e.target.value))
+                    setCurrentPage(1)
+                  }}
+                  className="rounded-lg border border-[#eaecee] px-3 py-1.5 text-sm text-[#242d35] bg-white focus:ring-2 focus:ring-[#de0510] focus:border-transparent"
+                >
+                  {[10, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+                <span className="text-sm text-[#4f5b67]">per page</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-[#717d8a]">
+                  {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, filteredCustomers.length)} of {filteredCustomers.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 text-sm font-medium text-[#4f5b67] bg-white border border-[#eaecee] rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 text-sm font-medium text-[#4f5b67] bg-white border border-[#eaecee] rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-[#f1f1f1]">
-              {filteredCustomers.map((customer) => {
+              {paginatedCustomers.map((customer) => {
                 const uiType = getUiType(customer)
                 const { label: statusLabel, variant } = getUiStatus(customer)
 
@@ -540,12 +638,25 @@ export default function CustomersPage() {
                         {customer.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#242d35] truncate">
+                        <p className="text-sm font-semibold text-[#242d35] truncate flex items-center gap-2 flex-wrap">
                           {customer.name}
+                          {customer.source === 'external' && (
+                            <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">Warranty Claims</span>
+                          )}
                         </p>
                         {customer.email && (
                           <p className="text-xs text-[#717d8a] truncate">
                             {customer.email}
+                          </p>
+                        )}
+                        {(customer.dealer_name || customer.service_type || customer.car_model || customer.car_name) && (
+                          <p className="text-xs text-[#4f5b67] mt-1 space-y-0.5">
+                            {customer.dealer_name && <span className="block truncate">Dealer: {customer.dealer_name}</span>}
+                            {(customer.service_type || customer.car_model || customer.car_name) && (
+                              <span className="block truncate">
+                                {[customer.service_type, customer.car_model || customer.car_name].filter(Boolean).join(' · ')}
+                              </span>
+                            )}
                           </p>
                         )}
                       </div>
@@ -580,11 +691,51 @@ export default function CustomersPage() {
                 )
               })}
 
-              {filteredCustomers.length === 0 && (
+              {paginatedCustomers.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-[#717d8a]">
                   No customers found for this filter.
                 </div>
               )}
+            </div>
+
+            {/* Pagination (mobile) */}
+            <div className="md:hidden flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-[#eaecee] bg-[#fafafa]">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#4f5b67]">Show</span>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => {
+                    setItemsPerPage(Number(e.target.value))
+                    setCurrentPage(1)
+                  }}
+                  className="rounded-lg border border-[#eaecee] px-2 py-1 text-xs text-[#242d35] bg-white"
+                >
+                  {[10, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-2 py-1 text-xs font-medium text-[#4f5b67] bg-white border rounded-lg disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <span className="text-xs text-[#717d8a]">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-2 py-1 text-xs font-medium text-[#4f5b67] bg-white border rounded-lg disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </section>
         </div>
