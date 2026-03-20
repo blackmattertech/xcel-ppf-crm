@@ -1,0 +1,39 @@
+# Pull Meta Lead Ads into the CRM every 6 hours (UTC).
+# Repo → Settings → Secrets: APP_BASE_URL and CRON_SECRET (match production CRON_SECRET).
+
+name: Meta leads sync
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-leads-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-meta-leads:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger Meta leads sync
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_BASE_URL" ]; then
+            echo "APP_BASE_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is missing"
+            exit 1
+          fi
+
+          curl -fsSL -X GET \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/meta-leads-sync"

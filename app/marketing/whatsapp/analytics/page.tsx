@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ComponentType, type ReactNode } from 'react'
 import Link from 'next/link'
 import {
   Loader2,
@@ -16,7 +16,11 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
-  Phone,
+  Activity,
+  Percent,
+  Hash,
+  Zap,
+  Target,
 } from 'lucide-react'
 import {
   PieChart,
@@ -30,10 +34,14 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  AreaChart,
   Area,
+  Line,
+  ComposedChart,
 } from 'recharts'
 
+const WA_GREEN = '#25D366'
+const WA_TEAL = '#128C7E'
+const WA_BLUE = '#34B7F1'
 const PIE_COLORS = ['#25D366', '#128C7E', '#34B7F1', '#6366f1', '#8b5cf6', '#f59e0b', '#64748b']
 const STATUS_COLORS: Record<string, string> = {
   sent: '#25D366',
@@ -53,9 +61,9 @@ interface WhatsAppAnalyticsData {
 }
 
 const PERIOD_OPTIONS = [
-  { label: 'Last 7 days', days: 7 },
-  { label: 'Last 30 days', days: 30 },
-  { label: 'Last 90 days', days: 90 },
+  { label: '7d', full: 'Last 7 days', days: 7 },
+  { label: '30d', full: 'Last 30 days', days: 30 },
+  { label: '90d', full: 'Last 90 days', days: 90 },
 ] as const
 
 interface DeliveryStatusItem {
@@ -74,6 +82,151 @@ interface DeliveryStatusResponse {
     notDelivered: number
     notRead: number
   }
+}
+
+function formatInt(n: number) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n)
+}
+
+function formatPct(n: number) {
+  if (!Number.isFinite(n)) return '—'
+  return `${n.toFixed(1)}%`
+}
+
+function KpiCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  icon: ComponentType<{ className?: string }>
+  label: string
+  value: string | number
+  sub?: string
+  accent: 'green' | 'teal' | 'blue' | 'violet' | 'amber' | 'rose' | 'slate'
+}) {
+  const rings: Record<string, string> = {
+    green: 'from-emerald-500/20 to-emerald-600/5 ring-emerald-500/20',
+    teal: 'from-teal-500/20 to-teal-600/5 ring-teal-500/20',
+    blue: 'from-sky-500/20 to-sky-600/5 ring-sky-500/20',
+    violet: 'from-violet-500/20 to-violet-600/5 ring-violet-500/20',
+    amber: 'from-amber-500/20 to-amber-600/5 ring-amber-500/20',
+    rose: 'from-rose-500/20 to-rose-600/5 ring-rose-500/20',
+    slate: 'from-slate-500/15 to-slate-600/5 ring-slate-500/15',
+  }
+  const iconBg: Record<string, string> = {
+    green: 'bg-emerald-500/15 text-emerald-600',
+    teal: 'bg-teal-500/15 text-teal-600',
+    blue: 'bg-sky-500/15 text-sky-600',
+    violet: 'bg-violet-500/15 text-violet-600',
+    amber: 'bg-amber-500/15 text-amber-600',
+    rose: 'bg-rose-500/15 text-rose-600',
+    slate: 'bg-slate-500/10 text-slate-600',
+  }
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rings[accent]} p-4 ring-1 shadow-sm backdrop-blur-sm transition hover:shadow-md`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">{value}</p>
+          {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
+        </div>
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconBg[accent]}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ChartCard({
+  title,
+  subtitle,
+  icon: Icon,
+  children,
+  className = '',
+}: {
+  title: string
+  subtitle?: string
+  icon: ComponentType<{ className?: string }>
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm ring-1 ring-slate-100 ${className}`}
+    >
+      <div className="mb-4 flex items-start justify-between gap-2">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <Icon className="h-4 w-4" />
+            </span>
+            {title}
+          </h2>
+          {subtitle && <p className="mt-1 pl-10 text-xs text-slate-500">{subtitle}</p>}
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function DonutWithCenter({
+  data,
+  dataKey,
+  nameKey,
+  colors,
+  centerLabel,
+  centerValue,
+}: {
+  data: Array<Record<string, unknown>>
+  dataKey: string
+  nameKey: string
+  colors: string[]
+  centerLabel: string
+  centerValue: string
+}) {
+  const total = data.reduce((s, d) => s + (Number(d[dataKey]) || 0), 0)
+  return (
+    <div className="relative mx-auto h-[220px] w-full max-w-[280px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={62}
+            outerRadius={88}
+            paddingAngle={3}
+            dataKey={dataKey}
+            nameKey={nameKey}
+            strokeWidth={0}
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={colors[i % colors.length]} className="outline-none" />
+            ))}
+          </Pie>
+          <Tooltip
+            formatter={(value) => [formatInt(Number(value ?? 0)), 'Messages']}
+            contentStyle={{
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 10px 40px -10px rgb(0 0 0 / 0.15)',
+            }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pt-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{centerLabel}</span>
+        <span className="text-xl font-bold tabular-nums text-slate-900">{centerValue}</span>
+        <span className="text-[11px] text-slate-500">total</span>
+      </div>
+    </div>
+  )
 }
 
 export default function WhatsAppAnalyticsPage() {
@@ -104,7 +257,11 @@ export default function WhatsAppAnalyticsPage() {
       fetch(
         `/api/marketing/whatsapp/delivery-status?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
         { credentials: 'include' }
-      ).then((res) => (res.ok ? res.json() : { byStatus: {}, summary: { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, notDelivered: 0, notRead: 0 } })),
+      ).then((res) =>
+        res.ok
+          ? res.json()
+          : { byStatus: {}, summary: { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, notDelivered: 0, notRead: 0 } }
+      ),
     ])
       .then(([analyticsData, deliveryData]) => {
         setData(analyticsData)
@@ -124,7 +281,7 @@ export default function WhatsAppAnalyticsPage() {
 
   const statusPieData = useMemo(() => {
     if (!data?.messagesByStatus) return []
-    const order = ['sent', 'delivered', 'read', 'pending']
+    const order = ['sent', 'delivered', 'read', 'pending', 'failed']
     return order
       .filter((k) => (data.messagesByStatus[k] ?? 0) > 0)
       .map((k) => ({
@@ -138,322 +295,497 @@ export default function WhatsAppAnalyticsPage() {
     if (!data?.messagesOverTime?.length) return []
     return data.messagesOverTime.map((d) => ({
       ...d,
-      shortDate: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      shortDate: new Date(d.date + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
     }))
   }, [data])
 
   const templateBarData = useMemo(() => {
     if (!data?.messagesByTemplate?.length) return []
     return data.messagesByTemplate.map((d) => ({
-      name: d.template.length > 14 ? d.template.slice(0, 12) + '…' : d.template,
+      name: d.template.length > 16 ? d.template.slice(0, 14) + '…' : d.template,
       fullName: d.template,
       count: d.count,
     }))
   }, [data])
 
+  const templateTotalSends = useMemo(() => {
+    if (!data?.messagesByTemplate?.length) return 0
+    return data.messagesByTemplate.reduce((s, t) => s + t.count, 0)
+  }, [data])
+
+  const templateTableRows = useMemo(() => {
+    if (!data?.messagesByTemplate?.length) return []
+    const total = templateTotalSends || 1
+    return data.messagesByTemplate.map((row, i) => ({
+      rank: i + 1,
+      template: row.template,
+      count: row.count,
+      pct: (row.count / total) * 100,
+    }))
+  }, [data, templateTotalSends])
+
+  const templateDonutData = useMemo(() => {
+    if (!data?.messagesByTemplate?.length) return []
+    const top = data.messagesByTemplate.slice(0, 5)
+    const rest = data.messagesByTemplate.slice(5).reduce((s, t) => s + t.count, 0)
+    const out = top.map((t) => ({ name: t.template.length > 18 ? t.template.slice(0, 16) + '…' : t.template, value: t.count }))
+    if (rest > 0) out.push({ name: 'Other templates', value: rest })
+    return out
+  }, [data])
+
+  const derivedMetrics = useMemo(() => {
+    if (!data) return null
+    const out = data.totals.sent
+    const read = data.messagesByStatus.read ?? 0
+    const delivered = data.messagesByStatus.delivered ?? 0
+    const failed = data.messagesByStatus.failed ?? 0
+    const readRate = out > 0 ? (read / out) * 100 : 0
+    const deliveredOrRead = out > 0 ? ((delivered + read) / out) * 100 : 0
+    const avgPerDay = periodDays > 0 ? data.totals.total / periodDays : 0
+    const outgoingShare = data.totals.total > 0 ? (data.totals.sent / data.totals.total) * 100 : 0
+    let peakDay = { date: '', total: 0 }
+    for (const d of data.messagesOverTime) {
+      if (d.total > peakDay.total) peakDay = { date: d.date, total: d.total }
+    }
+    const activeDays = data.messagesOverTime.filter((d) => d.total > 0).length
+    const templateCount = data.messagesByTemplate.length
+    return {
+      readRate,
+      deliveredOrRead,
+      avgPerDay,
+      outgoingShare,
+      peakDay,
+      activeDays,
+      templateCount,
+      failedOutgoing: failed,
+    }
+  }, [data, periodDays])
+
+  const funnelBarData = useMemo(() => {
+    if (!deliveryStatus?.summary) return []
+    const s = deliveryStatus.summary
+    return [
+      { stage: 'Read', count: s.read, fill: STATUS_COLORS.read },
+      { stage: 'Delivered', count: s.delivered, fill: STATUS_COLORS.delivered },
+      { stage: 'Sent', count: s.sent, fill: STATUS_COLORS.sent },
+      { stage: 'Pending', count: s.pending, fill: STATUS_COLORS.pending },
+      { stage: 'Failed', count: s.failed, fill: STATUS_COLORS.failed },
+    ].filter((x) => x.count > 0)
+  }, [deliveryStatus])
+
   if (loading) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="min-h-[50vh] space-y-6">
         <div className="flex items-center gap-3">
           <Link
             href="/marketing/whatsapp"
-            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600"
+            className="rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h1 className="text-xl font-bold text-gray-900">WhatsApp Analytics</h1>
+          <div>
+            <div className="h-7 w-48 animate-pulse rounded-lg bg-slate-200" />
+            <div className="mt-2 h-4 w-72 animate-pulse rounded bg-slate-100" />
+          </div>
         </div>
         <div className="flex items-center justify-center py-24">
-          <Loader2 className="h-10 w-10 animate-spin text-[#25D366]" />
+          <Loader2 className="h-12 w-12 animate-spin text-[#25D366]" />
         </div>
       </div>
     )
   }
 
+  const periodLabel =
+    data &&
+    `${new Date(data.period.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(data.period.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/marketing/whatsapp"
-            className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600"
-            title="Back to WhatsApp"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">WhatsApp Analytics</h1>
-            <p className="text-sm text-gray-500">
-              Message volume, delivery status, and template usage
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-gray-500" />
-          {PERIOD_OPTIONS.map((opt) => (
-            <button
-              key={opt.days}
-              type="button"
-              onClick={() => setPeriodDays(opt.days)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                periodDays === opt.days
-                  ? 'bg-[#25D366] text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+    <div className="space-y-8 pb-10">
+      {/* Hero */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 p-6 text-white shadow-lg sm:p-8">
+        <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#25D366]/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-teal-400/10 blur-3xl" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <Link
+              href="/marketing/whatsapp"
+              className="rounded-xl border border-white/20 bg-white/10 p-2.5 text-white backdrop-blur-sm transition hover:bg-white/20"
             >
-              {opt.label}
-            </button>
-          ))}
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300/90">Insights</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">WhatsApp Analytics</h1>
+              <p className="mt-2 max-w-xl text-sm text-slate-300">
+                Volume, delivery funnel, templates, and lead-level status — all in one dashboard.
+              </p>
+              {periodLabel && (
+                <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
+                  <Calendar className="h-3.5 w-3.5 text-emerald-300" />
+                  {periodLabel}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.days}
+                type="button"
+                title={opt.full}
+                onClick={() => setPeriodDays(opt.days)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  periodDays === opt.days
+                    ? 'bg-[#25D366] text-white shadow-lg shadow-emerald-900/40'
+                    : 'border border-white/20 bg-white/10 text-slate-200 hover:bg-white/15'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 text-sm">
+        <div className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {error}
         </div>
       )}
 
-      {!data && !error && null}
-
-      {data && (
+      {data && derivedMetrics && (
         <>
-          {/* Totals */}
-          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-[#25D366]/10 flex items-center justify-center">
-                  <Send className="h-6 w-6 text-[#25D366]" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Messages sent</p>
-                  <p className="text-2xl font-bold text-gray-900">{data.totals.sent}</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-[#128C7E]/10 flex items-center justify-center">
-                  <Inbox className="h-6 w-6 text-[#128C7E]" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Messages received</p>
-                  <p className="text-2xl font-bold text-gray-900">{data.totals.received}</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-[#34B7F1]/10 flex items-center justify-center">
-                  <MessageCircle className="h-6 w-6 text-[#34B7F1]" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Total messages</p>
-                  <p className="text-2xl font-bold text-gray-900">{data.totals.total}</p>
-                </div>
-              </div>
-            </div>
+          {/* KPI grid */}
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <KpiCard icon={MessageCircle} label="Total messages" value={formatInt(data.totals.total)} sub={`${formatInt(derivedMetrics.activeDays)} active days`} accent="slate" />
+            <KpiCard icon={Send} label="Outgoing" value={formatInt(data.totals.sent)} sub={`${formatPct(derivedMetrics.outgoingShare)} of all traffic`} accent="green" />
+            <KpiCard icon={Inbox} label="Incoming" value={formatInt(data.totals.received)} sub="Replies & inbound" accent="teal" />
+            <KpiCard icon={Activity} label="Avg / day" value={derivedMetrics.avgPerDay < 10 ? derivedMetrics.avgPerDay.toFixed(1) : formatInt(Math.round(derivedMetrics.avgPerDay))} sub="Messages per calendar day" accent="blue" />
+            <KpiCard icon={Target} label="Read rate" value={formatPct(derivedMetrics.readRate)} sub="Read ÷ outgoing" accent="violet" />
+            <KpiCard icon={Percent} label="Delivered + read" value={formatPct(derivedMetrics.deliveredOrRead)} sub="Of outgoing messages" accent="teal" />
+            <KpiCard icon={Hash} label="Templates used" value={formatInt(derivedMetrics.templateCount)} sub={`${formatInt(templateTotalSends)} template sends`} accent="amber" />
+            <KpiCard icon={Zap} label="Busiest day" value={derivedMetrics.peakDay.total > 0 ? formatInt(derivedMetrics.peakDay.total) : '—'} sub={derivedMetrics.peakDay.date ? new Date(derivedMetrics.peakDay.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'No spikes yet'} accent="amber" />
+            <KpiCard icon={AlertCircle} label="Failed (out)" value={formatInt(derivedMetrics.failedOutgoing)} sub="Outgoing delivery errors" accent="rose" />
           </section>
 
-          {/* Messages by direction */}
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <BarChart2 className="h-4 w-4" />
-              Messages by direction
-            </h2>
-            {directionPieData.length > 0 ? (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={directionPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                      nameKey="name"
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
-                      {directionPieData.map((_, i) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [value ?? 0, '']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 py-8 text-center">No message data in this period</p>
-            )}
+          {/* Donuts row */}
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <ChartCard title="Traffic mix" subtitle="Outgoing vs incoming in this period" icon={BarChart2}>
+              {directionPieData.length > 0 ? (
+                <div className="grid gap-6 lg:grid-cols-2 lg:items-center">
+                  <DonutWithCenter
+                    data={directionPieData as unknown as Array<Record<string, unknown>>}
+                    dataKey="value"
+                    nameKey="name"
+                    colors={[WA_GREEN, WA_TEAL]}
+                    centerLabel="Messages"
+                    centerValue={formatInt(data.totals.total)}
+                  />
+                  <div className="space-y-2">
+                    {directionPieData.map((d, i) => {
+                      const pct = data.totals.total > 0 ? (d.value / data.totals.total) * 100 : 0
+                      return (
+                        <div
+                          key={d.name}
+                          className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="h-3 w-3 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                            <span className="font-medium text-slate-800">{d.name}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-bold tabular-nums text-slate-900">{formatInt(d.value)}</span>
+                            <span className="ml-2 text-xs text-slate-500">{formatPct(pct)}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-500">No messages in this range</p>
+              )}
+            </ChartCard>
+
+            <ChartCard title="Outgoing lifecycle" subtitle="Sent → delivered → read (message counts)" icon={TrendingUp}>
+              {statusPieData.length > 0 ? (
+                <div className="grid gap-6 lg:grid-cols-2 lg:items-center">
+                  <DonutWithCenter
+                    data={statusPieData as unknown as Array<Record<string, unknown>>}
+                    dataKey="value"
+                    nameKey="name"
+                    colors={statusPieData.map((d) => STATUS_COLORS[d.key] ?? '#64748b')}
+                    centerLabel="Outgoing"
+                    centerValue={formatInt(data.totals.sent)}
+                  />
+                  <div className="overflow-hidden rounded-xl border border-slate-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/90 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <th className="px-4 py-2.5">Status</th>
+                          <th className="px-4 py-2.5 text-right">Count</th>
+                          <th className="px-4 py-2.5 text-right">Share</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {statusPieData.map((row) => {
+                          const pct = data.totals.sent > 0 ? (row.value / data.totals.sent) * 100 : 0
+                          return (
+                            <tr key={row.key} className="border-b border-slate-50 last:border-0">
+                              <td className="px-4 py-2.5">
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full" style={{ background: STATUS_COLORS[row.key] }} />
+                                  <span className="font-medium text-slate-800">{row.name}</span>
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatInt(row.value)}</td>
+                              <td className="px-4 py-2.5 text-right text-slate-600">{formatPct(pct)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-500">No outgoing messages</p>
+              )}
+            </ChartCard>
           </section>
 
-          {/* Messages by status (outgoing) */}
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Outgoing message status (sent → delivered → read)
-            </h2>
-            {statusPieData.length > 0 ? (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                      nameKey="name"
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
-                      {statusPieData.map((d) => (
-                        <Cell key={d.key} fill={STATUS_COLORS[d.key] ?? '#64748b'} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [value ?? 0, '']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 py-8 text-center">No outgoing messages in this period</p>
-            )}
-          </section>
-
-          {/* Messages over time */}
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Messages over time
-            </h2>
+          {/* Trend */}
+          <ChartCard title="Activity trend" subtitle="Daily sent vs received" icon={Activity} className="overflow-hidden">
             {messagesOverTimeChart.length > 0 ? (
-              <div className="h-72">
+              <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={messagesOverTimeChart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="shortDate" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
+                  <ComposedChart data={messagesOverTimeChart} margin={{ top: 12, right: 12, left: -8, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradSent" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={WA_GREEN} stopOpacity={0.35} />
+                        <stop offset="100%" stopColor={WA_GREEN} stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="gradRecv" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={WA_TEAL} stopOpacity={0.35} />
+                        <stop offset="100%" stopColor={WA_TEAL} stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="shortDate" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={36} />
                     <Tooltip
-                      labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ''}
+                      labelFormatter={(_, payload) => {
+                        const raw = payload?.[0]?.payload?.date as string | undefined
+                        return raw
+                          ? new Date(raw + 'T12:00:00').toLocaleDateString(undefined, {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })
+                          : ''
+                      }}
                       formatter={(value, name) => [
-                        value ?? 0,
+                        formatInt(Number(value ?? 0)),
                         name === 'sent' ? 'Sent' : name === 'received' ? 'Received' : 'Total',
                       ]}
+                      contentStyle={{
+                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 12px 40px -12px rgb(0 0 0 / 0.2)',
+                      }}
                     />
-                    <Legend />
-                    <Area type="monotone" dataKey="sent" stackId="1" stroke="#25D366" fill="#25D366" fillOpacity={0.6} name="Sent" />
-                    <Area type="monotone" dataKey="received" stackId="1" stroke="#128C7E" fill="#128C7E" fillOpacity={0.6} name="Received" />
-                  </AreaChart>
+                    <Legend wrapperStyle={{ paddingTop: 16 }} />
+                    <Area type="monotone" dataKey="sent" stroke={WA_GREEN} strokeWidth={2} fill="url(#gradSent)" name="Sent" />
+                    <Area type="monotone" dataKey="received" stroke={WA_TEAL} strokeWidth={2} fill="url(#gradRecv)" name="Received" />
+                    <Line type="monotone" dataKey="total" stroke="#6366f1" strokeWidth={2} dot={false} name="Total" />
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <p className="text-sm text-gray-500 py-8 text-center">No message data in this period</p>
+              <p className="py-12 text-center text-sm text-slate-500">No time-series data</p>
             )}
-          </section>
+          </ChartCard>
 
-          {/* Messages by template */}
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm overflow-hidden">
-            <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Messages sent by template
-            </h2>
+          {/* Templates */}
+          <ChartCard title="Template performance" subtitle="Broadcasts recorded as template sends in CRM" icon={FileText}>
             {templateBarData.length > 0 ? (
-              <>
-                <div className="h-72 mb-4">
+              <div className="grid gap-8 lg:grid-cols-2">
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Top templates (share)</p>
+                  <div className="mx-auto h-[240px] max-w-sm">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={templateDonutData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={48}
+                          outerRadius={88}
+                          paddingAngle={2}
+                          dataKey="value"
+                          nameKey="name"
+                        >
+                          {templateDonutData.map((_, i) => (
+                            <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v) => [formatInt(Number(v ?? 0)), 'Sends']} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Volume by template</p>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={templateBarData} layout="vertical" margin={{ left: 4, right: 16 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} />
+                        <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10, fill: '#64748b' }} />
+                        <Tooltip
+                          formatter={(value) => [formatInt(Number(value ?? 0)), 'Sends']}
+                          labelFormatter={(_, p) => (p?.[0]?.payload as { fullName?: string })?.fullName ?? ''}
+                          contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                        />
+                        <Bar dataKey="count" radius={[0, 8, 8, 0]} fill={WA_GREEN} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {templateTableRows.length > 0 ? (
+              <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                      <th className="px-4 py-3">#</th>
+                      <th className="px-4 py-3">Template</th>
+                      <th className="px-4 py-3 text-right">Sends</th>
+                      <th className="px-4 py-3 text-right">% of sends</th>
+                      <th className="hidden px-4 py-3 sm:table-cell">Mix</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {templateTableRows.map((row) => (
+                      <tr key={row.template} className="border-b border-slate-100 transition hover:bg-slate-50/80 last:border-0">
+                        <td className="px-4 py-3 font-mono text-xs text-slate-400">{row.rank}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{row.template}</td>
+                        <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-800">{formatInt(row.count)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-600">{formatPct(row.pct)}</td>
+                        <td className="hidden px-4 py-3 sm:table-cell">
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${Math.min(100, row.pct)}%` }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-slate-500">No template-tagged sends in this period</p>
+            )}
+          </ChartCard>
+
+          {/* Delivery + leads */}
+          {deliveryStatus && (
+            <ChartCard title="Delivery & leads" subtitle="Distinct leads / numbers by Meta delivery state (outgoing)" icon={AlertCircle}>
+              <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50/50 p-4 ring-1 ring-amber-100">
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-800/80">Not delivered</p>
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-amber-950">{formatInt(deliveryStatus.summary.notDelivered)}</p>
+                  <p className="mt-1 text-xs text-amber-800/80">Pending or sent only</p>
+                </div>
+                <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50 to-blue-50/50 p-4 ring-1 ring-sky-100">
+                  <p className="text-xs font-bold uppercase tracking-wide text-sky-800/80">Not read</p>
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-sky-950">{formatInt(deliveryStatus.summary.notRead)}</p>
+                  <p className="mt-1 text-xs text-sky-800/80">Before “read” state</p>
+                </div>
+                <div className="rounded-2xl border border-rose-200/80 bg-gradient-to-br from-rose-50 to-red-50/50 p-4 ring-1 ring-rose-100">
+                  <p className="text-xs font-bold uppercase tracking-wide text-rose-800/80">Failed</p>
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-rose-950">{formatInt(deliveryStatus.summary.failed)}</p>
+                  <p className="mt-1 text-xs text-rose-800/80">Meta delivery errors</p>
+                </div>
+              </div>
+
+              {funnelBarData.length > 0 && (
+                <div className="mb-8 h-52">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Lead counts by stage</p>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={templateBarData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis type="number" tick={{ fontSize: 12 }} />
-                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(value) => [value ?? 0, 'Sent']} labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ''} />
-                      <Bar dataKey="count" fill="#25D366" radius={[0, 4, 4, 0]} name="Sent" />
+                    <BarChart data={funnelBarData} layout="vertical" margin={{ left: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} />
+                      <YAxis type="category" dataKey="stage" width={88} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v) => [formatInt(Number(v ?? 0)), 'Leads']} />
+                      <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                        {funnelBarData.map((e, i) => (
+                          <Cell key={i} fill={e.fill} />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="border-t border-gray-100 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 border-b border-gray-100">
-                        <th className="py-2 pr-4 font-medium">Template name</th>
-                        <th className="py-2 font-medium text-right">Messages sent</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.messagesByTemplate.map((row) => (
-                        <tr key={row.template} className="border-b border-gray-50">
-                          <td className="py-2.5 pr-4 text-gray-900">{row.template}</td>
-                          <td className="py-2.5 text-right font-medium text-gray-700">{row.count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-gray-500 py-8 text-center">No template messages sent in this period</p>
-            )}
-          </section>
+              )}
 
-          {/* Delivery status: leads/numbers not delivered, not read, failed */}
-          {deliveryStatus && (
-            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm overflow-hidden">
-              <h2 className="text-base font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                <AlertCircle className="h-4 w-4" />
-                Leads / numbers by delivery status
-              </h2>
-              <p className="text-sm text-gray-500 mb-4">
-                Distinct leads or phone numbers with at least one outgoing message in this status (outgoing only).
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
-                  <p className="text-sm font-medium text-amber-800">Not delivered</p>
-                  <p className="text-2xl font-bold text-amber-900">{deliveryStatus.summary.notDelivered}</p>
-                  <p className="text-xs text-amber-700 mt-0.5">Pending or sent only</p>
-                </div>
-                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
-                  <p className="text-sm font-medium text-blue-800">Not read</p>
-                  <p className="text-2xl font-bold text-blue-900">{deliveryStatus.summary.notRead}</p>
-                  <p className="text-xs text-blue-700 mt-0.5">Pending, sent, or delivered</p>
-                </div>
-                <div className="rounded-lg border border-red-200 bg-red-50/50 p-4">
-                  <p className="text-sm font-medium text-red-800">Failed</p>
-                  <p className="text-2xl font-bold text-red-900">{deliveryStatus.summary.failed}</p>
-                  <p className="text-xs text-red-700 mt-0.5">Delivery failed (Meta)</p>
-                </div>
+              <div className="mb-4 overflow-hidden rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                      <th className="px-4 py-2.5">Stage</th>
+                      <th className="px-4 py-2.5 text-right">Leads / numbers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { key: 'read', label: 'Read' },
+                      { key: 'delivered', label: 'Delivered (not read)' },
+                      { key: 'sent', label: 'Sent' },
+                      { key: 'pending', label: 'Pending' },
+                      { key: 'failed', label: 'Failed' },
+                    ].map(({ key, label }) => (
+                      <tr key={key} className="border-b border-slate-100 last:border-0">
+                        <td className="px-4 py-2.5 font-medium text-slate-800">{label}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
+                          {formatInt(deliveryStatus.summary[key as keyof DeliveryStatusResponse['summary']] as number)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+
               <div className="space-y-2">
                 {[
-                  { key: 'failed', label: 'Failed', summary: deliveryStatus.summary.failed, color: 'red' },
-                  { key: 'pending', label: 'Pending', summary: deliveryStatus.summary.pending, color: 'amber' },
-                  { key: 'sent', label: 'Sent (not delivered)', summary: deliveryStatus.summary.sent, color: 'gray' },
-                  { key: 'delivered', label: 'Delivered (not read)', summary: deliveryStatus.summary.delivered, color: 'blue' },
-                  { key: 'read', label: 'Read', summary: deliveryStatus.summary.read, color: 'green' },
-                ].map(({ key, label, summary }) => {
+                  { key: 'failed', label: 'Failed' },
+                  { key: 'pending', label: 'Pending' },
+                  { key: 'sent', label: 'Sent (not delivered)' },
+                  { key: 'delivered', label: 'Delivered (not read)' },
+                  { key: 'read', label: 'Read' },
+                ].map(({ key, label }) => {
                   const isExpanded = expandedStatus === key
                   const items = deliveryStatus.byStatus[key]?.items ?? []
+                  const summary = deliveryStatus.summary[key as keyof DeliveryStatusResponse['summary']] as number
                   return (
-                    <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div key={key} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                       <button
                         type="button"
                         onClick={() => setExpandedStatus(isExpanded ? null : key)}
-                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+                        className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-slate-50"
                       >
-                        <span className="flex items-center gap-2 font-medium text-gray-900">
-                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <span className="flex items-center gap-2 font-semibold text-slate-900">
+                          {isExpanded ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />}
                           {label}
                         </span>
-                        <span className="text-lg font-bold text-gray-700">{summary}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-0.5 text-sm font-bold tabular-nums text-slate-800">{formatInt(summary)}</span>
                       </button>
                       {isExpanded && items.length > 0 && (
-                        <div className="border-t border-gray-100 max-h-48 overflow-y-auto bg-gray-50/50">
-                          <ul className="divide-y divide-gray-100">
+                        <div className="max-h-52 overflow-y-auto border-t border-slate-100 bg-slate-50/50">
+                          <ul className="divide-y divide-slate-100">
                             {items.map((item, i) => (
-                              <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
-                                <span className="truncate text-gray-900">{item.lead_name || item.phone}</span>
-                                <span className="font-mono text-gray-500 shrink-0">{item.phone}</span>
+                              <li key={i} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                                <span className="truncate font-medium text-slate-800">{item.lead_name || '—'}</span>
+                                <span className="shrink-0 font-mono text-xs text-slate-500">{item.phone}</span>
                               </li>
                             ))}
                           </ul>
@@ -463,26 +795,25 @@ export default function WhatsAppAnalyticsPage() {
                   )
                 })}
               </div>
+
               {deliveryStatus.summary.failed > 0 && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="mt-6 border-t border-slate-100 pt-6">
                   <Link
                     href="/marketing/bulk-whatsapp?retry=failed"
-                    className="inline-flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A]"
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:bg-[#20BA5A]"
                   >
                     <RotateCcw className="h-4 w-4" />
                     Retry failed campaign
                   </Link>
-                  <p className="text-xs text-gray-500 mt-2">Opens Bulk WhatsApp with failed numbers pre-filled so you can resend.</p>
+                  <p className="mt-2 text-xs text-slate-500">Opens Bulk WhatsApp with failed numbers prefilled.</p>
                 </div>
               )}
-            </section>
+            </ChartCard>
           )}
 
-          {/* Period note */}
-          <p className="text-xs text-gray-500">
-            Period: {new Date(data.period.startDate).toLocaleDateString()} – {new Date(data.period.endDate).toLocaleDateString()}.
-            Data is based on messages stored in the CRM (outgoing from send-template / chat; incoming from webhook).
-          </p>
+          <footer className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 text-center text-xs text-slate-500">
+            Outgoing from send-template &amp; chat; incoming from webhook. Times use your browser locale.
+          </footer>
         </>
       )}
     </div>
