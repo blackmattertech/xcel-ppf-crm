@@ -80,10 +80,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // insert(... as never) prevents Supabase from inferring row shape; assert explicitly
+    type ScheduledBroadcastRow = { id: string; scheduled_at: string; status: string }
+    const inserted = row as ScheduledBroadcastRow | null
+    if (!inserted) {
+      return NextResponse.json({ error: 'Failed to create scheduled broadcast' }, { status: 500 })
+    }
+
     return NextResponse.json({
-      id: row?.id,
-      scheduledAt: row?.scheduled_at,
-      status: row?.status,
+      id: inserted.id,
+      scheduledAt: inserted.scheduled_at,
+      status: inserted.status,
       adjustedToNow: adjustedToNow ?? false,
       message: adjustedToNow
         ? 'Scheduled time was in the past; job is due now. Vercel Cron (every minute) or "Process scheduled broadcasts now" will send it.'
