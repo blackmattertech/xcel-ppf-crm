@@ -321,13 +321,25 @@ function BulkWhatsAppPageContent() {
           })
           return
         }
+        const atIso = typeof data.scheduledAt === 'string' ? data.scheduledAt : scheduledAtDate.toISOString()
+        const whenLocal = new Date(atIso).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+        const hint =
+          data.message ??
+          'Your GitHub Actions workflow (every 5 minutes, UTC) or "Process scheduled broadcasts now" will send it.'
+        const scheduleMessage = data.adjustedToNow
+          ? `Your pick was in the past — queued to send now (${whenLocal} your time). ${hint}`
+          : `Scheduled for ${whenLocal} (your time). ${hint}`
+
         setSendResult({
           sent: 0,
           failed: 0,
           results: [],
           scheduled: true,
           scheduledAt: data.scheduledAt,
-          scheduleMessage: data.message ?? `Scheduled for ${scheduledAtDate.toLocaleString()}. GitHub Actions (every minute) or "Process scheduled broadcasts now" will send it.`,
+          scheduleMessage,
         })
       } else {
         const BATCH_SIZE = 100
@@ -584,7 +596,7 @@ function BulkWhatsAppPageContent() {
             <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
               <p className="text-sm text-gray-600">
                 Due broadcasts are processed by this app&apos;s API (<code className="text-xs bg-gray-100 px-1 rounded">/api/marketing/whatsapp/process-scheduled</code>).
-                Your GitHub Actions workflow should call <code className="text-xs bg-gray-100 px-1 rounded">/api/cron/whatsapp-process-scheduled</code> every minute, or use the button below to run the processor now while signed in.
+                Your GitHub Actions workflow should call <code className="text-xs bg-gray-100 px-1 rounded">/api/cron/whatsapp-process-scheduled</code> on a schedule (e.g. every 5 minutes, UTC — GitHub minimum), or use the button below to run the processor now while signed in.
               </p>
               <button
                 type="button"

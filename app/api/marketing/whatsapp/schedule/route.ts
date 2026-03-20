@@ -87,14 +87,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create scheduled broadcast' }, { status: 500 })
     }
 
+    // Do not embed formatted time in message — server timezone (often UTC) confuses users in other zones.
+    // Client should format `scheduledAt` (ISO) with toLocaleString in the browser.
+    const processorHint =
+      'Your GitHub Actions workflow (every 5 minutes, UTC) or "Process scheduled broadcasts now" will send it.'
+
     return NextResponse.json({
       id: inserted.id,
       scheduledAt: inserted.scheduled_at,
       status: inserted.status,
       adjustedToNow: adjustedToNow ?? false,
       message: adjustedToNow
-        ? 'Scheduled time was in the past; job is due now. Your GitHub Actions workflow (every minute) or "Process scheduled broadcasts now" will send it.'
-        : `Broadcast scheduled for ${scheduledAt.toLocaleString()}. Your GitHub Actions workflow (every minute) or "Process scheduled broadcasts now" will send it.`,
+        ? `The time you picked was already in the past; the job is queued to send now. ${processorHint}`
+        : processorHint,
     })
   } catch (e) {
     return NextResponse.json(
