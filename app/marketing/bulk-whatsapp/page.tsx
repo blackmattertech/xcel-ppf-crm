@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Search, Loader2, Send, Users, UserCheck, ListOrdered, MessageCircle, ArrowLeft, Clock } from 'lucide-react'
@@ -8,7 +8,7 @@ import type { LeadRecipient, CustomerRecipient, PastedRecipient, Recipient, Send
 import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/utils'
 import { cachedFetch } from '@/lib/api-client'
 
-export default function BulkWhatsAppPage() {
+function BulkWhatsAppPageContent() {
   const [source, setSource] = useState<'leads' | 'customers' | 'paste'>('leads')
   const [leads, setLeads] = useState<LeadRecipient[]>([])
   const [customers, setCustomers] = useState<CustomerRecipient[]>([])
@@ -750,5 +750,19 @@ export default function BulkWhatsAppPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function BulkWhatsAppPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-[#ed1b24]" aria-label="Loading" />
+        </div>
+      }
+    >
+      <BulkWhatsAppPageContent />
+    </Suspense>
   )
 }

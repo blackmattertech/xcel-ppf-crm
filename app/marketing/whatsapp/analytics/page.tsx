@@ -280,7 +280,7 @@ export default function WhatsAppAnalyticsPage() {
                         <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => [value, '']} />
+                    <Tooltip formatter={(value) => [value ?? 0, '']} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -314,7 +314,7 @@ export default function WhatsAppAnalyticsPage() {
                         <Cell key={d.key} fill={STATUS_COLORS[d.key] ?? '#64748b'} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => [value, '']} />
+                    <Tooltip formatter={(value) => [value ?? 0, '']} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -338,7 +338,10 @@ export default function WhatsAppAnalyticsPage() {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip
                       labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ''}
-                      formatter={(value: number, name: string) => [value, name === 'sent' ? 'Sent' : name === 'received' ? 'Received' : 'Total']}
+                      formatter={(value, name) => [
+                        value ?? 0,
+                        name === 'sent' ? 'Sent' : name === 'received' ? 'Received' : 'Total',
+                      ]}
                     />
                     <Legend />
                     <Area type="monotone" dataKey="sent" stackId="1" stroke="#25D366" fill="#25D366" fillOpacity={0.6} name="Sent" />
@@ -365,7 +368,7 @@ export default function WhatsAppAnalyticsPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis type="number" tick={{ fontSize: 12 }} />
                       <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(value: number) => [value, 'Sent']} labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ''} />
+                      <Tooltip formatter={(value) => [value ?? 0, 'Sent']} labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ''} />
                       <Bar dataKey="count" fill="#25D366" radius={[0, 4, 4, 0]} name="Sent" />
                     </BarChart>
                   </ResponsiveContainer>
