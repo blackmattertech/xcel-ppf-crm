@@ -3,10 +3,31 @@
 import { useState, useEffect, useMemo, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Search, Loader2, Send, Users, UserCheck, ListOrdered, MessageCircle, ArrowLeft, Clock } from 'lucide-react'
+import {
+  Search,
+  Loader2,
+  Send,
+  Users,
+  UserCheck,
+  ListOrdered,
+  MessageCircle,
+  ArrowLeft,
+  Clock,
+  LayoutTemplate,
+} from 'lucide-react'
 import type { LeadRecipient, CustomerRecipient, PastedRecipient, Recipient, SendResult, WhatsAppTemplate, MetaTemplateOption } from '../_lib/types'
 import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/utils'
 import { cachedFetch } from '@/lib/api-client'
+
+const cardShell =
+  'rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm ring-1 ring-slate-100/80 overflow-hidden'
+const sectionLabel = 'text-xs font-semibold uppercase tracking-wide text-slate-500'
+const fieldInput =
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-emerald-500/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/15'
+const btnSecondary =
+  'rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.99]'
+const btnPrimaryWa =
+  'inline-flex items-center justify-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-900/10 transition hover:bg-[#20BA5A] active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50'
 
 function BulkWhatsAppPageContent() {
   const [source, setSource] = useState<'leads' | 'customers' | 'paste'>('leads')
@@ -389,113 +410,141 @@ function BulkWhatsAppPageContent() {
   }
 
   return (
-    <div className="space-y-6">
-      <Link
-        href="/marketing/whatsapp"
-        className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 mb-2"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to WhatsApp
-      </Link>
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <label className="block text-sm font-medium text-gray-700 mb-3">Recipient source</label>
-        <div className="flex flex-wrap gap-2">
-          {[
-            { value: 'leads' as const, label: 'Leads', icon: Users },
-            { value: 'customers' as const, label: 'Customers', icon: UserCheck },
-            { value: 'paste' as const, label: 'Paste numbers', icon: ListOrdered },
-          ].map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setSource(value)}
-              className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-                source === value
-                  ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]'
-                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </div>
+    <div className="mx-auto max-w-6xl space-y-6 pb-10">
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 p-5 text-white shadow-lg sm:p-7">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#25D366]/20 blur-3xl" />
+        <Link
+          href="/marketing/whatsapp"
+          className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition hover:bg-white/20"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          WhatsApp hub
+        </Link>
+        <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Bulk broadcast</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
+          Pick recipients, choose an approved template, then send now or schedule. Messages use your connected WhatsApp Business API.
+        </p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {source === 'paste' ? (
-          <div className="p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Paste numbers (one per line, or &quot;Name, Number&quot;)
-            </label>
-            <textarea
-              value={pastedText}
-              onChange={(e) => setPastedText(e.target.value)}
-              placeholder="9876543210&#10;John, 9876543210&#10;+91 98765 43210"
-              rows={6}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#ed1b24] focus:outline-none focus:ring-1 focus:ring-[#ed1b24]"
-            />
-            {pastedRecipients.length > 0 && (
-              <p className="mt-2 text-sm text-gray-500">
-                {pastedRecipients.length} valid number(s) (min 10 digits)
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
+        <div className="space-y-6 lg:col-span-7">
+          <div className={`${cardShell} p-5 sm:p-6`}>
+            <p className={sectionLabel}>Recipient source</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                { value: 'leads' as const, label: 'Leads', icon: Users },
+                { value: 'customers' as const, label: 'Customers', icon: UserCheck },
+                { value: 'paste' as const, label: 'Paste numbers', icon: ListOrdered },
+              ].map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSource(value)}
+                  className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                    source === value
+                      ? 'border-emerald-500/70 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20'
+                      : 'border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white'
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0 opacity-80" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={cardShell}>
+            <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
+              <p className={sectionLabel}>Audience</p>
+              <p className="mt-1 text-sm text-slate-600">
+                {source === 'paste' ? 'Paste one number per line or use Name, Number.' : 'Search and tick contacts to include.'}
               </p>
+            </div>
+            {source === 'paste' ? (
+              <div className="p-5 sm:p-6">
+                <label className={`mb-2 block ${sectionLabel}`}>Numbers</label>
+                <textarea
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder="9876543210&#10;John, 9876543210&#10;+91 98765 43210"
+                  rows={7}
+                  className={`${fieldInput} min-h-[160px] font-mono text-xs sm:text-sm`}
+                />
+                {pastedRecipients.length > 0 && (
+                  <p className="mt-3 text-sm font-medium text-emerald-800">
+                    {pastedRecipients.length} valid number{pastedRecipients.length !== 1 ? 's' : ''} (min 10 digits)
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-4 sm:px-5">
+                  <div className="relative min-w-[200px] flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search by name or phone..."
+                      className={`${fieldInput} py-2.5 pl-10`}
+                    />
+                  </div>
+                  <button type="button" onClick={selectAll} className={btnSecondary}>
+                    Select all
+                  </button>
+                  <button type="button" onClick={clearSelection} className={btnSecondary}>
+                    Clear
+                  </button>
+                </div>
+                <div className="max-h-[min(360px,50vh)] overflow-y-auto">
+                  {loading ? (
+                    <div className="flex items-center justify-center py-14">
+                      <Loader2 className="h-9 w-9 animate-spin text-emerald-600" />
+                    </div>
+                  ) : loadError ? (
+                    <div className="p-8 text-center text-sm font-medium text-red-600">{loadError}</div>
+                  ) : filteredRecipients.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-slate-500">No recipients match your search.</div>
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {filteredRecipients.map((r) => (
+                        <li
+                          key={r.id}
+                          className="flex items-center gap-3 px-4 py-3 transition hover:bg-emerald-50/40 sm:px-5"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(r.id)}
+                            onChange={() => toggleOne(r.id)}
+                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/30"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{r.name}</span>
+                          <span className="shrink-0 font-mono text-xs text-slate-500 sm:text-sm">{r.phone}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
             )}
           </div>
-        ) : (
-          <>
-            <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name or phone..."
-                  className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-[#ed1b24] focus:outline-none focus:ring-1 focus:ring-[#ed1b24]"
-                />
-              </div>
-              <button type="button" onClick={selectAll} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Select all
-              </button>
-              <button type="button" onClick={clearSelection} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Clear
-              </button>
-            </div>
-            <div className="max-h-[280px] overflow-y-auto">
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-[#ed1b24]" />
-                </div>
-              ) : loadError ? (
-                <div className="p-6 text-center text-sm text-red-600">{loadError}</div>
-              ) : filteredRecipients.length === 0 ? (
-                <div className="p-6 text-center text-sm text-gray-500">No recipients found.</div>
-              ) : (
-                <ul className="divide-y divide-gray-100">
-                  {filteredRecipients.map((r) => (
-                    <li key={r.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(r.id)}
-                        onChange={() => toggleOne(r.id)}
-                        className="h-4 w-4 rounded border-gray-300 text-[#ed1b24] focus:ring-[#ed1b24]"
-                      />
-                      <span className="flex-1 truncate text-sm font-medium text-gray-900">{r.name}</span>
-                      <span className="text-sm text-gray-500 font-mono">{r.phone}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+        </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+        <div className="space-y-6 lg:col-span-5 lg:sticky lg:top-6 lg:self-start">
+          <div className={`${cardShell} space-y-5 p-5 sm:p-6`}>
+            <div className="flex items-start gap-3 border-b border-slate-100 pb-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/15 to-teal-600/10 text-emerald-800 ring-1 ring-emerald-500/15">
+                <LayoutTemplate className="h-5 w-5" strokeWidth={1.75} />
+              </div>
+              <div>
+                <p className={sectionLabel}>Template &amp; send</p>
+                <p className="mt-0.5 text-sm text-slate-600">Approved Meta templates and timing.</p>
+              </div>
+            </div>
         {apiConfigured ? (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Approved template</label>
+              <label className="mb-2 block text-sm font-semibold text-slate-800">Approved template</label>
               <select
                 value={selectedTemplateId}
                 onChange={(e) => {
@@ -504,7 +553,7 @@ function BulkWhatsAppPageContent() {
                   setTemplateHeaderParamValues([])
                   clearSendResult()
                 }}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className={fieldInput}
               >
                 <option value="">Select a template</option>
                 {metaTemplates.map((t) => (
@@ -519,17 +568,19 @@ function BulkWhatsAppPageContent() {
                   ))}
               </select>
               {metaTemplates.length > 0 && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Prefer options labeled <strong>— from Meta</strong> so name and language match Meta exactly (avoids #132001).
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                  Prefer options labeled <strong className="text-slate-700">— from Meta</strong> so name and language match Meta exactly (avoids #132001).
                 </p>
               )}
               {approvedTemplates.length === 0 && metaTemplates.length === 0 && (
-                <p className="mt-1 text-xs text-amber-600">No templates. Create one in Message templates or add in Meta WhatsApp dashboard, then sync.</p>
+                <p className="mt-2 text-xs font-medium text-amber-700">
+                  No templates. Create one in Message templates or add in Meta WhatsApp dashboard, then sync.
+                </p>
               )}
             </div>
             {templateParamCount > 0 && (
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Body variables (same for all recipients)</label>
+                <label className="text-sm font-semibold text-slate-800">Body variables (same for all recipients)</label>
                 {Array.from({ length: templateParamCount }, (_, i) => (
                   <input
                     key={i}
@@ -541,14 +592,14 @@ function BulkWhatsAppPageContent() {
                       setTemplateParamValues(next)
                     }}
                     placeholder={`{{${i + 1}}}`}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className={fieldInput}
                   />
                 ))}
               </div>
             )}
             {templateHeaderParamCount > 0 && (
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Header variables (same for all recipients)</label>
+                <label className="text-sm font-semibold text-slate-800">Header variables (same for all recipients)</label>
                 {Array.from({ length: templateHeaderParamCount }, (_, i) => (
                   <input
                     key={i}
@@ -560,15 +611,15 @@ function BulkWhatsAppPageContent() {
                       setTemplateHeaderParamValues(next)
                     }}
                     placeholder={`Header {{${i + 1}}}`}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className={fieldInput}
                   />
                 ))}
               </div>
             )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+            <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
+                <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <Clock className="h-4 w-4 text-emerald-600" />
                   Delay between messages (ms)
                 </label>
                 <input
@@ -578,52 +629,59 @@ function BulkWhatsAppPageContent() {
                   step={100}
                   value={delayMs}
                   onChange={(e) => setDelayMs(Math.max(0, Math.min(60000, parseInt(e.target.value, 10) || 0)))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className={fieldInput}
                 />
-                <p className="text-xs text-gray-500 mt-1">e.g. 250–1000 to avoid rate limits</p>
+                <p className="mt-1.5 text-xs text-slate-500">e.g. 250–1000 to avoid rate limits</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Schedule for (optional)</label>
+                <label className="mb-2 text-sm font-semibold text-slate-800">Schedule for (optional)</label>
                 <input
                   type="datetime-local"
                   value={scheduleAt}
                   onChange={(e) => setScheduleAt(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className={fieldInput}
                 />
-                <p className="text-xs text-gray-500 mt-1">Leave empty to send now</p>
+                <p className="mt-1.5 text-xs text-slate-500">Leave empty to send now</p>
               </div>
             </div>
-            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
-              <p className="text-sm text-gray-600">
-                Due broadcasts are processed by this app&apos;s API (<code className="text-xs bg-gray-100 px-1 rounded">/api/marketing/whatsapp/process-scheduled</code>).
-                Your GitHub Actions workflow should call <code className="text-xs bg-gray-100 px-1 rounded">/api/cron/whatsapp-process-scheduled</code> on a schedule (e.g. every 5 minutes, UTC — GitHub minimum), or use the button below to run the processor now while signed in.
+            <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50/80 p-4">
+              <p className="text-xs leading-relaxed text-slate-600">
+                Due jobs are processed via{' '}
+                <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-slate-700 ring-1 ring-slate-200/80">
+                  /api/marketing/whatsapp/process-scheduled
+                </code>
+                . Use GitHub Actions to call{' '}
+                <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-slate-700 ring-1 ring-slate-200/80">
+                  /api/cron/whatsapp-process-scheduled
+                </code>{' '}
+                on a schedule, or run the processor manually below.
               </p>
               <button
                 type="button"
                 onClick={processScheduledNow}
                 disabled={processingScheduled}
-                className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className={`${btnSecondary} inline-flex items-center gap-2`}
               >
-                {processingScheduled ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
-                Process scheduled broadcasts now
+                {processingScheduled ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4 text-slate-500" />}
+                Process scheduled now
               </button>
               {processScheduledResult != null && (
-                <div className="text-sm">
+                <div className="space-y-1 text-sm">
                   {processScheduledResult.results?.some((r) => r.error) && (
-                    <p className="text-red-600 font-medium">
+                    <p className="font-medium text-red-600">
                       {processScheduledResult.results.find((r) => r.error)?.error ?? 'Error'}
                     </p>
                   )}
-                  {processScheduledResult.message && (
-                    <p className="text-gray-700">{processScheduledResult.message}</p>
-                  )}
-                  {processScheduledResult.debug && (processScheduledResult.debug.pendingCount != null || processScheduledResult.debug.dueCount != null) && (
-                    <p className="text-gray-500 text-xs mt-1">
-                      Pending: {processScheduledResult.debug.pendingCount ?? 0}, due now: {processScheduledResult.debug.dueCount ?? 0}
-                    </p>
-                  )}
+                  {processScheduledResult.message && <p className="text-slate-700">{processScheduledResult.message}</p>}
+                  {processScheduledResult.debug &&
+                    (processScheduledResult.debug.pendingCount != null || processScheduledResult.debug.dueCount != null) && (
+                      <p className="text-xs text-slate-500">
+                        Pending: {processScheduledResult.debug.pendingCount ?? 0}, due now:{' '}
+                        {processScheduledResult.debug.dueCount ?? 0}
+                      </p>
+                    )}
                   {processScheduledResult.processed > 0 && (
-                    <p className="text-gray-700">
+                    <p className="text-slate-700">
                       Processed {processScheduledResult.processed}:{' '}
                       {processScheduledResult.results?.map((r) => (r.sent != null ? `${r.sent} sent` : r.error ?? r.status)).join(', ') ?? ''}
                     </p>
@@ -633,31 +691,39 @@ function BulkWhatsAppPageContent() {
             </div>
           </>
         ) : (
-          <p className="text-sm text-amber-600">
+          <p className="text-sm font-medium text-amber-800">
             Configure WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to use template broadcast.
           </p>
         )}
+          </div>
+        </div>
       </div>
 
       {sendResult && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div
+          className={`${cardShell} p-5 sm:p-6 ${
+            sendResult.scheduleError ? 'ring-rose-200/60' : sendResult.scheduled ? 'ring-emerald-200/60' : ''
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
             {sendResult.scheduled ? (
-              <p className="text-sm text-gray-700">
-                <span className="font-semibold text-green-600">Scheduled</span>
-                {sendResult.scheduleMessage && <span className="ml-2 text-gray-600">{sendResult.scheduleMessage}</span>}
+              <p className="text-sm leading-relaxed text-slate-700">
+                <span className="font-bold text-emerald-600">Scheduled</span>
+                {sendResult.scheduleMessage && <span className="ml-2 text-slate-600">{sendResult.scheduleMessage}</span>}
               </p>
             ) : sendResult.scheduleError ? (
-              <p className="text-sm text-red-600">{sendResult.scheduleError}</p>
+              <p className="text-sm font-medium text-red-600">{sendResult.scheduleError}</p>
             ) : (
-              <p className="text-sm text-gray-700">
-                <span className="font-semibold text-green-600">{sendResult.sent} sent</span>
-                {sendResult.failed > 0 && (
-                  <span className="text-red-600 font-semibold ml-2">{sendResult.failed} failed</span>
-                )}
+              <p className="text-sm text-slate-700">
+                <span className="font-bold text-emerald-600">{sendResult.sent} sent</span>
+                {sendResult.failed > 0 && <span className="ml-2 font-bold text-red-600">{sendResult.failed} failed</span>}
               </p>
             )}
-            <button type="button" onClick={clearSendResult} className="text-sm text-gray-500 hover:text-gray-700 underline">
+            <button
+              type="button"
+              onClick={clearSendResult}
+              className="text-sm font-semibold text-slate-500 transition hover:text-slate-800"
+            >
               Dismiss
             </button>
           </div>
@@ -689,16 +755,21 @@ function BulkWhatsAppPageContent() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center justify-between gap-4">
-        <p className="text-sm text-gray-600">
-          <span className="font-semibold text-gray-900">{count}</span> recipient{count !== 1 ? 's' : ''} selected
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
+      <div
+        className={`${cardShell} flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6`}
+      >
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selection</p>
+          <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
+            {count} <span className="text-base font-semibold text-slate-600">recipient{count !== 1 ? 's' : ''}</span>
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <button
             type="button"
             onClick={copyAllNumbers}
             disabled={count === 0}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:pointer-events-none"
+            className={`${btnSecondary} disabled:pointer-events-none disabled:opacity-40`}
           >
             Copy numbers
           </button>
@@ -706,53 +777,71 @@ function BulkWhatsAppPageContent() {
             <button
               type="button"
               onClick={sendTemplateViaApi}
-              disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) || (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))}
-              className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
+              disabled={
+                count === 0 ||
+                !selectedTemplateId ||
+                sending ||
+                (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) ||
+                (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))
+              }
+              className={btnPrimaryWa}
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : scheduleAt.trim() ? <Clock className="h-4 w-4" /> : <Send className="h-4 w-4" />}
               {sending ? (scheduleAt.trim() ? 'Scheduling…' : 'Sending…') : scheduleAt.trim() ? 'Schedule broadcast' : 'Send template broadcast'}
             </button>
           ) : (
-            <span className="text-sm text-gray-500">Configure WhatsApp API to send template broadcasts.</span>
+            <span className="text-sm text-slate-500">Configure WhatsApp API to send.</span>
           )}
         </div>
       </div>
 
       {apiConfigured === false && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+        <div className="rounded-2xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">
           Meta WhatsApp API is not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to send via API.
-        </p>
+        </div>
       )}
 
-      <details className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
-        <summary className="px-4 py-3 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100">
-          Message not received? Check these
+      <details className={`${cardShell} group`}>
+        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-slate-800 transition hover:bg-slate-50/80 sm:px-6 [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center justify-between gap-2">
+            Message not received? Check these
+            <span className="text-slate-400 transition group-open:rotate-90">›</span>
+          </span>
         </summary>
-        <ul className="px-4 pb-3 pt-1 text-sm text-gray-600 space-y-1 list-disc list-inside">
-          <li><strong>Development mode:</strong> Add the recipient&apos;s number to the allowlist in Meta for Developers → WhatsApp → API Setup.</li>
-          <li>Bulk broadcast uses <strong>approved templates only</strong>. Create and approve templates in Message templates.</li>
-          <li>Use full number with country code. In .env use the <strong>Phone number ID</strong> from API Setup.</li>
+        <ul className="space-y-2 border-t border-slate-100 px-5 pb-5 pt-3 text-sm leading-relaxed text-slate-600 sm:px-6">
+          <li>
+            <strong className="text-slate-800">Development mode:</strong> Add the recipient&apos;s number to the allowlist in Meta for Developers → WhatsApp → API Setup.
+          </li>
+          <li>
+            Bulk broadcast uses <strong className="text-slate-800">approved templates only</strong>. Create and approve templates in Message templates.
+          </li>
+          <li>
+            Use full number with country code. In .env use the <strong className="text-slate-800">Phone number ID</strong> from API Setup.
+          </li>
         </ul>
       </details>
 
       {count > 1 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="text-sm font-medium text-gray-900">Open individual chats</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Click to open each contact in WhatsApp</p>
+        <div className={cardShell}>
+          <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
+            <h3 className="text-sm font-semibold text-slate-900">Open individual chats</h3>
+            <p className="mt-0.5 text-xs text-slate-500">Quick links to WhatsApp Web / app per contact</p>
           </div>
-          <ul className="max-h-[240px] overflow-y-auto divide-y divide-gray-100">
+          <ul className="max-h-[min(280px,40vh)] divide-y divide-slate-100 overflow-y-auto">
             {selectedRecipients.map((r) => {
               const url = buildWhatsAppUrl(r.phone, '')
               return (
-                <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-gray-50">
-                  <span className="truncate text-sm text-gray-900">{r.name}</span>
-                  <span className="text-sm text-gray-500 font-mono shrink-0">{r.phone}</span>
+                <li
+                  key={r.id}
+                  className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-emerald-50/30 sm:px-5"
+                >
+                  <span className="min-w-0 truncate text-sm font-medium text-slate-900">{r.name}</span>
+                  <span className="shrink-0 font-mono text-xs text-slate-500 sm:text-sm">{r.phone}</span>
                   <a
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 flex items-center gap-1 rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#20BA5A]"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#25D366] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#20BA5A]"
                   >
                     <MessageCircle className="h-3.5 w-3.5" />
                     Open
@@ -772,7 +861,7 @@ export default function BulkWhatsAppPage() {
     <Suspense
       fallback={
         <div className="flex min-h-[40vh] items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-[#ed1b24]" aria-label="Loading" />
+          <Loader2 className="h-10 w-10 animate-spin text-emerald-600" aria-label="Loading" />
         </div>
       }
     >

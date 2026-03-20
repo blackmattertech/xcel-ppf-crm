@@ -51,11 +51,23 @@ const STATUS_COLORS: Record<string, string> = {
   failed: '#ef4444',
 }
 
+interface TemplateDeliveryStatRow {
+  template: string
+  pending: number
+  sent: number
+  delivered: number
+  read: number
+  failed: number
+  other: number
+  total: number
+}
+
 interface WhatsAppAnalyticsData {
   messagesByDirection: Record<string, number>
   messagesByStatus: Record<string, number>
   messagesOverTime: Array<{ date: string; sent: number; received: number; total: number }>
   messagesByTemplate: Array<{ template: string; count: number }>
+  templateDeliveryStats: TemplateDeliveryStatRow[]
   totals: { sent: number; received: number; total: number }
   period: { startDate: string; endDate: string }
 }
@@ -250,9 +262,11 @@ export default function WhatsAppAnalyticsPage() {
       fetch(
         `/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
         { credentials: 'include' }
-      ).then((res) => {
+      ).then(async (res) => {
         if (!res.ok) throw new Error('Failed to load analytics')
-        return res.json()
+        const j = await res.json()
+        if (!Array.isArray(j.templateDeliveryStats)) j.templateDeliveryStats = []
+        return j as WhatsAppAnalyticsData
       }),
       fetch(
         `/api/marketing/whatsapp/delivery-status?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
@@ -332,6 +346,20 @@ export default function WhatsAppAnalyticsPage() {
     if (rest > 0) out.push({ name: 'Other templates', value: rest })
     return out
   }, [data])
+
+  const templateDeliveryChartData = useMemo(() => {
+    const rows = data?.templateDeliveryStats ?? []
+    return rows.slice(0, 12).map((r) => ({
+      name: r.template.length > 14 ? r.template.slice(0, 12) + '…' : r.template,
+      fullName: r.template,
+      Pending: r.pending,
+      Sent: r.sent,
+      Delivered: r.delivered,
+      Read: r.read,
+      Failed: r.failed,
+      Other: r.other,
+    }))
+  }, [data?.templateDeliveryStats])
 
   const derivedMetrics = useMemo(() => {
     if (!data) return null
@@ -685,6 +713,75 @@ export default function WhatsAppAnalyticsPage() {
               </div>
             ) : (
               <p className="py-8 text-center text-sm text-slate-500">No template-tagged sends in this period</p>
+            )}
+          </ChartCard>
+
+          {/* Per-template delivery breakdown */}
+          <ChartCard
+            title="Template × delivery status"
+            subtitle="Outgoing messages tagged with [Template: name], split by CRM/Meta status"
+            icon={Target}
+          >
+            {(data.templateDeliveryStats?.length ?? 0) > 0 ? (
+              <>
+                {templateDeliveryChartData.length > 0 && (
+                  <div className="mb-8 h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={templateDeliveryChartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} interval={0} angle={-28} textAnchor="end" height={64} />
+                        <YAxis tick={{ fontSize: 11, fill: '#64748b' }} width={36} />
+                        <Tooltip
+                          formatter={(value, name) => [formatInt(Number(value ?? 0)), String(name)]}
+                          labelFormatter={(_, p) => (p?.[0]?.payload as { fullName?: string })?.fullName ?? ''}
+                          contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: 8 }} />
+                        <Bar dataKey="Pending" stackId="a" fill={STATUS_COLORS.pending} radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="Sent" stackId="a" fill={STATUS_COLORS.sent} />
+                        <Bar dataKey="Delivered" stackId="a" fill={STATUS_COLORS.delivered} />
+                        <Bar dataKey="Read" stackId="a" fill={STATUS_COLORS.read} />
+                        <Bar dataKey="Failed" stackId="a" fill={STATUS_COLORS.failed} />
+                        <Bar dataKey="Other" stackId="a" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                        <th className="px-4 py-3">#</th>
+                        <th className="min-w-[140px] px-4 py-3">Template</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                        <th className="px-4 py-3 text-right">Pending</th>
+                        <th className="px-4 py-3 text-right">Sent</th>
+                        <th className="px-4 py-3 text-right">Delivered</th>
+                        <th className="px-4 py-3 text-right">Read</th>
+                        <th className="px-4 py-3 text-right">Failed</th>
+                        <th className="px-4 py-3 text-right">Other</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data.templateDeliveryStats ?? []).map((row, i) => (
+                        <tr key={row.template} className="border-b border-slate-100 transition hover:bg-slate-50/80 last:border-0">
+                          <td className="px-4 py-3 font-mono text-xs text-slate-400">{i + 1}</td>
+                          <td className="min-w-[140px] px-4 py-3 font-medium text-slate-900">{row.template}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-800">{formatInt(row.total)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-amber-700">{formatInt(row.pending)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{formatInt(row.sent)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-teal-700">{formatInt(row.delivered)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-sky-700">{formatInt(row.read)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-rose-700">{formatInt(row.failed)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-slate-500">{formatInt(row.other)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="py-8 text-center text-sm text-slate-500">No per-template delivery data in this period</p>
             )}
           </ChartCard>
 
