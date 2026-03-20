@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const CRON_SECRET = process.env.WHATSAPP_PROCESS_SCHEDULED_SECRET || process.env.CRON_SECRET
 
 /**
- * Cron entrypoint for due WhatsApp scheduled broadcasts (e.g. GitHub Actions every minute).
+ * Cron entrypoint for due WhatsApp scheduled broadcasts (e.g. GitHub Actions every 5 min, UTC).
  * Call with Authorization: Bearer CRON_SECRET (or rely on x-vercel-cron on Vercel).
  * Set CRON_SECRET (or WHATSAPP_PROCESS_SCHEDULED_SECRET) in env.
  */
