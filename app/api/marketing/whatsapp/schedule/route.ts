@@ -93,8 +93,8 @@ export async function POST(request: NextRequest) {
       status: inserted.status,
       adjustedToNow: adjustedToNow ?? false,
       message: adjustedToNow
-        ? 'Scheduled time was in the past; job is due now. Vercel Cron (every minute) or "Process scheduled broadcasts now" will send it.'
-        : `Broadcast scheduled for ${scheduledAt.toLocaleString()}. Vercel Cron (every minute) or "Process scheduled broadcasts now" will send it.`,
+        ? 'Scheduled time was in the past; job is due now. Your GitHub Actions workflow (every minute) or "Process scheduled broadcasts now" will send it.'
+        : `Broadcast scheduled for ${scheduledAt.toLocaleString()}. Your GitHub Actions workflow (every minute) or "Process scheduled broadcasts now" will send it.`,
     })
   } catch (e) {
     return NextResponse.json(
