@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { FileText, RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload, Plus, ArrowLeft } from 'lucide-react'
+import { RefreshCw, Loader2, Eye, Trash2, FileEdit, Upload, Plus, ArrowLeft, Sparkles } from 'lucide-react'
+import { btnPrimaryWa, btnSecondary, cardShell, cardShellFlat, fieldInput, heroShell, sectionLabel } from '../_lib/marketing-ui'
 import { TemplatePreview } from '../_components/TemplatePreview'
 import type { WhatsAppTemplate } from '../_lib/types'
 import { getLanguageName, META_LANGUAGES } from '../_lib/utils'
@@ -283,26 +284,43 @@ export default function TemplatesPage() {
   ]
 
   return (
-    <div className="space-y-6">
-      <Link
-        href="/marketing/whatsapp"
-        className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 mb-2"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to WhatsApp
-      </Link>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+    <div className="mx-auto max-w-6xl space-y-6 pb-10">
+      <div className={heroShell}>
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#25D366]/20 blur-3xl" />
+        <Link
+          href="/marketing/whatsapp"
+          className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition hover:bg-white/20"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          WhatsApp hub
+        </Link>
+        <div className="relative mt-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300/90">
+              <Sparkles className="h-3.5 w-3.5" />
+              Templates
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Message templates</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
+              Draft, sync with Meta, submit for review, and use approved templates in bulk sends.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className={`${cardShellFlat}`}>
+        <p className={sectionLabel}>Actions</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex rounded-xl border border-slate-200 bg-slate-50/90 p-1 ring-1 ring-slate-100">
             {categoryTabs.map((tab) => (
               <button
                 key={tab.value}
                 type="button"
                 onClick={() => setCategoryFilter(tab.value)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
                   categoryFilter === tab.value
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                    : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
                 }`}
               >
                 {tab.label}
@@ -313,42 +331,22 @@ export default function TemplatesPage() {
             type="button"
             onClick={handleSync}
             disabled={syncing || loading}
-            className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className={`${btnSecondary} inline-flex items-center gap-2 disabled:pointer-events-none`}
           >
-            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Sync status from Meta
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> : <RefreshCw className="h-4 w-4 text-slate-500" />}
+            Sync from Meta
           </button>
-          <Link
-            href="/marketing/templates/create"
-            className="inline-flex items-center gap-2 rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e]"
-          >
+          <Link href="/marketing/templates/create" className={btnPrimaryWa}>
             <Plus className="h-4 w-4" /> Create template
           </Link>
-          <button
-            type="button"
-            onClick={() => {
-              if (showForm) setShowForm(false)
-              else { setEditingTemplateId(null); setShowForm(true) }
-            }}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            {showForm ? 'Cancel' : 'Quick create (legacy)'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowWabaHelp(!showWabaHelp)}
-            className="text-sm text-gray-500 hover:text-gray-700 underline"
-          >
-            {showWabaHelp ? 'Hide' : 'Find your WABA ID'}
-          </button>
         </div>
       </div>
 
       <>
           {showWabaHelp && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-              <h4 className="font-medium text-amber-900">Find your WhatsApp Business Account ID</h4>
-              <p className="text-sm text-amber-800">
+            <div className="space-y-3 rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-orange-50/50 p-5 ring-1 ring-amber-100">
+              <h4 className="font-semibold text-amber-950">Find your WhatsApp Business Account ID</h4>
+              <p className="text-sm leading-relaxed text-amber-900/90">
                 Sync and &quot;Submit for review&quot; need the <strong>WhatsApp Business Account ID</strong>, not the App ID or Phone Number ID.
               </p>
               <div>
@@ -356,7 +354,7 @@ export default function TemplatesPage() {
                   type="button"
                   onClick={handleDiscoverWaba}
                   disabled={discovering}
-                  className="rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  className="rounded-xl border border-amber-300/80 bg-white px-4 py-2 text-sm font-semibold text-amber-900 shadow-sm transition hover:bg-amber-50 disabled:opacity-50"
                 >
                   {discovering ? 'Checking…' : 'Try discover from current ID'}
                 </button>
@@ -373,59 +371,86 @@ export default function TemplatesPage() {
                   </div>
                 )}
               </div>
-              <p className="text-sm text-amber-800">
+              <p className="text-sm leading-relaxed text-amber-900/90">
                 <strong>Or find it manually:</strong> Go to{' '}
-                <a href="https://business.facebook.com" target="_blank" rel="noopener noreferrer" className="underline">business.facebook.com</a>
+                <a href="https://business.facebook.com" target="_blank" rel="noopener noreferrer" className="font-semibold underline decoration-amber-600/60 underline-offset-2">
+                  business.facebook.com
+                </a>
                 {' '}→ Settings → Accounts → WhatsApp Accounts → click your account. The numeric <strong>Account ID</strong> is your WABA ID.
               </p>
             </div>
           )}
 
           {submitError && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div className="rounded-2xl border border-amber-200/80 bg-amber-50/90 p-5 ring-1 ring-amber-100">
               <div className="flex items-start justify-between gap-2">
-                <h4 className="font-medium text-amber-900">Submit for review failed</h4>
-                <button type="button" onClick={() => setSubmitError(null)} className="text-amber-700 hover:text-amber-900 text-sm shrink-0">Dismiss</button>
+                <h4 className="font-semibold text-amber-950">Submit for review failed</h4>
+                <button
+                  type="button"
+                  onClick={() => setSubmitError(null)}
+                  className="shrink-0 text-sm font-semibold text-amber-800 hover:text-amber-950"
+                >
+                  Dismiss
+                </button>
               </div>
-              <p className="mt-2 text-sm text-amber-800 whitespace-pre-wrap">{submitError}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-amber-900/90">{submitError}</p>
             </div>
           )}
 
           {(showWabaHelp || permissionError) && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+            <div className="space-y-3 rounded-2xl border border-sky-200/80 bg-sky-50/90 p-5 ring-1 ring-sky-100">
               <div className="flex items-start justify-between gap-2">
-                <h4 className="font-medium text-blue-900">If you see &quot;#100) Need permission on WhatsApp Business Account&quot;</h4>
-                <button type="button" onClick={() => setPermissionError(null)} className="text-blue-600 hover:text-blue-800 text-sm shrink-0">Dismiss</button>
+                <h4 className="font-semibold text-sky-950">If you see &quot;#100) Need permission on WhatsApp Business Account&quot;</h4>
+                <button
+                  type="button"
+                  onClick={() => setPermissionError(null)}
+                  className="shrink-0 text-sm font-semibold text-sky-700 hover:text-sky-900"
+                >
+                  Dismiss
+                </button>
               </div>
-              <p className="text-sm text-blue-800">
+              <p className="text-sm leading-relaxed text-sky-900/90">
                 Your <strong>access token</strong> needs the right permissions, or the app must be linked to the business that owns the WhatsApp account.
-                Use a System User token with <code className="bg-white/80 px-1 rounded">whatsapp_business_management</code> and <code className="bg-white/80 px-1 rounded">whatsapp_business_messaging</code>.
+                Use a System User token with <code className="rounded bg-white/90 px-1.5 py-0.5 font-mono text-xs ring-1 ring-sky-200">whatsapp_business_management</code> and{' '}
+                <code className="rounded bg-white/90 px-1.5 py-0.5 font-mono text-xs ring-1 ring-sky-200">whatsapp_business_messaging</code>.
               </p>
-              <p className="text-sm text-blue-800">
-                <a href="https://developers.facebook.com/docs/whatsapp/access-tokens/" target="_blank" rel="noopener noreferrer" className="underline">Meta: Access tokens</a>
+              <p className="text-sm">
+                <a
+                  href="https://developers.facebook.com/docs/whatsapp/access-tokens/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-sky-800 underline decoration-sky-400/50 underline-offset-2"
+                >
+                  Meta: Access tokens →
+                </a>
               </p>
             </div>
           )}
 
           {showForm && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className={cardShellFlat}>
+              <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
                 <form onSubmit={handleCreateTemplate} className="space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-900">{editingTemplateId ? 'Edit template' : 'New message template'}</h3>
-                  {formError && <p className="text-sm text-red-600">{formError}</p>}
+                  <div className="border-b border-slate-100 pb-4">
+                    <p className={sectionLabel}>Legacy editor</p>
+                    <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-900">
+                      {editingTemplateId ? 'Edit template' : 'New message template'}
+                    </h3>
+                  </div>
+                  {formError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">{formError}</p>}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name (lowercase, underscores only)</label>
+                    <label className="mb-1 block text-sm font-semibold text-slate-800">Name (lowercase, underscores only)</label>
                     <input
                       type="text"
                       value={formName}
                       onChange={(e) => setFormName(e.target.value)}
                       placeholder="e.g. welcome_offer"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      className={fieldInput}
                     />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                      <label className="mb-1 block text-sm font-semibold text-slate-800">Category</label>
                       <select
                         value={formCategory}
                         onChange={(e) => {
@@ -434,7 +459,7 @@ export default function TemplatesPage() {
                           if (v !== 'UTILITY') setFormSubCategory(null)
                           if (v === 'AUTHENTICATION' && formHeaderFormat !== 'TEXT') setFormHeaderFormat('TEXT')
                         }}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        className={fieldInput}
                       >
                         <option value="MARKETING">MARKETING — Promotional, offers, re-engagement</option>
                         <option value="UTILITY">UTILITY — Order updates, account alerts, transactional</option>
@@ -452,23 +477,23 @@ export default function TemplatesPage() {
                     </div>
                     {formCategory === 'UTILITY' && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Sub-category (optional)</label>
+                        <label className="mb-1 block text-sm font-semibold text-slate-800">Sub-category (optional)</label>
                         <select
                           value={formSubCategory ?? ''}
                           onChange={(e) => setFormSubCategory(e.target.value || null)}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className={fieldInput}
                         >
                           <option value="">Standard — General transactional</option>
                           <option value="ORDER_DETAILS">ORDER_DETAILS — Invoice/order details with product list</option>
                           <option value="ORDER_STATUS">ORDER_STATUS — Order status updates (pending, shipped, etc.)</option>
                           <option value="RICH_ORDER_STATUS">RICH_ORDER_STATUS — Rich order status with formatting</option>
                         </select>
-                        <p className="mt-1 text-xs text-gray-500">Predefined Meta formats for order-related messages.</p>
+                        <p className="mt-1 text-xs text-slate-500">Predefined Meta formats for order-related messages.</p>
                       </div>
                     )}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
-                      <select value={formLanguage} onChange={(e) => setFormLanguage(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                      <label className="mb-1 block text-sm font-semibold text-slate-800">Language</label>
+                      <select value={formLanguage} onChange={(e) => setFormLanguage(e.target.value)} className={fieldInput}>
                         {META_LANGUAGES.map((l) => (
                           <option key={l.code} value={l.code}>{l.name}</option>
                         ))}
@@ -476,11 +501,11 @@ export default function TemplatesPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Header type</label>
+                    <label className="mb-1 block text-sm font-semibold text-slate-800">Header type</label>
                     <select
                       value={formHeaderFormat}
                       onChange={(e) => setFormHeaderFormat(e.target.value as typeof formHeaderFormat)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      className={fieldInput}
                     >
                       <option value="TEXT">Text</option>
                       {formCategory !== 'AUTHENTICATION' && (
@@ -497,16 +522,16 @@ export default function TemplatesPage() {
                   </div>
                   {formHeaderFormat === 'TEXT' && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Header text (optional, max 60 chars; use {"{{1}}"} etc.)</label>
-                      <input type="text" value={formHeader} onChange={(e) => setFormHeader(e.target.value)} maxLength={60} placeholder="e.g. Hello {{1}}" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                      <label className="mb-1 block text-sm font-semibold text-slate-800">Header text (optional, max 60 chars; use {"{{1}}"} etc.)</label>
+                      <input type="text" value={formHeader} onChange={(e) => setFormHeader(e.target.value)} maxLength={60} placeholder="e.g. Hello {{1}}" className={fieldInput} />
                     </div>
                   )}
                   {(formHeaderFormat === 'IMAGE' || formHeaderFormat === 'VIDEO' || formHeaderFormat === 'DOCUMENT') && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="mb-1 block text-sm font-semibold text-slate-800">
                         Upload {formHeaderFormat.toLowerCase()} for Meta (required for template review)
                       </label>
-                      <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 cursor-pointer disabled:opacity-50">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50">
                         <input
                           type="file"
                           accept={formHeaderFormat === 'IMAGE' ? 'image/jpeg,image/png,image/gif,image/webp' : formHeaderFormat === 'VIDEO' ? 'video/mp4,video/x-m4v' : 'application/pdf'}
@@ -552,68 +577,92 @@ export default function TemplatesPage() {
                     </div>
                   )}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Body (use {"{{1}}"}, {"{{2}}"} for variables)</label>
-                    <p className="text-xs text-gray-500 mb-1.5">Variables: type {"{{1}}"}, {"{{2}}"} etc. Example: &quot;Hi {"{{1}}"}, your order {"{{2}}"} is ready.&quot;</p>
-                    <textarea value={formBody} onChange={(e) => setFormBody(e.target.value)} placeholder="Hello {{1}}, your exclusive offer is ready!" rows={4} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" required />
+                    <label className="mb-1 block text-sm font-semibold text-slate-800">Body (use {"{{1}}"}, {"{{2}}"} for variables)</label>
+                    <p className="mb-1.5 text-xs text-slate-500">Variables: type {"{{1}}"}, {"{{2}}"} etc. Example: &quot;Hi {"{{1}}"}, your order {"{{2}}"} is ready.&quot;</p>
+                    <textarea value={formBody} onChange={(e) => setFormBody(e.target.value)} placeholder="Hello {{1}}, your exclusive offer is ready!" rows={4} className={fieldInput} required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Footer (optional, max 60 chars)</label>
-                    <input type="text" value={formFooter} onChange={(e) => setFormFooter(e.target.value)} maxLength={60} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                    <label className="mb-1 block text-sm font-semibold text-slate-800">Footer (optional, max 60 chars)</label>
+                    <input type="text" value={formFooter} onChange={(e) => setFormFooter(e.target.value)} maxLength={60} className={fieldInput} />
                   </div>
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-sm font-medium text-gray-700">Buttons (CTA) – max 10</label>
-                      <button type="button" onClick={() => setFormButtons((b) => [...b, { type: 'QUICK_REPLY', text: '', example: '' }])} className="text-xs text-[#ed1b24] hover:underline">+ Add button</button>
+                    <div className="mb-1 flex items-center justify-between">
+                      <label className="block text-sm font-semibold text-slate-800">Buttons (CTA) – max 10</label>
+                      <button type="button" onClick={() => setFormButtons((b) => [...b, { type: 'QUICK_REPLY', text: '', example: '' }])} className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline">
+                        + Add button
+                      </button>
                     </div>
                     {formButtons.map((b, i) => (
-                      <div key={i} className="flex flex-wrap items-center gap-2 mb-2 p-2 rounded bg-gray-50">
-                        <select value={b.type} onChange={(e) => setFormButtons((prev) => prev.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))} className="rounded border border-gray-300 px-2 py-1 text-sm">
+                      <div key={i} className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/80 p-2">
+                        <select value={b.type} onChange={(e) => setFormButtons((prev) => prev.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))} className="rounded-lg border border-slate-200 px-2 py-1 text-sm">
                           <option value="QUICK_REPLY">Quick reply</option>
                           <option value="URL">URL</option>
                           <option value="PHONE_NUMBER">Call</option>
                           <option value="COPY_CODE">Copy code</option>
                         </select>
-                        <input type="text" value={b.text} onChange={(e) => setFormButtons((prev) => prev.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} placeholder="Button text" maxLength={25} className="flex-1 min-w-[80px] rounded border border-gray-300 px-2 py-1 text-sm" />
+                        <input type="text" value={b.text} onChange={(e) => setFormButtons((prev) => prev.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} placeholder="Button text" maxLength={25} className="min-w-[80px] flex-1 rounded-lg border border-slate-200 px-2 py-1 text-sm" />
                         {(b.type === 'URL' || b.type === 'PHONE_NUMBER' || b.type === 'COPY_CODE') && (
-                          <input type="text" value={b.example ?? ''} onChange={(e) => setFormButtons((prev) => prev.map((x, j) => (j === i ? { ...x, example: e.target.value } : x)))} placeholder={b.type === 'URL' ? 'https://...' : b.type === 'PHONE_NUMBER' ? '+91...' : 'CODE'} className="w-32 rounded border border-gray-300 px-2 py-1 text-sm" />
+                          <input type="text" value={b.example ?? ''} onChange={(e) => setFormButtons((prev) => prev.map((x, j) => (j === i ? { ...x, example: e.target.value } : x)))} placeholder={b.type === 'URL' ? 'https://...' : b.type === 'PHONE_NUMBER' ? '+91...' : 'CODE'} className="w-32 rounded-lg border border-slate-200 px-2 py-1 text-sm" />
                         )}
-                        <button type="button" onClick={() => setFormButtons((prev) => prev.filter((_, j) => j !== i))} className="text-gray-500 hover:text-red-600 text-sm">Remove</button>
+                        <button type="button" onClick={() => setFormButtons((prev) => prev.filter((_, j) => j !== i))} className="text-sm text-slate-500 hover:text-red-600">
+                          Remove
+                        </button>
                       </div>
                     ))}
                   </div>
-                  <button type="submit" disabled={!formBody.trim() || formSaving} className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50">
+                  <button type="submit" disabled={!formBody.trim() || formSaving} className={btnPrimaryWa}>
                     {formSaving ? 'Saving…' : editingTemplateId ? 'Save changes' : 'Save draft'}
                   </button>
                 </form>
-                <div className="lg:sticky lg:top-4 h-fit">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Live preview</p>
+                <div className="h-fit lg:sticky lg:top-6">
+                  <p className={`mb-2 ${sectionLabel}`}>Live preview</p>
                   <TemplatePreview headerFormat={formHeaderFormat} headerText={formHeader} headerMediaUrl={formHeaderMediaUrl} headerPreviewUrl={formHeaderPreviewUrl} body={formBody} footer={formFooter} buttons={formButtons.filter((b) => b.text.trim())} />
                 </div>
               </div>
             </div>
           )}
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 font-medium text-gray-900">Templates</div>
+          <div className={cardShell}>
+            <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4">
+              <p className={sectionLabel}>Library</p>
+              <p className="mt-0.5 text-sm font-semibold text-slate-900">Your templates</p>
+            </div>
             {loading ? (
-              <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-[#ed1b24]" /></div>
+              <div className="flex justify-center py-16">
+                <Loader2 className="h-9 w-9 animate-spin text-emerald-600" />
+              </div>
             ) : templates.length === 0 && metaOnlyTemplates.length === 0 ? (
-              <div className="p-6 text-center text-sm text-gray-500">No templates yet. Create one above or add in Meta WhatsApp dashboard, then click Sync.</div>
+              <div className="p-10 text-center text-sm text-slate-500">
+                No templates yet. Use <strong className="text-slate-700">Create template</strong> or add in Meta, then <strong className="text-slate-700">Sync from Meta</strong>.
+              </div>
             ) : (
               <>
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {templates.map((t) => (
-                    <div key={t.id} className="rounded-xl border border-gray-200 bg-gray-50/50 flex flex-col overflow-hidden">
-                      <div className="p-3 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-white">
+                    <div
+                      key={t.id}
+                      className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm ring-1 ring-slate-100/80 transition hover:shadow-md"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/50 p-3">
                         <div className="min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{t.name}</p>
-                          <p className="text-xs text-gray-500">{getLanguageName(t.language)} · {t.category}</p>
+                          <p className="truncate font-semibold text-slate-900">{t.name}</p>
+                          <p className="text-xs text-slate-500">
+                            {getLanguageName(t.language)} · {t.category}
+                          </p>
                         </div>
-                        <span className={`shrink-0 text-xs px-2 py-0.5 rounded ${
-                          t.status === 'approved' ? 'bg-green-100 text-green-800' :
-                          t.status === 'pending' ? 'bg-amber-100 text-amber-800' :
-                          t.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
-                        }`}>{t.status}</span>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            t.status === 'approved'
+                              ? 'bg-emerald-100 text-emerald-900'
+                              : t.status === 'pending'
+                                ? 'bg-amber-100 text-amber-900'
+                                : t.status === 'rejected'
+                                  ? 'bg-red-100 text-red-900'
+                                  : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {t.status}
+                        </span>
                       </div>
                       <div className="p-3 flex-1 min-h-0">
                         <TemplatePreview
@@ -626,31 +675,57 @@ export default function TemplatesPage() {
                           buttons={t.buttons?.filter((b) => b?.text) ?? []}
                         />
                       </div>
-                      <div className="p-3 border-t border-gray-100 bg-white flex flex-wrap items-center gap-2">
-                        <Link href={`/marketing/templates/${t.id}`} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1" title="View details">
+                      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-white p-3">
+                        <Link
+                          href={`/marketing/templates/${t.id}`}
+                          className={`${btnSecondary} inline-flex items-center gap-1 px-2.5 py-1.5 text-xs`}
+                          title="View details"
+                        >
                           View
                         </Link>
-                        <button type="button" onClick={() => setPreviewTemplate(t)} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1" title="Preview">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewTemplate(t)}
+                          className={`${btnSecondary} inline-flex items-center gap-1 px-2.5 py-1.5 text-xs`}
+                          title="Preview"
+                        >
                           <Eye className="h-3.5 w-3.5" /> Preview
                         </button>
                         {t.status === 'draft' && (
-                          <button type="button" onClick={() => openFormForEdit(t)} className="rounded-lg border border-[#ed1b24] px-2.5 py-1.5 text-xs font-medium text-[#ed1b24] hover:bg-red-50 inline-flex items-center gap-1" title="Edit">
+                          <button
+                            type="button"
+                            onClick={() => openFormForEdit(t)}
+                            className="inline-flex items-center gap-1 rounded-xl border border-emerald-500/40 bg-emerald-50/80 px-2.5 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100"
+                            title="Edit"
+                          >
                             <FileEdit className="h-3.5 w-3.5" /> Edit
                           </button>
                         )}
                         {deleteConfirmId === t.id ? (
                           <span className="flex items-center gap-1.5">
-                            <span className="text-xs text-gray-600">Delete?</span>
+                            <span className="text-xs text-slate-600">Delete?</span>
                             <button type="button" onClick={() => handleDeleteTemplate(t.id)} disabled={!!deletingId} className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50">{deletingId === t.id ? '…' : 'Yes'}</button>
-                            <button type="button" onClick={() => setDeleteConfirmId(null)} className="rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">No</button>
+                            <button type="button" onClick={() => setDeleteConfirmId(null)} className={`${btnSecondary} px-2 py-1 text-xs`}>
+                              No
+                            </button>
                           </span>
                         ) : (
-                          <button type="button" onClick={() => setDeleteConfirmId(t.id)} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 inline-flex items-center gap-1" title="Delete">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmId(t.id)}
+                            className={`${btnSecondary} inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-700`}
+                            title="Delete"
+                          >
                             <Trash2 className="h-3.5 w-3.5" /> Delete
                           </button>
                         )}
                         {t.status === 'draft' && (
-                          <button type="button" onClick={() => handleSubmitToMeta(t.id)} disabled={!!submittingId} className="rounded-lg border border-[#ed1b24] px-2.5 py-1.5 text-xs font-medium text-[#ed1b24] hover:bg-red-50 disabled:opacity-50">
+                          <button
+                            type="button"
+                            onClick={() => handleSubmitToMeta(t.id)}
+                            disabled={!!submittingId}
+                            className="rounded-xl border border-[#25D366]/50 bg-[#25D366]/10 px-2.5 py-1.5 text-xs font-semibold text-[#128C7E] transition hover:bg-[#25D366]/15 disabled:opacity-50"
+                          >
                             {submittingId === t.id ? '…' : 'Submit'}
                           </button>
                         )}
@@ -660,16 +735,26 @@ export default function TemplatesPage() {
                 </div>
                 {metaOnlyTemplates.length > 0 && (
                   <>
-                    <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">From Meta (created in WhatsApp dashboard)</div>
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div className="border-t border-slate-100 bg-slate-100/80 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+                      From Meta (WhatsApp dashboard)
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                       {metaOnlyTemplates.map((m) => (
-                        <div key={`${m.name}:${m.language}`} className="rounded-xl border border-gray-200 bg-gray-50/50 p-4 flex flex-col justify-between">
+                        <div
+                          key={`${m.name}:${m.language}`}
+                          className="flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-gradient-to-br from-slate-50 to-white p-4 ring-1 ring-slate-100/80"
+                        >
                           <div>
-                            <p className="font-medium text-gray-900">{m.name}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{getLanguageName(m.language)}{m.category ? ` · ${m.category}` : ''}</p>
-                            <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">approved</span>
+                            <p className="font-semibold text-slate-900">{m.name}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {getLanguageName(m.language)}
+                              {m.category ? ` · ${m.category}` : ''}
+                            </p>
+                            <span className="mt-2 inline-block rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-900">
+                              approved
+                            </span>
                           </div>
-                          <p className="text-xs text-gray-400 mt-3">Use in Bulk WhatsApp</p>
+                          <p className="mt-3 text-xs font-medium text-slate-400">Available in Bulk WhatsApp</p>
                         </div>
                       ))}
                     </div>
@@ -680,13 +765,33 @@ export default function TemplatesPage() {
           </div>
 
           {previewTemplate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { setPreviewTemplate(null); setPreviewMediaUrl(null) }}>
-              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">Template preview</h3>
-                  <button type="button" onClick={() => { setPreviewTemplate(null); setPreviewMediaUrl(null) }} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+              onClick={() => {
+                setPreviewTemplate(null)
+                setPreviewMediaUrl(null)
+              }}
+            >
+              <div
+                className="w-full max-w-md rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl ring-1 ring-slate-200/50"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="text-lg font-bold tracking-tight text-slate-900">Template preview</h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreviewTemplate(null)
+                      setPreviewMediaUrl(null)
+                    }}
+                    className={btnSecondary}
+                  >
+                    Close
+                  </button>
                 </div>
-                <p className="text-sm text-gray-500 mb-2">{previewTemplate.name} · {getLanguageName(previewTemplate.language)}</p>
+                <p className="mb-3 text-sm text-slate-500">
+                  {previewTemplate.name} · {getLanguageName(previewTemplate.language)}
+                </p>
                 <TemplatePreview
                   headerFormat={(previewTemplate.header_format as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT') ?? 'TEXT'}
                   headerText={previewTemplate.header_text ?? ''}
