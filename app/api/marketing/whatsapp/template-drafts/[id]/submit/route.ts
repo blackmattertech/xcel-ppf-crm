@@ -77,6 +77,14 @@ export async function POST(
       payload,
     })
     if (!result.success) {
+      console.error('[Template submit] Meta createTemplate failed', {
+        draftId: id,
+        templateName: normalized.name,
+        subtype,
+        metaError: result.error,
+        metaResponse: result.metaResponse,
+        payload,
+      })
       await updateDraft(id, { submit_state: 'failed' }, user.id)
       return NextResponse.json(
         { error: result.error ?? 'Failed to create template', metaResponse: result.metaResponse },
@@ -88,13 +96,28 @@ export async function POST(
   }
 
   const mappedStatus = status.toLowerCase() === 'approved' ? 'approved' : status.toLowerCase() === 'rejected' ? 'rejected' : 'pending'
+  const headerComp = normalized.components.find((c) => c.type === 'HEADER') as
+    | { type: 'HEADER'; format?: string; text?: string; headerHandle?: string; headerMediaUrl?: string }
+    | undefined
+  const footerComp = normalized.components.find((c) => c.type === 'FOOTER') as
+    | { type: 'FOOTER'; text?: string }
+    | undefined
+
+  const headerFormat = (headerComp?.format ?? null) as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
+  const headerText = headerFormat === 'TEXT' ? (headerComp?.text ?? null) : null
+  const headerMediaId = headerFormat && headerFormat !== 'TEXT' ? (headerComp?.headerHandle ?? null) : null
+  const headerMediaUrl = headerFormat && headerFormat !== 'TEXT' ? (headerComp?.headerMediaUrl ?? null) : null
+
   templateRow = await repo.insertTemplate({
     name: normalized.name,
     language: normalized.language ?? draft.language ?? 'en',
     category: normalized.category,
     body_text: (normalized.components.find((c) => c.type === 'BODY') as { text?: string })?.text ?? '',
-    header_text: null,
-    footer_text: null,
+    header_text: headerText,
+    footer_text: footerComp?.text ?? null,
+    header_format: headerFormat,
+    header_media_id: headerMediaId,
+    header_media_url: headerMediaUrl,
     status: mappedStatus,
     meta_id: metaId,
     meta_template_id: metaId,

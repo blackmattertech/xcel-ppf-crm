@@ -116,9 +116,6 @@ function validateStandard(template: NormalizedTemplate): ValidationResult {
   if (headerComp && headerComp.format !== 'TEXT' && !headerComp.headerHandle) {
     errors.push('Media header requires example.header_handle.')
   }
-  if (headerComp?.headerHandle && headerComp.headerHandle.length > 60) {
-    errors.push('Header handle must be at most 60 characters.')
-  }
 
   const buttonsComp = template.components.find((c) => c.type === 'BUTTONS') as { type: 'BUTTONS'; buttons: Array<{ type: string; text?: string }> } | undefined
   if (buttonsComp && buttonsComp.buttons.length > 10) {

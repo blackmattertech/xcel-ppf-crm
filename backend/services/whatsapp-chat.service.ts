@@ -7,7 +7,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 
 export type MessageDirection = 'out' | 'in'
 
-export type MessageStatus = 'sent' | 'delivered' | 'read'
+export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed'
 
 export interface WhatsAppMessageRow {
   id: string
@@ -144,9 +144,9 @@ export async function listMessagesByPhone(phone: string): Promise<WhatsAppMessag
   return (data ?? []) as WhatsAppMessageRow[]
 }
 
-const STATUS_ORDER: Record<MessageStatus, number> = { sent: 1, delivered: 2, read: 3 }
+const STATUS_ORDER: Record<Exclude<MessageStatus, 'failed'>, number> = { sent: 1, delivered: 2, read: 3 }
 
-/** Update message status by meta_message_id (from webhook statuses). Only upgrades to higher status. */
+/** Update message status by meta_message_id (from webhook statuses). Upgrades to higher status; 'failed' always sets. */
 export async function updateMessageStatus(
   metaMessageId: string,
   newStatus: MessageStatus
@@ -162,8 +162,16 @@ export async function updateMessageStatus(
       .single()
     const existing = raw as { id: string; status?: string | null } | null
     if (!existing || !existing.id) return
+    if (newStatus === 'failed') {
+      const { error } = await supabase
+        .from('whatsapp_messages')
+        .update({ status: 'failed' } as never)
+        .eq('id', existing.id)
+      if (error) throw error
+      return
+    }
     const current = (existing.status as MessageStatus | null) ?? 'sent'
-    if (STATUS_ORDER[newStatus] <= STATUS_ORDER[current]) return
+    if (STATUS_ORDER[newStatus as keyof typeof STATUS_ORDER] <= STATUS_ORDER[current as keyof typeof STATUS_ORDER]) return
     const { error } = await supabase
       .from('whatsapp_messages')
       .update({ status: newStatus } as never)

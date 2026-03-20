@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { Search, Loader2, Send, Users, UserCheck, ListOrdered, MessageCircle, ArrowLeft } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Search, Loader2, Send, Users, UserCheck, ListOrdered, MessageCircle, ArrowLeft, Clock } from 'lucide-react'
 import type { LeadRecipient, CustomerRecipient, PastedRecipient, Recipient, SendResult, WhatsAppTemplate, MetaTemplateOption } from '../_lib/types'
 import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/utils'
 import { cachedFetch } from '@/lib/api-client'
@@ -25,6 +26,35 @@ export default function BulkWhatsAppPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [templateParamValues, setTemplateParamValues] = useState<string[]>([])
   const [templateHeaderParamValues, setTemplateHeaderParamValues] = useState<string[]>([])
+  const [delayMs, setDelayMs] = useState(250)
+  const [scheduleAt, setScheduleAt] = useState('')
+  const [processingScheduled, setProcessingScheduled] = useState(false)
+  const [processScheduledResult, setProcessScheduledResult] = useState<{
+    processed: number
+    results?: Array<{ id: string; status: string; sent?: number; failed?: number; error?: string }>
+    message?: string
+    debug?: { pendingCount?: number; dueCount?: number }
+  } | null>(null)
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const retry = searchParams.get('retry')
+    if (retry === 'failed') {
+      cachedFetch('/api/marketing/whatsapp/delivery-status')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.byStatus?.failed?.items?.length) {
+            const lines = data.byStatus.failed.items.map(
+              (item: { phone: string; lead_name?: string | null }) =>
+                (item.lead_name ? `${item.lead_name}, ` : '') + item.phone
+            )
+            setPastedText(lines.join('\n'))
+            setSource('paste')
+          }
+        })
+        .catch(() => {})
+    }
+  }, [searchParams])
 
   useEffect(() => {
     cachedFetch('/api/marketing/whatsapp/config')
@@ -160,6 +190,40 @@ export default function BulkWhatsAppPage() {
   const clearSelection = () => setSelectedIds(new Set())
   const clearSendResult = () => setSendResult(null)
 
+  const processScheduledNow = async () => {
+    setProcessingScheduled(true)
+    setProcessScheduledResult(null)
+    try {
+      const res = await cachedFetch('/api/marketing/whatsapp/process-scheduled/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setProcessScheduledResult({
+          processed: 0,
+          results: [{ id: '', status: 'error', error: data?.error ?? `HTTP ${res.status}` }],
+          message: data?.error,
+        })
+        return
+      }
+      setProcessScheduledResult({
+        processed: data.processed ?? 0,
+        results: data.results ?? [],
+        message: data.message,
+        debug: data.debug,
+      })
+    } catch (e) {
+      setProcessScheduledResult({
+        processed: 0,
+        results: [{ id: '', status: 'error', error: e instanceof Error ? e.message : 'Request failed' }],
+      })
+    } finally {
+      setProcessingScheduled(false)
+    }
+  }
+
   const copyAllNumbers = () => {
     const nums = selectedRecipients.map((r) => normalizePhone(r.phone)).filter(Boolean)
     const unique = [...new Set(nums)]
@@ -210,56 +274,103 @@ export default function BulkWhatsAppPage() {
     if (!isMetaTemplate && !template) return
     setSending(true)
     setSendResult(null)
-    const BATCH_SIZE = 100
     const recipients = selectedRecipients.map((r) => ({ phone: r.phone, name: r.name }))
     const bodyParameters = templateParamCount > 0 ? templateParamValues.slice(0, templateParamCount) : undefined
     const headerParameters = templateHeaderParamCount > 0 ? templateHeaderParamValues.slice(0, templateHeaderParamCount) : undefined
-    const payload: Record<string, unknown> = {
-      recipients: [],
+    const basePayload: Record<string, unknown> = {
       bodyParameters,
       headerParameters,
       defaultCountryCode: '91',
+      delayMs,
     }
     if (isMetaTemplate && selectedMetaTemplate) {
-      payload.templateName = selectedMetaTemplate.name
-      payload.templateLanguage = selectedMetaTemplate.language
+      basePayload.templateName = selectedMetaTemplate.name
+      basePayload.templateLanguage = selectedMetaTemplate.language
     } else {
-      payload.templateId = selectedTemplateId
+      basePayload.templateId = selectedTemplateId
     }
-    let totalSent = 0
-    let totalFailed = 0
-    const allResults: SendResult['results'] = []
+
+    const isScheduled = scheduleAt.trim() !== ''
     try {
-      for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-        const batch = recipients.slice(i, i + BATCH_SIZE)
-        payload.recipients = batch
-        const res = await cachedFetch('/api/marketing/whatsapp/send-template', {
+      if (isScheduled) {
+        const scheduledAtDate = new Date(scheduleAt)
+        if (isNaN(scheduledAtDate.getTime())) {
+          setSendResult({
+            sent: 0,
+            failed: count,
+            results: [],
+            scheduleError: 'Invalid date/time for schedule',
+          })
+          return
+        }
+        const res = await cachedFetch('/api/marketing/whatsapp/schedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...basePayload,
+            scheduledAt: scheduledAtDate.toISOString(),
+            recipients,
+          }),
         })
         const data = await res.json()
         if (!res.ok) {
-          batch.forEach((r) => {
-            allResults.push({ phone: r.phone, success: false, error: data?.error ?? `HTTP ${res.status}` })
-            totalFailed++
+          setSendResult({
+            sent: 0,
+            failed: count,
+            results: [],
+            scheduleError: data?.error ?? `HTTP ${res.status}`,
           })
-        } else {
-          totalSent += data.sent ?? 0
-          totalFailed += data.failed ?? 0
-          if (Array.isArray(data.results)) allResults.push(...data.results)
+          return
         }
+        setSendResult({
+          sent: 0,
+          failed: 0,
+          results: [],
+          scheduled: true,
+          scheduledAt: data.scheduledAt,
+          scheduleMessage: data.message ?? `Scheduled for ${scheduledAtDate.toLocaleString()}. Supabase Edge Function will send it (pg_cron every minute or click "Process scheduled broadcasts now").`,
+        })
+      } else {
+        const BATCH_SIZE = 100
+        const payload = { ...basePayload, recipients: [] as typeof recipients }
+        let totalSent = 0
+        let totalFailed = 0
+        const allResults: SendResult['results'] = []
+        for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+          const batch = recipients.slice(i, i + BATCH_SIZE)
+          payload.recipients = batch
+          const res = await cachedFetch('/api/marketing/whatsapp/send-template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          const data = await res.json()
+          if (!res.ok) {
+            batch.forEach((r) => {
+              allResults.push({ phone: r.phone, success: false, error: data?.error ?? `HTTP ${res.status}` })
+              totalFailed++
+            })
+          } else {
+            totalSent += data.sent ?? 0
+            totalFailed += data.failed ?? 0
+            if (Array.isArray(data.results)) allResults.push(...data.results)
+          }
+        }
+        setSendResult({ sent: totalSent, failed: totalFailed, results: allResults })
       }
-      setSendResult({ sent: totalSent, failed: totalFailed, results: allResults })
     } catch (e) {
       setSendResult({
         sent: 0,
         failed: count,
-        results: selectedRecipients.map((r) => ({
-          phone: r.phone,
-          success: false,
-          error: e instanceof Error ? e.message : 'Request failed',
-        })),
+        results: [],
+        scheduleError: isScheduled ? (e instanceof Error ? e.message : 'Request failed') : undefined,
+        ...(!isScheduled && {
+          results: selectedRecipients.map((r) => ({
+            phone: r.phone,
+            success: false,
+            error: e instanceof Error ? e.message : 'Request failed',
+          })),
+        }),
       })
     } finally {
       setSending(false)
@@ -443,6 +554,69 @@ export default function BulkWhatsAppPage() {
                 ))}
               </div>
             )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                  <Clock className="h-4 w-4" />
+                  Delay between messages (ms)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={60000}
+                  step={100}
+                  value={delayMs}
+                  onChange={(e) => setDelayMs(Math.max(0, Math.min(60000, parseInt(e.target.value, 10) || 0)))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">e.g. 250–1000 to avoid rate limits</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Schedule for (optional)</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={(e) => setScheduleAt(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">Leave empty to send now</p>
+              </div>
+            </div>
+            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
+              <p className="text-sm text-gray-600">Scheduled messages are sent by the Supabase Edge Function <code className="text-xs bg-gray-100 px-1 rounded">process-whatsapp-scheduled</code>. Deploy it and run migration 032 so pg_cron calls it every minute; or use the button below to run it now.</p>
+              <button
+                type="button"
+                onClick={processScheduledNow}
+                disabled={processingScheduled}
+                className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {processingScheduled ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
+                Process scheduled broadcasts now
+              </button>
+              {processScheduledResult != null && (
+                <div className="text-sm">
+                  {processScheduledResult.results?.some((r) => r.error) && (
+                    <p className="text-red-600 font-medium">
+                      {processScheduledResult.results.find((r) => r.error)?.error ?? 'Error'}
+                    </p>
+                  )}
+                  {processScheduledResult.message && (
+                    <p className="text-gray-700">{processScheduledResult.message}</p>
+                  )}
+                  {processScheduledResult.debug && (processScheduledResult.debug.pendingCount != null || processScheduledResult.debug.dueCount != null) && (
+                    <p className="text-gray-500 text-xs mt-1">
+                      Pending: {processScheduledResult.debug.pendingCount ?? 0}, due now: {processScheduledResult.debug.dueCount ?? 0}
+                    </p>
+                  )}
+                  {processScheduledResult.processed > 0 && (
+                    <p className="text-gray-700">
+                      Processed {processScheduledResult.processed}:{' '}
+                      {processScheduledResult.results?.map((r) => (r.sent != null ? `${r.sent} sent` : r.error ?? r.status)).join(', ') ?? ''}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <p className="text-sm text-amber-600">
@@ -454,17 +628,26 @@ export default function BulkWhatsAppPage() {
       {sendResult && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-sm text-gray-700">
-              <span className="font-semibold text-green-600">{sendResult.sent} sent</span>
-              {sendResult.failed > 0 && (
-                <span className="text-red-600 font-semibold ml-2">{sendResult.failed} failed</span>
-              )}
-            </p>
+            {sendResult.scheduled ? (
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold text-green-600">Scheduled</span>
+                {sendResult.scheduleMessage && <span className="ml-2 text-gray-600">{sendResult.scheduleMessage}</span>}
+              </p>
+            ) : sendResult.scheduleError ? (
+              <p className="text-sm text-red-600">{sendResult.scheduleError}</p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold text-green-600">{sendResult.sent} sent</span>
+                {sendResult.failed > 0 && (
+                  <span className="text-red-600 font-semibold ml-2">{sendResult.failed} failed</span>
+                )}
+              </p>
+            )}
             <button type="button" onClick={clearSendResult} className="text-sm text-gray-500 hover:text-gray-700 underline">
               Dismiss
             </button>
           </div>
-          {sendResult.failed > 0 && (
+          {!sendResult.scheduled && !sendResult.scheduleError && sendResult.failed > 0 && (
             <>
               {sendResult.results.some((r) => r.error && (r.error.includes('131030') || r.error.toLowerCase().includes('not in allowed list'))) && (
                 <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
@@ -512,8 +695,8 @@ export default function BulkWhatsAppPage() {
               disabled={count === 0 || !selectedTemplateId || sending || (templateParamCount > 0 && templateParamValues.slice(0, templateParamCount).some((v) => !v?.trim())) || (templateHeaderParamCount > 0 && templateHeaderParamValues.slice(0, templateHeaderParamCount).some((v) => !v?.trim()))}
               className="flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A] disabled:opacity-50 disabled:pointer-events-none"
             >
-              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {sending ? 'Sending…' : 'Send template broadcast'}
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : scheduleAt.trim() ? <Clock className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+              {sending ? (scheduleAt.trim() ? 'Scheduling…' : 'Sending…') : scheduleAt.trim() ? 'Schedule broadcast' : 'Send template broadcast'}
             </button>
           ) : (
             <span className="text-sm text-gray-500">Configure WhatsApp API to send template broadcasts.</span>

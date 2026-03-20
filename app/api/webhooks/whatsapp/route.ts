@@ -13,7 +13,7 @@ function normalizePhone(phone: string): string {
   return d.length > 10 ? d : '91' + d.slice(-10)
 }
 
-type StatusValue = 'sent' | 'delivered' | 'read'
+type StatusValue = 'sent' | 'delivered' | 'read' | 'failed'
 
 export async function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get('hub.mode')
@@ -82,7 +82,6 @@ export async function POST(request: NextRequest) {
         for (const st of statuses) {
           const status = String(st.status ?? '').toLowerCase()
           if (status === 'failed') {
-            // Meta sends delivery failure reason here - log for debugging
             const errs = (st as { errors?: Array<{ code: number; title: string; message?: string }> }).errors ?? []
             console.error('[webhooks/whatsapp] Message delivery FAILED:', {
               messageId: st.id,
@@ -90,6 +89,9 @@ export async function POST(request: NextRequest) {
               errors: errs,
               hint: 'Common: 131047=user not opted in / 24h window closed, 131026=template rejected, 131031=recipient blocked',
             })
+            updateMessageStatus(st.id, 'failed').catch((err) =>
+              console.warn('[webhooks/whatsapp] updateMessageStatus failed:', err)
+            )
           } else if (['sent', 'delivered', 'read'].includes(status)) {
             updateMessageStatus(st.id, status as StatusValue).catch((err) =>
               console.warn('[webhooks/whatsapp] updateMessageStatus failed:', err)

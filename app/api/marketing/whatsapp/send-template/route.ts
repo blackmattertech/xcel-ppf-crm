@@ -1,28 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { sendTemplateBulk, listMessageTemplatesWithDetails, getTemplateBodyVariableCount } from '@/backend/services/whatsapp.service'
+import { sendTemplateBulk } from '@/backend/services/whatsapp.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
-import { getTemplateById, getTemplateByName, getTemplateByNameAndLanguage } from '@/backend/services/whatsapp-template.service'
+import { resolveBroadcastPayload, BroadcastValidationError } from '@/backend/services/whatsapp-broadcast-resolve'
 import { z } from 'zod'
-
-/** True if two names are likely the same (e.g. welcom vs welcome). */
-function templateNameSimilar(a: string, b: string): boolean {
-  const x = a.toLowerCase().trim()
-  const y = b.toLowerCase().trim()
-  if (x === y) return true
-  if (Math.abs(x.length - y.length) > 1) return false
-  if (x.length === y.length) {
-    let diff = 0
-    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) diff++
-    return diff <= 1
-  }
-  const [short, long] = x.length < y.length ? [x, y] : [y, x]
-  for (let i = 0; i < long.length; i++) {
-    if (long.slice(0, i) + long.slice(i + 1) === short) return true
-  }
-  return false
-}
 
 const sendSchema = z.object({
   templateId: z.string().uuid().optional(),
@@ -32,6 +14,7 @@ const sendSchema = z.object({
   bodyParameters: z.array(z.string()).optional(),
   headerParameters: z.array(z.string()).optional(),
   defaultCountryCode: z.string().max(4).optional().default('91'),
+  delayMs: z.number().min(0).max(60000).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -62,150 +45,35 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  let templateName: string
-  let templateLanguage: string
-  /** Resolved from DB when using templateId or templateName (used for header_format, header_media_url). */
-  let dbTemplate: Awaited<ReturnType<typeof getTemplateById>> = null
-
-  if (parsed.data.templateId) {
-    const template = await getTemplateById(parsed.data.templateId)
-    if (!template) {
-      return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+  let payload
+  try {
+    payload = await resolveBroadcastPayload(parsed.data, wabaConfig)
+  } catch (err) {
+    if (err instanceof BroadcastValidationError) {
+      return NextResponse.json(err.body, { status: err.statusCode })
     }
-    if (template.status !== 'approved') {
-      return NextResponse.json(
-        { error: 'Only approved templates can be used for broadcast. Current status: ' + template.status },
-        { status: 400 }
-      )
-    }
-    dbTemplate = template
-    templateName = template.name
-    templateLanguage = template.language
-  } else if (parsed.data.templateName) {
-    templateName = parsed.data.templateName
-    const providedLang = (parsed.data.templateLanguage ?? '').trim().replace(/-/g, '_')
-    if (providedLang) {
-      templateLanguage = providedLang
-      dbTemplate = await getTemplateByNameAndLanguage(templateName, templateLanguage)
-    } else {
-      const localTemplate = await getTemplateByName(templateName)
-      templateLanguage = (localTemplate?.language ?? 'en').trim().replace(/-/g, '_') || 'en'
-      dbTemplate = localTemplate ?? (await getTemplateByNameAndLanguage(templateName, templateLanguage))
-    }
-  } else {
-    return NextResponse.json({ error: 'Provide templateId or templateName' }, { status: 400 })
-  }
-
-  // Avoid #132001: ensure this template name+language exists in Meta (or suggest correct name)
-  const metaList = await listMessageTemplatesWithDetails(wabaConfig)
-  const norm = (s: string) => (s ?? '').trim().replace(/-/g, '_').toLowerCase()
-  const metaTemplate = metaList.templates?.find(
-    (m) => m.name === templateName && norm(m.language ?? '') === norm(templateLanguage)
-  )
-  const existsInMeta = !!metaTemplate
-  // Meta returns "accepted" but won't deliver if template is not APPROVED
-  const approvedStatuses = ['approved', 'active']
-  if (metaTemplate && !approvedStatuses.includes((metaTemplate.status ?? '').toLowerCase())) {
-    return NextResponse.json(
-      {
-        error: `Template "${templateName}" is not approved yet. Current status: ${metaTemplate.status}. Meta accepts the send request but will not deliver until the template is approved. Check WhatsApp Manager → Message templates and wait for approval.`,
-        code: 'TEMPLATE_NOT_APPROVED',
-        status: metaTemplate.status,
-      },
-      { status: 400 }
-    )
-  }
-  if (!existsInMeta) {
-    // Check Meta list for a similar template name (e.g. welcome vs welcom)
-    const similar = metaList.templates?.find((m) => templateNameSimilar(templateName, m.name))
-    if (similar) {
-      return NextResponse.json(
-        {
-          error: `Template "${templateName}" does not exist in Meta for language ${templateLanguage}. Did you mean "${similar.name}"? Pick the option "${similar.name} (${similar.language}) — from Meta" in the dropdown.`,
-          code: 'TEMPLATE_NAME_MISMATCH',
-          suggestedName: similar.name,
-          suggestedLanguage: similar.language,
-        },
-        { status: 400 }
-      )
-    }
-    // Known typo: "welcom" → "welcome" (block even when Meta list is empty)
-    if (templateName.toLowerCase() === 'welcom') {
-      return NextResponse.json(
-        {
-          error: `Template name "welcom" is likely a typo. In Meta the template is usually named "welcome". Go to Message templates → Sync, then pick "welcome (en_US) — from Meta" in the dropdown (or create a template named exactly "welcome" in Meta).`,
-          code: 'TEMPLATE_NAME_MISMATCH',
-          suggestedName: 'welcome',
-          suggestedLanguage: templateLanguage,
-        },
-        { status: 400 }
-      )
-    }
-  }
-
-  // #132000: template body may have {{1}}, {{2}} etc.; we must send exactly that many parameters
-  const bodyText = dbTemplate?.body_text ?? metaTemplate?.body_text ?? ''
-  const expectedBodyCount = getTemplateBodyVariableCount(bodyText)
-  let bodyParams = parsed.data.bodyParameters ?? []
-  if (expectedBodyCount === 0) {
-    bodyParams = []
-  } else {
-    if (bodyParams.length < expectedBodyCount) {
-      const placeholders = ['Customer', 'Offer', 'Code', 'Value', 'Details']
-      bodyParams = [...bodyParams]
-      while (bodyParams.length < expectedBodyCount) {
-        bodyParams.push(placeholders[bodyParams.length] ?? `Param${bodyParams.length + 1}`)
-      }
-    } else if (bodyParams.length > expectedBodyCount) {
-      bodyParams = bodyParams.slice(0, expectedBodyCount)
-    }
-  }
-  const recipients = parsed.data.recipients.map((r) => ({
-    phone: r.phone,
-    bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
-  }))
-
-  // When sending, we must use link (URL). Resumable Upload handle is not valid as id for send.
-  const headerFormat = dbTemplate?.header_format ?? metaTemplate?.header_format ?? undefined
-  const requestHeaderParams = parsed.data.headerParameters && parsed.data.headerParameters.length > 0 ? parsed.data.headerParameters : undefined
-  const headerMediaUrl = dbTemplate?.header_media_url?.trim()
-  const headerMediaId = (dbTemplate as { header_media_id?: string | null } | undefined)?.header_media_id?.trim()
-  const hasUrl = headerMediaUrl && /^https?:\/\//i.test(headerMediaUrl)
-  const headerParameters =
-    requestHeaderParams ??
-    (headerFormat && headerFormat !== 'TEXT'
-      ? (hasUrl ? [headerMediaUrl!] : headerMediaId ? [headerMediaId] : undefined)
-      : undefined)
-
-  if (headerFormat && headerFormat !== 'TEXT' && (!headerParameters || headerParameters.length === 0)) {
-    return NextResponse.json(
-      {
-        error: 'This template has an image/video/document header. Add a public URL in the template (header_media_url) or pass headerParameters with one URL in the request.',
-        code: 'MISSING_HEADER_MEDIA',
-      },
-      { status: 400 }
-    )
+    throw err
   }
 
   const result = await sendTemplateBulk(
-    recipients,
-    templateName,
-    templateLanguage,
+    payload.recipients,
+    payload.templateName,
+    payload.templateLanguage,
     {
-      delayMs: 250,
-      defaultCountryCode: parsed.data.defaultCountryCode,
-      headerParameters,
-      headerFormat,
-      headerMediaId: headerMediaId || undefined,
+      delayMs: payload.delayMs,
+      defaultCountryCode: payload.defaultCountryCode,
+      headerParameters: payload.headerParameters,
+      headerFormat: payload.headerFormat,
+      headerMediaId: payload.headerMediaId ?? undefined,
       config,
     }
   )
 
-  const bodyForChat = `[Template: ${templateName}]`
+  const bodyForChat = `[Template: ${payload.templateName}]`
   for (let i = 0; i < result.results.length; i++) {
     const r = result.results[i]
     if (r.success) {
-      const recipient = recipients[i]
+      const recipient = payload.recipients[i]
       await saveOutgoingMessage({
         leadId: null,
         phone: recipient?.phone ?? r.phone,

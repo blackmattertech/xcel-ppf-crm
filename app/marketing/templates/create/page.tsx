@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, CheckCircle, Megaphone, Bell, Key } from 'lucide-react'
+import { ArrowLeft, Loader2, CheckCircle, Megaphone, Bell, Key, Upload } from 'lucide-react'
 import { TemplatePreview } from '../../_components/TemplatePreview'
 import { META_LANGUAGES } from '../../_lib/utils'
 import { cachedFetch } from '@/lib/api-client'
@@ -47,6 +47,14 @@ const BUTTON_TYPES = [
 type ButtonEntry = { type: string; text: string; example?: string; url?: string; phoneNumber?: string }
 const MAX_BUTTONS = 10
 
+function buildBodyVariables(text: string): Array<{ kind: 'positional'; index: number; example: string }> {
+  const matches = [...text.matchAll(/\{\{(\d+)\}\}/g)]
+  const indices = Array.from(new Set(matches.map((m) => Number(m[1]))))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b)
+  return indices.map((index) => ({ kind: 'positional', index, example: `Sample ${index}` }))
+}
+
 export default function CreateTemplatePage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
@@ -58,7 +66,43 @@ export default function CreateTemplatePage() {
   const [body, setBody] = useState('')
   const [footer, setFooter] = useState('')
   const [headerText, setHeaderText] = useState('')
+  const [headerFormat, setHeaderFormat] = useState<'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'>('TEXT')
+  const [headerMediaUrl, setHeaderMediaUrl] = useState('')
+  const [headerMediaId, setHeaderMediaId] = useState('')
+  const [headerPreviewUrl, setHeaderPreviewUrl] = useState('')
+  const [headerUploading, setHeaderUploading] = useState(false)
+  const headerPreviewUrlRef = useRef<string | null>(null)
   const [buttons, setButtons] = useState<ButtonEntry[]>([])
+  const resetHeaderMedia = () => {
+    setHeaderMediaUrl('')
+    setHeaderMediaId('')
+    if (headerPreviewUrlRef.current) {
+      URL.revokeObjectURL(headerPreviewUrlRef.current)
+      headerPreviewUrlRef.current = null
+    }
+    setHeaderPreviewUrl('')
+  }
+
+  useEffect(() => {
+    if (headerFormat === 'TEXT') {
+      resetHeaderMedia()
+      return
+    }
+    setHeaderText('')
+  }, [headerFormat])
+
+  useEffect(() => {
+    if (subtype !== 'STANDARD' && headerFormat !== 'TEXT') {
+      setHeaderFormat('TEXT')
+    }
+  }, [subtype, headerFormat])
+
+  useEffect(() => {
+    return () => {
+      if (headerPreviewUrlRef.current) URL.revokeObjectURL(headerPreviewUrlRef.current)
+    }
+  }, [])
+
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -96,9 +140,18 @@ export default function CreateTemplatePage() {
     setSaving(true)
     setError(null)
     const bodyText = body.trim() || 'Your message here'
+    const bodyVariables = buildBodyVariables(bodyText)
     const components: unknown[] = []
-    if (headerText) components.push({ type: 'HEADER', format: 'TEXT', text: headerText })
-    components.push({ type: 'BODY', text: bodyText, variables: [] })
+    if (headerFormat === 'TEXT' && headerText.trim()) components.push({ type: 'HEADER', format: 'TEXT', text: headerText.trim() })
+    if (headerFormat !== 'TEXT' && headerMediaId.trim()) {
+      components.push({
+        type: 'HEADER',
+        format: headerFormat,
+        headerHandle: headerMediaId.trim(),
+        headerMediaUrl: headerMediaUrl.trim() || undefined,
+      })
+    }
+    components.push({ type: 'BODY', text: bodyText, variables: bodyVariables })
     if (footer) components.push({ type: 'FOOTER', text: footer })
     components.push(...buildButtonsComponent())
     const res = await cachedFetch('/api/marketing/whatsapp/template-drafts', {
@@ -136,9 +189,18 @@ export default function CreateTemplatePage() {
     if (!draftId) return
     setSaving(true)
     setError(null)
+    const bodyVariables = buildBodyVariables(body)
     const components: unknown[] = []
-    if (headerText) components.push({ type: 'HEADER', format: 'TEXT', text: headerText })
-    components.push({ type: 'BODY', text: body, variables: [] })
+    if (headerFormat === 'TEXT' && headerText.trim()) components.push({ type: 'HEADER', format: 'TEXT', text: headerText.trim() })
+    if (headerFormat !== 'TEXT' && headerMediaId.trim()) {
+      components.push({
+        type: 'HEADER',
+        format: headerFormat,
+        headerHandle: headerMediaId.trim(),
+        headerMediaUrl: headerMediaUrl.trim() || undefined,
+      })
+    }
+    components.push({ type: 'BODY', text: body, variables: bodyVariables })
     if (footer) components.push({ type: 'FOOTER', text: footer })
     components.push(...buildButtonsComponent())
     const res = await cachedFetch(`/api/marketing/whatsapp/template-drafts/${draftId}`, {
@@ -166,6 +228,7 @@ export default function CreateTemplatePage() {
   }
 
   const handleStep1Next = () => {
+    if (category === 'AUTHENTICATION') setHeaderFormat('TEXT')
     setStep(2)
   }
 
@@ -180,6 +243,10 @@ export default function CreateTemplatePage() {
   }
 
   const handleStep3Next = async () => {
+    if (headerFormat !== 'TEXT' && !headerMediaId.trim()) {
+      setError(`Upload a ${headerFormat.toLowerCase()} header file before continuing.`)
+      return
+    }
     await updateDraft()
     if (!error) setStep(4)
   }
@@ -199,7 +266,13 @@ export default function CreateTemplatePage() {
     const data = await res.json()
     setSubmitting(false)
     if (data.error) {
-      setError(data.error)
+      const details = Array.isArray(data.errors) && data.errors.length > 0
+        ? `\n${data.errors.map((e: string) => `- ${e}`).join('\n')}`
+        : ''
+      const metaDetails = data.metaResponse?.error?.message
+        ? `\nMeta: ${data.metaResponse.error.message}${data.metaResponse.error.code ? ` (code ${data.metaResponse.error.code})` : ''}`
+        : ''
+      setError(`${data.error}${details}${metaDetails}`)
       return
     }
     const templateId = data.template?.id
@@ -210,7 +283,7 @@ export default function CreateTemplatePage() {
   const nameValid = /^[a-z0-9_]+$/.test(name) && name.length <= 512
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/marketing/templates" className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900">
           <ArrowLeft className="h-4 w-4" /> Back to templates
@@ -224,6 +297,8 @@ export default function CreateTemplatePage() {
           <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</div>
         )}
 
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-8 items-start">
+          <div>
         {step === 1 && (
           <>
             <p className="text-sm text-gray-600 mb-4">Choose the category that best describes your message template. Then select the type of message you want to send.</p>
@@ -354,6 +429,28 @@ export default function CreateTemplatePage() {
             <div className="space-y-4">
               {subtype === 'STANDARD' && (
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Header type</label>
+                  <select
+                    value={headerFormat}
+                    onChange={(e) => {
+                      const next = e.target.value as typeof headerFormat
+                      setHeaderFormat(next)
+                    }}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="TEXT">Text</option>
+                    {category !== 'AUTHENTICATION' && (
+                      <>
+                        <option value="IMAGE">Image</option>
+                        <option value="VIDEO">Video</option>
+                        <option value="DOCUMENT">Document</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              )}
+              {subtype === 'STANDARD' && headerFormat === 'TEXT' && (
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Header (optional)</label>
                   <input
                     type="text"
@@ -363,6 +460,55 @@ export default function CreateTemplatePage() {
                     maxLength={60}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
+                </div>
+              )}
+              {subtype === 'STANDARD' && (headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Upload {headerFormat.toLowerCase()} attachment
+                  </label>
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 cursor-pointer">
+                    <input
+                      type="file"
+                      accept={headerFormat === 'IMAGE' ? 'image/jpeg,image/png,image/gif,image/webp' : headerFormat === 'VIDEO' ? 'video/mp4,video/x-m4v' : 'application/pdf'}
+                      className="sr-only"
+                      disabled={headerUploading}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        if (headerPreviewUrlRef.current) {
+                          URL.revokeObjectURL(headerPreviewUrlRef.current)
+                          headerPreviewUrlRef.current = null
+                        }
+                        const objectUrl = URL.createObjectURL(f)
+                        headerPreviewUrlRef.current = objectUrl
+                        setHeaderPreviewUrl(objectUrl)
+                        setHeaderUploading(true)
+                        setError(null)
+                        const fd = new FormData()
+                        fd.append('file', f)
+                        try {
+                          const res = await cachedFetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
+                          const data = await res.json() as { handle?: string; id?: string; url?: string; error?: string }
+                          if (data.handle || data.id) {
+                            const mediaId = data.id ?? data.handle ?? ''
+                            setHeaderMediaId(mediaId)
+                            setHeaderMediaUrl(data.url ?? mediaId)
+                          } else {
+                            setError(data.error ?? 'Upload failed')
+                          }
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Upload failed')
+                        } finally {
+                          setHeaderUploading(false)
+                          e.target.value = ''
+                        }
+                      }}
+                    />
+                    {headerUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {headerUploading ? 'Uploading...' : `Choose ${headerFormat.toLowerCase()} file`}
+                  </label>
+                  {headerMediaId && <p className="mt-1.5 text-xs text-green-600">Uploaded to Meta ✓</p>}
                 </div>
               )}
               <div>
@@ -472,42 +618,44 @@ export default function CreateTemplatePage() {
         {step === 4 && (
           <>
             <h2 className="text-sm font-medium text-gray-700 mb-2">Step 4: Preview & submit</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <TemplatePreview
-                  headerFormat="TEXT"
-                  headerText={headerText}
-                  headerMediaUrl=""
-                  body={body}
-                  footer={footer}
-                  buttons={buttons.filter((b) => b.text.trim()).map((b) => ({ type: b.type, text: b.text.trim(), example: b.example }))}
-                />
-              </div>
-              <div>
-                {needsCatalog && catalogConnected === false && (
-                  <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-                    Connect ecommerce catalog in Meta Business Manager before submitting.
-                  </div>
-                )}
-                <p className="text-sm text-gray-600 mb-4">
-                  Submit for Meta review. Only approved templates can be sent.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting || (needsCatalog && !catalogConnected)}
-                  className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50 inline-flex items-center gap-2"
-                >
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                  Submit for review
-                </button>
-              </div>
+            <div>
+              {needsCatalog && catalogConnected === false && (
+                <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                  Connect ecommerce catalog in Meta Business Manager before submitting.
+                </div>
+              )}
+              <p className="text-sm text-gray-600 mb-4">
+                Submit for Meta review. Only approved templates can be sent.
+              </p>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting || (needsCatalog && !catalogConnected)}
+                className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                Submit for review
+              </button>
             </div>
             <div className="mt-6">
               <button type="button" onClick={() => setStep(3)} className="text-sm font-medium text-gray-600 hover:text-gray-900">Back</button>
             </div>
           </>
         )}
+          </div>
+          <div className="lg:sticky lg:top-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">Live preview</p>
+            <TemplatePreview
+              headerFormat={headerFormat}
+              headerText={headerText}
+              headerMediaUrl={headerMediaUrl}
+              headerPreviewUrl={headerPreviewUrl}
+              body={body}
+              footer={footer}
+              buttons={buttons.filter((b) => b.text.trim()).map((b) => ({ type: b.type, text: b.text.trim(), example: b.example }))}
+            />
+          </div>
+        </div>
       </div>
     </div>
   )

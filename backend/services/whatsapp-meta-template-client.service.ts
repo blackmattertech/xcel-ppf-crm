@@ -40,12 +40,16 @@ export async function createTemplate(params: CreateTemplateParams): Promise<Crea
   const data = (await res.json().catch(() => ({}))) as {
     id?: string
     status?: string
-    error?: { message: string; code?: number }
+    error?: { message: string; code?: number; error_user_title?: string; error_user_msg?: string }
   }
   if (!res.ok) {
+    const err = data?.error
+    const userTitle = err?.error_user_title?.trim()
+    const userMsg = err?.error_user_msg?.trim()
+    const enriched = [err?.message ?? `HTTP ${res.status}`, userTitle, userMsg].filter(Boolean).join(' - ')
     return {
       success: false,
-      error: data?.error?.message ?? `HTTP ${res.status}`,
+      error: enriched,
       metaResponse: data,
     }
   }

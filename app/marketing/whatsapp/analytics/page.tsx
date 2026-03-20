@@ -12,6 +12,11 @@ import {
   FileText,
   Calendar,
   ArrowLeft,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  RotateCcw,
+  Phone,
 } from 'lucide-react'
 import {
   PieChart,
@@ -35,6 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
   delivered: '#128C7E',
   read: '#34B7F1',
   pending: '#f59e0b',
+  failed: '#ef4444',
 }
 
 interface WhatsAppAnalyticsData {
@@ -52,11 +58,31 @@ const PERIOD_OPTIONS = [
   { label: 'Last 90 days', days: 90 },
 ] as const
 
+interface DeliveryStatusItem {
+  phone: string
+  lead_id: string | null
+  lead_name: string | null
+}
+interface DeliveryStatusResponse {
+  byStatus: Record<string, { count: number; items: DeliveryStatusItem[] }>
+  summary: {
+    pending: number
+    sent: number
+    delivered: number
+    read: number
+    failed: number
+    notDelivered: number
+    notRead: number
+  }
+}
+
 export default function WhatsAppAnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<WhatsAppAnalyticsData | null>(null)
+  const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [periodDays, setPeriodDays] = useState<number>(30)
+  const [expandedStatus, setExpandedStatus] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -67,15 +93,23 @@ export default function WhatsAppAnalyticsPage() {
     const startDate = start.toISOString()
     const endDate = end.toISOString()
 
-    fetch(
-      `/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-      { credentials: 'include' }
-    )
-      .then((res) => {
+    Promise.all([
+      fetch(
+        `/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+        { credentials: 'include' }
+      ).then((res) => {
         if (!res.ok) throw new Error('Failed to load analytics')
         return res.json()
+      }),
+      fetch(
+        `/api/marketing/whatsapp/delivery-status?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+        { credentials: 'include' }
+      ).then((res) => (res.ok ? res.json() : { byStatus: {}, summary: { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, notDelivered: 0, notRead: 0 } })),
+    ])
+      .then(([analyticsData, deliveryData]) => {
+        setData(analyticsData)
+        setDeliveryStatus(deliveryData)
       })
-      .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
   }, [periodDays])
@@ -359,6 +393,87 @@ export default function WhatsAppAnalyticsPage() {
               <p className="text-sm text-gray-500 py-8 text-center">No template messages sent in this period</p>
             )}
           </section>
+
+          {/* Delivery status: leads/numbers not delivered, not read, failed */}
+          {deliveryStatus && (
+            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm overflow-hidden">
+              <h2 className="text-base font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                Leads / numbers by delivery status
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Distinct leads or phone numbers with at least one outgoing message in this status (outgoing only).
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                  <p className="text-sm font-medium text-amber-800">Not delivered</p>
+                  <p className="text-2xl font-bold text-amber-900">{deliveryStatus.summary.notDelivered}</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Pending or sent only</p>
+                </div>
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
+                  <p className="text-sm font-medium text-blue-800">Not read</p>
+                  <p className="text-2xl font-bold text-blue-900">{deliveryStatus.summary.notRead}</p>
+                  <p className="text-xs text-blue-700 mt-0.5">Pending, sent, or delivered</p>
+                </div>
+                <div className="rounded-lg border border-red-200 bg-red-50/50 p-4">
+                  <p className="text-sm font-medium text-red-800">Failed</p>
+                  <p className="text-2xl font-bold text-red-900">{deliveryStatus.summary.failed}</p>
+                  <p className="text-xs text-red-700 mt-0.5">Delivery failed (Meta)</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { key: 'failed', label: 'Failed', summary: deliveryStatus.summary.failed, color: 'red' },
+                  { key: 'pending', label: 'Pending', summary: deliveryStatus.summary.pending, color: 'amber' },
+                  { key: 'sent', label: 'Sent (not delivered)', summary: deliveryStatus.summary.sent, color: 'gray' },
+                  { key: 'delivered', label: 'Delivered (not read)', summary: deliveryStatus.summary.delivered, color: 'blue' },
+                  { key: 'read', label: 'Read', summary: deliveryStatus.summary.read, color: 'green' },
+                ].map(({ key, label, summary }) => {
+                  const isExpanded = expandedStatus === key
+                  const items = deliveryStatus.byStatus[key]?.items ?? []
+                  return (
+                    <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStatus(isExpanded ? null : key)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+                      >
+                        <span className="flex items-center gap-2 font-medium text-gray-900">
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          {label}
+                        </span>
+                        <span className="text-lg font-bold text-gray-700">{summary}</span>
+                      </button>
+                      {isExpanded && items.length > 0 && (
+                        <div className="border-t border-gray-100 max-h-48 overflow-y-auto bg-gray-50/50">
+                          <ul className="divide-y divide-gray-100">
+                            {items.map((item, i) => (
+                              <li key={i} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                                <span className="truncate text-gray-900">{item.lead_name || item.phone}</span>
+                                <span className="font-mono text-gray-500 shrink-0">{item.phone}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              {deliveryStatus.summary.failed > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <Link
+                    href="/marketing/bulk-whatsapp?retry=failed"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#20BA5A]"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Retry failed campaign
+                  </Link>
+                  <p className="text-xs text-gray-500 mt-2">Opens Bulk WhatsApp with failed numbers pre-filled so you can resend.</p>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Period note */}
           <p className="text-xs text-gray-500">

@@ -27,6 +27,11 @@ export interface SendResult {
   sent: number
   failed: number
   results: Array<{ phone: string; success: boolean; error?: string; metaResponse?: unknown }>
+  /** Set when user scheduled instead of send now */
+  scheduled?: boolean
+  scheduledAt?: string
+  scheduleMessage?: string
+  scheduleError?: string
 }
 
 export interface TemplateForOverview {
