@@ -9,13 +9,32 @@ function parseTemplateName(body: string | null): string | null {
   return m ? m[1].trim() || null : null
 }
 
+export interface TemplateDeliveryStatRow {
+  template: string
+  pending: number
+  sent: number
+  delivered: number
+  read: number
+  failed: number
+  other: number
+  total: number
+}
+
 export interface WhatsAppAnalyticsResponse {
   messagesByDirection: Record<string, number>
   messagesByStatus: Record<string, number>
   messagesOverTime: Array<{ date: string; sent: number; received: number; total: number }>
   messagesByTemplate: Array<{ template: string; count: number }>
+  /** Outgoing template-tagged rows only: counts per Meta-style status per template */
+  templateDeliveryStats: TemplateDeliveryStatRow[]
   totals: { sent: number; received: number; total: number }
   period: { startDate: string; endDate: string }
+}
+
+const KNOWN_OUT_STATUSES = new Set(['pending', 'sent', 'delivered', 'read', 'failed'])
+
+function emptyStatusBuckets(): Record<'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'other', number> {
+  return { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, other: 0 }
 }
 
 export async function GET(request: NextRequest) {
@@ -42,6 +61,7 @@ export async function GET(request: NextRequest) {
           messagesByStatus: {},
           messagesOverTime: [],
           messagesByTemplate: [],
+          templateDeliveryStats: [],
           totals: { sent: 0, received: 0, total: 0 },
           period: { startDate, endDate },
         } satisfies WhatsAppAnalyticsResponse)
@@ -54,6 +74,7 @@ export async function GET(request: NextRequest) {
     const messagesByDirection: Record<string, number> = { in: 0, out: 0 }
     const messagesByStatus: Record<string, number> = {}
     const templateCounts: Record<string, number> = {}
+    const templateByStatus: Record<string, ReturnType<typeof emptyStatusBuckets>> = {}
     const start = new Date(startDate)
     const end = new Date(endDate)
     const dayMap: Record<string, { sent: number; received: number }> = {}
@@ -72,6 +93,13 @@ export async function GET(request: NextRequest) {
         const template = parseTemplateName(m.body)
         if (template) {
           templateCounts[template] = (templateCounts[template] ?? 0) + 1
+          if (!templateByStatus[template]) {
+            templateByStatus[template] = { ...emptyStatusBuckets() }
+          }
+          const bucket: keyof ReturnType<typeof emptyStatusBuckets> = KNOWN_OUT_STATUSES.has(status)
+            ? (status as keyof ReturnType<typeof emptyStatusBuckets>)
+            : 'other'
+          templateByStatus[template][bucket] += 1
         }
       }
 
@@ -95,6 +123,19 @@ export async function GET(request: NextRequest) {
       .map(([template, count]) => ({ template, count }))
       .sort((a, b) => b.count - a.count)
 
+    const templateDeliveryStats: TemplateDeliveryStatRow[] = Object.entries(templateByStatus)
+      .map(([template, b]) => {
+        const pending = b.pending ?? 0
+        const sent = b.sent ?? 0
+        const delivered = b.delivered ?? 0
+        const read = b.read ?? 0
+        const failed = b.failed ?? 0
+        const other = b.other ?? 0
+        const total = pending + sent + delivered + read + failed + other
+        return { template, pending, sent, delivered, read, failed, other, total }
+      })
+      .sort((a, b) => b.total - a.total)
+
     const totals = {
       sent: messagesByDirection.out ?? 0,
       received: messagesByDirection.in ?? 0,
@@ -106,6 +147,7 @@ export async function GET(request: NextRequest) {
       messagesByStatus,
       messagesOverTime,
       messagesByTemplate,
+      templateDeliveryStats,
       totals,
       period: { startDate, endDate },
     }
