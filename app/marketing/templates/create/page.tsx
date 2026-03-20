@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, CheckCircle, Megaphone, Bell, Key, Upload } from 'lucide-react'
+import { ArrowLeft, Loader2, CheckCircle, Megaphone, Bell, Key, Upload, Sparkles } from 'lucide-react'
 import { TemplatePreview } from '../../_components/TemplatePreview'
 import { META_LANGUAGES } from '../../_lib/utils'
 import { cachedFetch } from '@/lib/api-client'
+import { btnPrimaryWa, cardShellFlat, fieldInput, heroShell, sectionLabel } from '../../_lib/marketing-ui'
 
 const CATEGORIES = [
   { value: 'MARKETING' as const, label: 'Marketing', help: 'Engage customers with promotions, offers, and announcements', icon: Megaphone },
@@ -283,28 +284,56 @@ export default function CreateTemplatePage() {
   const nameValid = /^[a-z0-9_]+$/.test(name) && name.length <= 512
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/marketing/templates" className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900">
-          <ArrowLeft className="h-4 w-4" /> Back to templates
+    <div className="mx-auto max-w-6xl space-y-6 pb-10">
+      <div className={heroShell}>
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#25D366]/20 blur-3xl" />
+        <Link
+          href="/marketing/templates"
+          className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition hover:bg-white/20"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Templates
         </Link>
+        <div className="relative mt-4">
+          <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300/90">
+            <Sparkles className="h-3.5 w-3.5" />
+            Wizard
+          </p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Create template</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
+            Step through category, name, content, then submit to Meta for review.
+          </p>
+        </div>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold text-gray-900 mb-6">Create template</h1>
+      <div className={cardShellFlat}>
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          {[1, 2, 3, 4].map((s) => (
+            <span
+              key={s}
+              className={`rounded-full px-3 py-1 text-xs font-bold ${
+                step === s ? 'bg-emerald-600 text-white shadow-sm' : step > s ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {s}
+            </span>
+          ))}
+          <span className="text-xs font-medium text-slate-500">Step {step} of 4</span>
+        </div>
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</div>
+          <div className="mb-6 rounded-xl border border-red-200/80 bg-red-50/90 px-4 py-3 text-sm font-medium text-red-900">{error}</div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-8 items-start">
           <div>
         {step === 1 && (
           <>
-            <p className="text-sm text-gray-600 mb-4">Choose the category that best describes your message template. Then select the type of message you want to send.</p>
+            <p className="mb-4 text-sm leading-relaxed text-slate-600">
+              Choose the category that best describes your message template. Then select the type of message you want to send.
+            </p>
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <label className={`mb-2 block ${sectionLabel}`}>Category</label>
                 <div className="flex flex-wrap gap-2">
                   {CATEGORIES.map((c) => {
                     const Icon = c.icon
@@ -313,8 +342,10 @@ export default function CreateTemplatePage() {
                         key={c.value}
                         type="button"
                         onClick={() => { setCategory(c.value); setSubtype(SUBTYPES[c.value]?.[0]?.value ?? 'STANDARD') }}
-                        className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
-                          category === c.value ? 'border-[#ed1b24] bg-red-50 text-[#ed1b24]' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                        className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                          category === c.value
+                            ? 'border-emerald-500/70 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-500/20'
+                            : 'border-slate-200 bg-slate-50/80 text-slate-700 hover:border-slate-300 hover:bg-white'
                         }`}
                       >
                         {Icon && <Icon className="h-4 w-4" />}
@@ -326,13 +357,15 @@ export default function CreateTemplatePage() {
                 <p className="mt-1.5 text-xs text-gray-500">{CATEGORIES.find((c) => c.value === category)?.help}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Message template type</label>
+                <label className={`mb-2 block ${sectionLabel}`}>Message template type</label>
                 <div className="space-y-3">
                   {subtypes.map((s) => (
                     <label
                       key={s.value}
-                      className={`flex gap-3 rounded-xl border p-4 cursor-pointer transition-colors ${
-                        subtype === s.value ? 'border-[#ed1b24] bg-red-50/50' : 'border-gray-200 hover:bg-gray-50'
+                      className={`flex cursor-pointer gap-3 rounded-2xl border p-4 transition-all ${
+                        subtype === s.value
+                          ? 'border-emerald-500/50 bg-emerald-50/50 ring-1 ring-emerald-500/15'
+                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/80'
                       }`}
                     >
                       <input
@@ -341,27 +374,27 @@ export default function CreateTemplatePage() {
                         value={s.value}
                         checked={subtype === s.value}
                         onChange={() => setSubtype(s.value)}
-                        className="mt-1 h-4 w-4 border-gray-300 text-[#ed1b24] focus:ring-[#ed1b24]"
+                        className="mt-1 h-4 w-4 border-slate-300 text-emerald-600 focus:ring-emerald-500/30"
                       />
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium text-gray-900">{s.label}</span>
-                        <p className="mt-0.5 text-sm text-gray-600">{s.description}</p>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-semibold text-slate-900">{s.label}</span>
+                        <p className="mt-0.5 text-sm text-slate-600">{s.description}</p>
                       </div>
                     </label>
                   ))}
                 </div>
                 {selectedSubtypeInfo && (selectedSubtypeInfo.goodFor?.length || selectedSubtypeInfo.customize?.length) && (
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4">
+                  <div className="mt-4 grid grid-cols-1 gap-4 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 md:grid-cols-2">
                     {selectedSubtypeInfo.goodFor && selectedSubtypeInfo.goodFor.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">This template is good for</p>
-                        <p className="text-sm text-gray-700">{selectedSubtypeInfo.goodFor.join(', ')}</p>
+                        <p className={`mb-1 ${sectionLabel}`}>This template is good for</p>
+                        <p className="text-sm text-slate-700">{selectedSubtypeInfo.goodFor.join(', ')}</p>
                       </div>
                     )}
                     {selectedSubtypeInfo.customize && selectedSubtypeInfo.customize.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Template areas you can customize</p>
-                        <p className="text-sm text-gray-700">{selectedSubtypeInfo.customize.join(', ')}</p>
+                        <p className={`mb-1 ${sectionLabel}`}>Template areas you can customize</p>
+                        <p className="text-sm text-slate-700">{selectedSubtypeInfo.customize.join(', ')}</p>
                       </div>
                     )}
                   </div>
@@ -369,13 +402,8 @@ export default function CreateTemplatePage() {
               </div>
             </div>
             <div className="mt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={handleStep1Next}
-                disabled={saving}
-                className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin inline" /> : 'Next'}
+              <button type="button" onClick={handleStep1Next} disabled={saving} className={btnPrimaryWa}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Next'}
               </button>
             </div>
           </>
@@ -383,25 +411,25 @@ export default function CreateTemplatePage() {
 
         {step === 2 && (
           <>
-            <h2 className="text-sm font-medium text-gray-700 mb-2">Step 2: Name & language</h2>
+            <h2 className="mb-2 text-sm font-bold text-slate-900">Step 2: Name &amp; language</h2>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Template name (lowercase, underscores only)</label>
+              <div className="max-w-md">
+                <label className="mb-1 block text-sm font-semibold text-slate-800">Template name (lowercase, underscores only)</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value.toLowerCase().replace(/\s/g, '_').replace(/[^a-z0-9_]/g, ''))}
                   placeholder="e.g. order_confirmation"
-                  className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className={fieldInput}
                 />
                 {name && !nameValid && <p className="mt-1 text-xs text-amber-600">Only a-z, 0-9, underscore; max 512 chars</p>}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
+              <div className="max-w-xs">
+                <label className="mb-1 block text-sm font-semibold text-slate-800">Language</label>
                 <select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
-                  className="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className={fieldInput}
                 >
                   {META_LANGUAGES.map((l) => (
                     <option key={l.code} value={l.code}>{l.name}</option>
@@ -409,15 +437,12 @@ export default function CreateTemplatePage() {
                 </select>
               </div>
             </div>
-            <div className="mt-6 flex justify-between">
-              <button type="button" onClick={() => setStep(1)} className="text-sm font-medium text-gray-600 hover:text-gray-900">Back</button>
-              <button
-                type="button"
-                onClick={handleStep2Next}
-                disabled={saving || !name || !nameValid}
-                className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin inline" /> : 'Next'}
+            <div className="mt-6 flex justify-between gap-3">
+              <button type="button" onClick={() => setStep(1)} className="text-sm font-semibold text-slate-600 hover:text-slate-900">
+                Back
+              </button>
+              <button type="button" onClick={handleStep2Next} disabled={saving || !name || !nameValid} className={btnPrimaryWa}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Next'}
               </button>
             </div>
           </>
@@ -425,18 +450,18 @@ export default function CreateTemplatePage() {
 
         {step === 3 && (
           <>
-            <h2 className="text-sm font-medium text-gray-700 mb-2">Step 3: Content</h2>
+            <h2 className="mb-2 text-sm font-bold text-slate-900">Step 3: Content</h2>
             <div className="space-y-4">
               {subtype === 'STANDARD' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Header type</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-800">Header type</label>
                   <select
                     value={headerFormat}
                     onChange={(e) => {
                       const next = e.target.value as typeof headerFormat
                       setHeaderFormat(next)
                     }}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className={fieldInput}
                   >
                     <option value="TEXT">Text</option>
                     {category !== 'AUTHENTICATION' && (
@@ -451,14 +476,14 @@ export default function CreateTemplatePage() {
               )}
               {subtype === 'STANDARD' && headerFormat === 'TEXT' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Header (optional)</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-800">Header (optional)</label>
                   <input
                     type="text"
                     value={headerText}
                     onChange={(e) => setHeaderText(e.target.value.slice(0, 60))}
                     placeholder="e.g. Hello {{1}}"
                     maxLength={60}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className={fieldInput}
                   />
                 </div>
               )}
@@ -467,7 +492,7 @@ export default function CreateTemplatePage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Upload {headerFormat.toLowerCase()} attachment
                   </label>
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 cursor-pointer">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
                     <input
                       type="file"
                       accept={headerFormat === 'IMAGE' ? 'image/jpeg,image/png,image/gif,image/webp' : headerFormat === 'VIDEO' ? 'video/mp4,video/x-m4v' : 'application/pdf'}
@@ -512,35 +537,35 @@ export default function CreateTemplatePage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Body (use {"{{1}}"}, {"{{2}}"} for variables)</label>
+                <label className="mb-1 block text-sm font-semibold text-slate-800">Body (use {"{{1}}"}, {"{{2}}"} for variables)</label>
                 <textarea
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   placeholder="Hello {{1}}, your order {{2}} is confirmed."
                   rows={4}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className={fieldInput}
                 />
               </div>
               {subtype === 'STANDARD' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Footer (optional, max 60)</label>
+                  <label className="mb-1 block text-sm font-semibold text-slate-800">Footer (optional, max 60)</label>
                   <input
                     type="text"
                     value={footer}
                     onChange={(e) => setFooter(e.target.value.slice(0, 60))}
                     maxLength={60}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className={fieldInput}
                   />
                 </div>
               )}
               {(subtype === 'STANDARD' || subtype === 'FLOWS' || subtype === 'ORDER_DETAILS') && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-sm font-medium text-gray-700">Buttons • Optional</label>
+                    <label className="block text-sm font-semibold text-slate-800">Buttons • Optional</label>
                     {buttons.length < MAX_BUTTONS && (
-                      <div className="relative group">
+                      <div className="group relative">
                         <select
-                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 appearance-none pr-8"
+                          className={`${fieldInput} appearance-none pr-8 font-medium`}
                           value=""
                           onChange={(e) => {
                             const v = e.target.value
@@ -559,17 +584,19 @@ export default function CreateTemplatePage() {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 mb-2">Create buttons that let customers respond or take action. You can add up to {MAX_BUTTONS} buttons. If you add more than 3, they will appear in a list.</p>
+                  <p className="mb-2 text-xs text-slate-500">
+                    Create buttons that let customers respond or take action. You can add up to {MAX_BUTTONS} buttons. If you add more than 3, they will appear in a list.
+                  </p>
                   {buttons.map((b, i) => (
-                    <div key={i} className="flex flex-wrap items-start gap-2 mb-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
-                      <span className="text-xs text-gray-500 w-24 shrink-0">{BUTTON_TYPES.find((bt) => bt.value === b.type)?.label ?? b.type}</span>
+                    <div key={i} className="mb-3 flex flex-wrap items-start gap-2 rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+                      <span className="w-24 shrink-0 text-xs font-medium text-slate-500">{BUTTON_TYPES.find((bt) => bt.value === b.type)?.label ?? b.type}</span>
                       <input
                         type="text"
                         value={b.text}
                         onChange={(e) => setButtons((prev) => prev.map((x, j) => (j === i ? { ...x, text: e.target.value.slice(0, 25) } : x)))}
                         placeholder="Button text (max 25)"
                         maxLength={25}
-                        className="flex-1 min-w-[120px] rounded border border-gray-300 px-2 py-1.5 text-sm"
+                        className="min-w-[120px] flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                       />
                       {(b.type === 'URL' || b.type === 'PHONE_NUMBER' || b.type === 'COPY_CODE') && (
                         <input
@@ -586,13 +613,13 @@ export default function CreateTemplatePage() {
                           }}
                           placeholder={b.type === 'URL' ? 'https://example.com' : b.type === 'PHONE_NUMBER' ? '+1234567890' : 'Offer code'}
                           maxLength={b.type === 'COPY_CODE' ? 15 : 2000}
-                          className="w-40 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          className="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
                         />
                       )}
                       <button
                         type="button"
                         onClick={() => setButtons((prev) => prev.filter((_, j) => j !== i))}
-                        className="text-gray-500 hover:text-red-600 text-sm font-medium"
+                        className="text-sm font-semibold text-slate-500 hover:text-red-600"
                       >
                         Remove
                       </button>
@@ -601,15 +628,12 @@ export default function CreateTemplatePage() {
                 </div>
               )}
             </div>
-            <div className="mt-6 flex justify-between">
-              <button type="button" onClick={() => setStep(2)} className="text-sm font-medium text-gray-600 hover:text-gray-900">Back</button>
-              <button
-                type="button"
-                onClick={handleStep3Next}
-                disabled={saving || !body.trim()}
-                className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin inline" /> : 'Next'}
+            <div className="mt-6 flex justify-between gap-3">
+              <button type="button" onClick={() => setStep(2)} className="text-sm font-semibold text-slate-600 hover:text-slate-900">
+                Back
+              </button>
+              <button type="button" onClick={handleStep3Next} disabled={saving || !body.trim()} className={btnPrimaryWa}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Next'}
               </button>
             </div>
           </>
@@ -617,34 +641,34 @@ export default function CreateTemplatePage() {
 
         {step === 4 && (
           <>
-            <h2 className="text-sm font-medium text-gray-700 mb-2">Step 4: Preview & submit</h2>
+            <h2 className="mb-2 text-sm font-bold text-slate-900">Step 4: Preview &amp; submit</h2>
             <div>
               {needsCatalog && catalogConnected === false && (
-                <div className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                <div className="mb-4 rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm font-medium text-amber-900">
                   Connect ecommerce catalog in Meta Business Manager before submitting.
                 </div>
               )}
-              <p className="text-sm text-gray-600 mb-4">
-                Submit for Meta review. Only approved templates can be sent.
-              </p>
+              <p className="mb-4 text-sm leading-relaxed text-slate-600">Submit for Meta review. Only approved templates can be sent.</p>
               <button
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting || (needsCatalog && !catalogConnected)}
-                className="rounded-lg bg-[#ed1b24] px-4 py-2 text-sm font-medium text-white hover:bg-[#c0040e] disabled:opacity-50 inline-flex items-center gap-2"
+                className={btnPrimaryWa}
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                 Submit for review
               </button>
             </div>
             <div className="mt-6">
-              <button type="button" onClick={() => setStep(3)} className="text-sm font-medium text-gray-600 hover:text-gray-900">Back</button>
+              <button type="button" onClick={() => setStep(3)} className="text-sm font-semibold text-slate-600 hover:text-slate-900">
+                Back
+              </button>
             </div>
           </>
         )}
           </div>
-          <div className="lg:sticky lg:top-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Live preview</p>
+          <div className="lg:sticky lg:top-6">
+            <p className={`mb-2 ${sectionLabel}`}>Live preview</p>
             <TemplatePreview
               headerFormat={headerFormat}
               headerText={headerText}
