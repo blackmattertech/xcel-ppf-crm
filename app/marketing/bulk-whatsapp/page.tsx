@@ -194,10 +194,9 @@ function BulkWhatsAppPageContent() {
     setProcessingScheduled(true)
     setProcessScheduledResult(null)
     try {
-      const res = await cachedFetch('/api/marketing/whatsapp/process-scheduled/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+      const res = await cachedFetch('/api/marketing/whatsapp/process-scheduled', {
+        method: 'GET',
+        credentials: 'include',
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -328,7 +327,7 @@ function BulkWhatsAppPageContent() {
           results: [],
           scheduled: true,
           scheduledAt: data.scheduledAt,
-          scheduleMessage: data.message ?? `Scheduled for ${scheduledAtDate.toLocaleString()}. Supabase Edge Function will send it (pg_cron every minute or click "Process scheduled broadcasts now").`,
+          scheduleMessage: data.message ?? `Scheduled for ${scheduledAtDate.toLocaleString()}. GitHub Actions (every minute) or "Process scheduled broadcasts now" will send it.`,
         })
       } else {
         const BATCH_SIZE = 100
@@ -583,7 +582,10 @@ function BulkWhatsAppPageContent() {
               </div>
             </div>
             <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
-              <p className="text-sm text-gray-600">Scheduled messages are sent by the Supabase Edge Function <code className="text-xs bg-gray-100 px-1 rounded">process-whatsapp-scheduled</code>. Deploy it and run migration 032 so pg_cron calls it every minute; or use the button below to run it now.</p>
+              <p className="text-sm text-gray-600">
+                Due broadcasts are processed by this app&apos;s API (<code className="text-xs bg-gray-100 px-1 rounded">/api/marketing/whatsapp/process-scheduled</code>).
+                Your GitHub Actions workflow should call <code className="text-xs bg-gray-100 px-1 rounded">/api/cron/whatsapp-process-scheduled</code> every minute, or use the button below to run the processor now while signed in.
+              </p>
               <button
                 type="button"
                 onClick={processScheduledNow}
