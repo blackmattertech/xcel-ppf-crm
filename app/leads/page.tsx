@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -15,6 +15,7 @@ import { useAuthContext } from '@/components/AuthProvider'
 import MobileHeader from '@/components/MobileHeader'
 import MobileBottomNav from '@/components/MobileBottomNav'
 import { cachedFetch } from '@/lib/api-client'
+import { VirtualizedScrollList } from '@/components/leads/VirtualizedScrollList'
 
 // New lead modal is quite heavy; load it only when the user actually opens it
 // so the main Leads list and filters become interactive faster.
@@ -790,7 +791,12 @@ function KanbanBoard({
                     <span className="text-xs">Drag a card here to add</span>
                   </div>
                 ) : (
-                  groupLeadsList.map((lead) => {
+                  <VirtualizedScrollList
+                    enabled={groupLeadsList.length > 32}
+                    items={groupLeadsList}
+                    estimateSize={172}
+                    getItemKey={(lead) => lead.id}
+                    renderItem={(lead) => {
                   const vehicleName = getVehicleName(lead)
                   const isHot = lead.interest_level === 'hot'
                   const budget = getBudget(lead)
@@ -798,7 +804,6 @@ function KanbanBoard({
                   
                   return (
                     <div
-                      key={lead.id}
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
@@ -863,7 +868,9 @@ function KanbanBoard({
                       </div>
                     </div>
                   )
-                }))}
+                    }}
+                  />
+                )}
               </div>
             </div>
           )
@@ -3720,6 +3727,14 @@ function LeadsPageContent() {
                     <tr 
                       key={lead.id} 
                       className={`hover:bg-gray-50 cursor-pointer ${selectedLeadIds.has(lead.id) ? 'bg-indigo-50' : ''}`}
+                      style={
+                        leads.length > 48
+                          ? ({
+                              contentVisibility: 'auto',
+                              containIntrinsicSize: 'auto 72px',
+                            } as CSSProperties)
+                          : undefined
+                      }
                       onClick={(e) => {
                         // Don't navigate if clicking checkbox or button
                         if ((e.target as HTMLElement).tagName === 'INPUT' || 

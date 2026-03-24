@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { invalidateLeadCaches } from '@/lib/cache-invalidation'
+import { logRouteTiming } from '@/lib/route-timing'
 
 const updateLeadSchema = z.object({
   name: z.string().min(1).optional(),
@@ -44,6 +45,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const t0 = performance.now()
   try {
     const { id } = await params
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_READ)
@@ -56,7 +58,11 @@ export async function GET(
     const userRole = user.role.name
     const userId = user.id
 
-    const lead = await getLeadById(id, userId, userRole)
+    const includeParam = request.nextUrl.searchParams.get('include')
+    const include = includeParam === 'minimal' ? 'minimal' : 'all'
+
+    const lead = await getLeadById(id, userId, userRole, include)
+    logRouteTiming(`GET /api/leads/[id] include=${include}`, t0, { leadId: id })
     return NextResponse.json({ lead })
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch lead'

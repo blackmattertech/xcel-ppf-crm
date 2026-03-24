@@ -3,8 +3,120 @@ import { Database } from '@/shared/types/database'
 import { assignLeadRoundRobin } from './assignment.service'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
 
-type Lead = Database['public']['Tables']['leads']['Row']
 type LeadInsert = Database['public']['Tables']['leads']['Insert']
+
+/** List view: explicit columns (avoids surprises if new large columns are added). */
+const LEAD_LIST_SELECT = `
+  id,
+  lead_id,
+  name,
+  phone,
+  email,
+  source,
+  campaign_id,
+  ad_id,
+  adset_id,
+  form_id,
+  form_name,
+  ad_name,
+  campaign_name,
+  meta_data,
+  status,
+  interest_level,
+  budget_range,
+  requirement,
+  timeline,
+  assigned_to,
+  branch_id,
+  created_at,
+  updated_at,
+  first_contact_at,
+  converted_at,
+  payment_status,
+  payment_amount,
+  advance_amount,
+  lost_reason,
+  assigned_user:users!leads_assigned_to_fkey (
+    id,
+    name,
+    email,
+    profile_image_url
+  )
+`
+
+const DEFAULT_LEADS_LIMIT = 50
+const MAX_LEADS_LIMIT = 200
+
+export type LeadDetailInclude = 'all' | 'minimal'
+
+const LEAD_DETAIL_MINIMAL_SELECT = `
+  *,
+  assigned_user:users!leads_assigned_to_fkey (
+    id,
+    name,
+    email,
+    profile_image_url
+  )
+`
+
+const LEAD_DETAIL_NESTED_SELECT = `
+  status_history:lead_status_history (
+    *,
+    changed_by_user:users!lead_status_history_changed_by_fkey (
+      id,
+      name
+    )
+  ),
+  calls:calls (
+    *,
+    called_by_user:users!calls_called_by_fkey (
+      id,
+      name
+    )
+  ),
+  follow_ups:follow_ups (
+    *,
+    assigned_user:users!follow_ups_assigned_to_fkey (
+      id,
+      name
+    )
+  )
+`
+
+const LEAD_RELATIONS_ONLY_SELECT = `
+  id,
+  status_history:lead_status_history (
+    *,
+    changed_by_user:users!lead_status_history_changed_by_fkey (
+      id,
+      name
+    )
+  ),
+  calls:calls (
+    *,
+    called_by_user:users!calls_called_by_fkey (
+      id,
+      name
+    )
+  ),
+  follow_ups:follow_ups (
+    *,
+    assigned_user:users!follow_ups_assigned_to_fkey (
+      id,
+      name
+    )
+  )
+`
+
+function assertTeleCallerCanViewLead(
+  userRole: string | undefined,
+  userId: string | undefined,
+  assignedTo: string | null | undefined
+) {
+  if (userRole === 'tele_caller' && userId && assignedTo !== userId) {
+    throw new Error('Forbidden: You can only view leads assigned to you')
+  }
+}
 
 export async function getAllLeads(filters?: {
   status?: string
@@ -19,16 +131,18 @@ export async function getAllLeads(filters?: {
 
   let query = supabase
     .from('leads')
-    .select(`
-      *,
-      assigned_user:users!leads_assigned_to_fkey (
-        id,
-        name,
-        email,
-        profile_image_url
-      )
-    `)
+    .select(LEAD_LIST_SELECT)
     .order('created_at', { ascending: false })
+
+  // Pagination: only when limit or offset is requested (default UI fetches full list).
+  if (filters?.limit != null || filters?.offset != null) {
+    const limit = Math.min(
+      filters?.limit ?? DEFAULT_LEADS_LIMIT,
+      MAX_LEADS_LIMIT
+    )
+    const offset = Math.max(0, filters?.offset ?? 0)
+    query = query.range(offset, offset + limit - 1)
+  }
 
   // Exclude leads with FULLY_PAID status
   query = query.neq('status', LEAD_STATUS.FULLY_PAID)
@@ -50,14 +164,6 @@ export async function getAllLeads(filters?: {
     query = query.eq('assigned_to', filters.assignedTo)
   }
 
-  if (filters?.limit) {
-    query = query.limit(filters.limit)
-  }
-
-  if (filters?.offset) {
-    query = query.range(filters.offset, filters.offset + (filters.limit || 50) - 1)
-  }
-
   const { data, error } = await query
 
   if (error) {
@@ -73,70 +179,55 @@ export async function getLeadCountsByStatus(filters?: {
   userRole?: string
 }): Promise<Record<string, number>> {
   const supabase = createServiceClient()
-  let query = supabase
-    .from('leads')
-    .select('status')
-    .neq('status', LEAD_STATUS.FULLY_PAID)
+  const pAssignedTo =
+    filters?.userRole === 'tele_caller' && filters?.userId
+      ? filters.userId
+      : null
 
-  if (filters?.userRole === 'tele_caller' && filters?.userId) {
-    query = query.eq('assigned_to', filters.userId)
-  }
+  const { data, error } = await (
+    supabase as unknown as {
+      rpc: (
+        name: 'get_lead_counts_by_status',
+        args: { p_assigned_to: string | null }
+      ) => Promise<{
+        data: { status: string; cnt: number | string }[] | null
+        error: { message: string } | null
+      }>
+    }
+  ).rpc('get_lead_counts_by_status', { p_assigned_to: pAssignedTo })
 
-  const { data, error } = await query
   if (error) {
     throw new Error(`Failed to fetch lead counts: ${error.message}`)
   }
 
   const counts: Record<string, number> = {}
-  const rows: { status: string }[] = Array.isArray(data) ? data : []
+  const rows = (data || []) as { status: string; cnt: number | string }[]
   for (const row of rows) {
     const s = row.status ?? 'unknown'
-    counts[s] = (counts[s] ?? 0) + 1
+    counts[s] = Number(row.cnt)
   }
   return counts
 }
 
-export async function getLeadById(id: string, userId?: string, userRole?: string) {
+export async function getLeadById(
+  id: string,
+  userId?: string,
+  userRole?: string,
+  include: LeadDetailInclude = 'all'
+) {
   const supabase = createServiceClient()
 
-  const query = supabase
-    .from('leads')
-    .select(`
-      *,
-      assigned_user:users!leads_assigned_to_fkey (
-        id,
-        name,
-        email,
-        profile_image_url
-      ),
-      status_history:lead_status_history (
-        *,
-        changed_by_user:users!lead_status_history_changed_by_fkey (
-          id,
-          name
-        )
-      ),
-      calls:calls (
-        *,
-        called_by_user:users!calls_called_by_fkey (
-          id,
-          name
-        )
-      ),
-      follow_ups:follow_ups (
-        *,
-        assigned_user:users!follow_ups_assigned_to_fkey (
-          id,
-          name
-        )
-      )
-    `)
-    .eq('id', id)
+  const select =
+    include === 'minimal'
+      ? LEAD_DETAIL_MINIMAL_SELECT
+      : `${LEAD_DETAIL_MINIMAL_SELECT},
+    ${LEAD_DETAIL_NESTED_SELECT}`
+
+  const query = supabase.from('leads').select(select).eq('id', id)
 
   const { data, error } = await query.single()
 
   if (error) {
-    // Check if it's a not found error or permission error
     if (error.code === 'PGRST116') {
       throw new Error('Lead not found')
     }
@@ -147,9 +238,45 @@ export async function getLeadById(id: string, userId?: string, userRole?: string
     throw new Error('Lead not found')
   }
 
-  // Additional check: if tele_caller and lead is not assigned to them, throw error
-  if (userRole === 'tele_caller' && userId && (data as any).assigned_to !== userId) {
-    throw new Error('Forbidden: You can only view leads assigned to you')
+  assertTeleCallerCanViewLead(userRole, userId, (data as { assigned_to?: string | null }).assigned_to)
+
+  return data
+}
+
+/** Status history, calls, and follow-ups only (single round-trip). Same RBAC as getLeadById. */
+export async function getLeadRelations(id: string, userId?: string, userRole?: string) {
+  const supabase = createServiceClient()
+
+  const { data: stub, error: stubErr } = await supabase
+    .from('leads')
+    .select('assigned_to')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (stubErr) {
+    throw new Error(`Failed to fetch lead: ${stubErr.message}`)
+  }
+  if (!stub) {
+    throw new Error('Lead not found')
+  }
+
+  assertTeleCallerCanViewLead(
+    userRole,
+    userId,
+    (stub as { assigned_to?: string | null }).assigned_to
+  )
+
+  const { data, error } = await supabase
+    .from('leads')
+    .select(LEAD_RELATIONS_ONLY_SELECT)
+    .eq('id', id)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      throw new Error('Lead not found')
+    }
+    throw new Error(`Failed to fetch lead relations: ${error.message}`)
   }
 
   return data
@@ -369,21 +496,29 @@ export async function createLeadsBatch(
     }
   }
 
-  // Handle duplicates by updating existing leads
-  for (const [phone, { index, data: lead, existingId }] of duplicateMap.entries()) {
-    try {
-      const updated = await updateLead(existingId, {
-        ...lead,
-        status: lead.status || 'new',
-      } as Partial<LeadInsert>)
-      results.success.push(updated)
-    } catch (error) {
-      results.failed.push({
-        index,
-        data: lead,
-        error: error instanceof Error ? error.message : 'Failed to update duplicate lead',
+  // Handle duplicates by updating existing leads (bounded concurrency)
+  const duplicateEntries = Array.from(duplicateMap.entries())
+  const CONCURRENCY = 8
+  for (let i = 0; i < duplicateEntries.length; i += CONCURRENCY) {
+    const chunk = duplicateEntries.slice(i, i + CONCURRENCY)
+    await Promise.all(
+      chunk.map(async ([, { index, data: lead, existingId }]) => {
+        try {
+          const updated = await updateLead(existingId, {
+            ...lead,
+            status: lead.status || 'new',
+          } as Partial<LeadInsert>)
+          results.success.push(updated)
+        } catch (error) {
+          results.failed.push({
+            index,
+            data: lead,
+            error:
+              error instanceof Error ? error.message : 'Failed to update duplicate lead',
+          })
+        }
       })
-    }
+    )
   }
 
   return results

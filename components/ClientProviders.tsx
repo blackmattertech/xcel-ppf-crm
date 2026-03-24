@@ -6,7 +6,13 @@ import { AuthProvider } from './AuthProvider'
 import { PushNotificationProvider } from './PushNotificationProvider'
 
 // Create a single QueryClient instance per browser session.
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 20_000,
+    },
+  },
+})
 
 interface ClientProvidersProps {
   children: ReactNode
