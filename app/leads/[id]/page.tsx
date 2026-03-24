@@ -2084,14 +2084,22 @@ export default function LeadDetailPage() {
                           </p>
                         ) : null}
                         {call.recording_url ? (
-                          <a
-                            href={call.recording_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[11px] text-[#2563eb] underline mt-0.5 inline-block"
-                          >
-                            Recording
-                          </a>
+                          <div className="mt-2 p-2 rounded-md border border-[#e5e7eb] bg-[#f8fafc]">
+                            <p className="text-[10px] font-medium text-[#4b5563] mb-1">Call recording</p>
+                            <audio controls preload="none" className="w-full max-w-full h-8">
+                              <source src={call.recording_url} type="audio/wav" />
+                              <source src={call.recording_url} type="audio/mpeg" />
+                              Your browser does not support audio preview.
+                            </audio>
+                            <a
+                              href={call.recording_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-[#2563eb] hover:text-[#1d4ed8] underline mt-1 inline-block"
+                            >
+                              Open in new tab
+                            </a>
+                          </div>
                         ) : null}
                       </div>
                     )

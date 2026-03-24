@@ -1384,7 +1384,7 @@ function LeadsPageContent() {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(lead =>
         lead.name.toLowerCase().includes(query) ||
-        lead.phone.includes(query) ||
+        (lead.phone ?? '').includes(query) ||
         lead.email?.toLowerCase().includes(query) ||
         lead.requirement?.toLowerCase().includes(query) ||
         getVehicleName(lead).toLowerCase().includes(query) ||
@@ -1588,7 +1588,7 @@ function LeadsPageContent() {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter((lead) =>
         lead.name.toLowerCase().includes(query) ||
-        lead.phone.includes(query) ||
+        (lead.phone ?? '').includes(query) ||
         lead.email?.toLowerCase().includes(query) ||
         lead.requirement?.toLowerCase().includes(query) ||
         getVehicleName(lead).toLowerCase().includes(query) ||

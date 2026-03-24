@@ -61,9 +61,23 @@ export async function findLeadIdByCustomerPhone(
   const normalized = normalizePhoneForStorage(trimmed)
   const last10 = normalized.slice(-10)
   const variants = [...new Set([normalized, last10, trimmed])]
-  const { data } = await supabase.from('leads').select('id').in('phone', variants).limit(1)
-  const rows = data as { id: string }[] | null
-  return rows?.[0]?.id ?? null
+  const { data } = await supabase
+    .from('leads')
+    .select('id, phone, created_at, updated_at')
+    .in('phone', variants)
+  const rows = data as
+    | Array<{ id: string; phone: string; created_at: string; updated_at: string }>
+    | null
+  if (!rows?.length) return null
+
+  // Prefer the most recently created lead when duplicate phone variants exist.
+  const sorted = rows
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  return sorted[0]?.id ?? null
 }
 
 export async function findUserIdByAgentPhone(
@@ -193,35 +207,55 @@ export async function fetchMcubeInboundCallsByPhone(params: {
 }): Promise<McubeWebhookPayload[]> {
   if (!MCUBE_INBOUND_URL) return []
 
-  const normalized = formatPhoneForMcubeDial(params.phone)
-  const body = {
-    HTTP_AUTHORIZATION: params.token,
-    phone: normalized,
-    custnumber: normalized,
-    callto: normalized,
-    number: normalized,
+  const digits = params.phone.replace(/\D/g, '')
+  const last10 = digits.slice(-10)
+  const variants = [...new Set([last10, `91${last10}`, `+91${last10}`, params.phone.trim()])]
+
+  for (const variant of variants) {
+    const body = {
+      HTTP_AUTHORIZATION: params.token,
+      phone: variant,
+      custnumber: variant,
+      callto: variant,
+      number: variant,
+      destination: variant,
+      customer_number: variant,
+    }
+
+    const res = await fetch(MCUBE_INBOUND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const text = await res.text()
+
+    if (!res.ok) {
+      console.info('[mcube/inbound-sync] upstream_non_200', JSON.stringify({
+        status: res.status,
+        variant,
+        body: text,
+      }))
+      continue
+    }
+
+    console.info('[mcube/inbound-sync] raw_response_text', JSON.stringify({ variant, text }))
+    let parsed: unknown = null
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      continue
+    }
+
+    const rawList = extractCallListFromUnknown(parsed)
+    const mapped = rawList
+      .map((it) => mapUnknownToMcubePayload(it))
+      .filter((v): v is McubeWebhookPayload => Boolean(v && v.callid))
+    if (mapped.length > 0) {
+      return mapped
+    }
   }
 
-  const res = await fetch(MCUBE_INBOUND_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) return []
-
-  const text = await res.text()
-  console.info('[mcube/inbound-sync] raw_response_text', text)
-  let parsed: unknown = null
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return []
-  }
-
-  const rawList = extractCallListFromUnknown(parsed)
-  return rawList
-    .map((it) => mapUnknownToMcubePayload(it))
-    .filter((v): v is McubeWebhookPayload => Boolean(v && v.callid))
+  return []
 }
 
 /**

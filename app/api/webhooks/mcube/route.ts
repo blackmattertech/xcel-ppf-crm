@@ -316,15 +316,25 @@ async function handleHangup(
 ): Promise<{ duplicate?: boolean }> {
   const { data: existing } = await supabase
     .from('calls')
-    .select('id')
+    .select('id, lead_id, called_by')
     .eq('mcube_call_id', payload.callid)
     .maybeSingle()
+  const existingCall = existing as { id: string; lead_id: string; called_by: string } | null
 
-  if (existing) {
-    return { duplicate: true }
+  let leadId: string
+  let calledById: string
+  let sessionId: string | null
+  try {
+    const resolved = await resolveLeadAndAgent(supabase, payload)
+    leadId = resolved.leadId
+    calledById = resolved.calledById
+    sessionId = resolved.sessionId
+  } catch (e) {
+    if (!existingCall) throw e
+    leadId = existingCall.lead_id
+    calledById = existingCall.called_by
+    sessionId = null
   }
-
-  const { leadId, calledById, sessionId } = await resolveLeadAndAgent(supabase, payload)
 
   const outcome = mapDialStatusToOutcome(payload.dialstatus)
   const durationSec = computeDurationSeconds(payload)
@@ -337,6 +347,42 @@ async function handleHangup(
   ]
     .filter(Boolean)
     .join(' · ')
+
+  if (existingCall) {
+    await supabase
+      .from('calls')
+      .update({
+        lead_id: leadId,
+        called_by: calledById,
+        outcome,
+        notes,
+        call_duration: durationSec,
+        recording_url: payload.filename?.trim() || null,
+        started_at: parseMcubeTimestamp(payload.starttime ?? null),
+        ended_at: parseMcubeTimestamp(payload.endtime ?? null),
+        answered_duration_seconds: parseAnsweredTimeToSeconds(payload.answeredtime),
+        dial_status: payload.dialstatus ?? null,
+        direction: dir,
+        disconnected_by: payload.disconnectedby?.trim() || null,
+        mcube_group_name: payload.groupname?.trim() || null,
+        mcube_agent_name: payload.agentname?.trim() || null,
+        integration: 'mcube',
+        mcube_session_id: sessionId,
+      } as never)
+      .eq('id', existingCall.id)
+
+    if (sessionId) {
+      await supabase
+        .from('mcube_outbound_sessions')
+        .update({
+          completed_at: new Date().toISOString(),
+          mcube_call_id: payload.callid,
+        } as never)
+        .eq('id', sessionId)
+    }
+    await invalidateLeadCaches(leadId)
+    return { duplicate: true }
+  }
 
   const { error: insertError } = await supabase.from('calls').insert({
     lead_id: leadId,
