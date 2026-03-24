@@ -510,10 +510,44 @@ export default function CreateTemplatePage() {
                         setHeaderPreviewUrl(objectUrl)
                         setHeaderUploading(true)
                         setError(null)
-                        const fd = new FormData()
-                        fd.append('file', f)
                         try {
-                          const res = await cachedFetch('/api/marketing/whatsapp/upload-media', { method: 'POST', body: fd, credentials: 'include' })
+                          const signRes = await cachedFetch('/api/marketing/whatsapp/upload-media/signed-url', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ fileName: f.name, mimeType: f.type }),
+                          })
+                          const signData = await signRes.json() as {
+                            signedUrl?: string
+                            token?: string
+                            path?: string
+                            error?: string
+                          }
+                          if (!signRes.ok || !signData.path || !signData.token || !signData.signedUrl) {
+                            setError(signData.error ?? 'Failed to create upload URL')
+                            return
+                          }
+
+                          const uploadRes = await fetch(signData.signedUrl, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': f.type || 'application/octet-stream' },
+                            body: f,
+                          })
+                          if (!uploadRes.ok) {
+                            setError('Failed to upload file to storage')
+                            return
+                          }
+
+                          const res = await cachedFetch('/api/marketing/whatsapp/upload-media', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              storagePath: signData.path,
+                              mimeType: f.type,
+                              fileName: f.name,
+                            }),
+                          })
                           const data = await res.json() as { handle?: string; id?: string; url?: string; error?: string }
                           if (data.handle || data.id) {
                             const mediaId = data.id ?? data.handle ?? ''
