@@ -443,6 +443,9 @@ interface Lead {
     dial_status?: string | null
     direction?: string | null
     mcube_agent_name?: string | null
+    mcube_group_name?: string | null
+    disconnected_by?: string | null
+    answered_duration_seconds?: number | null
     called_by_user: {
       id: string
       name: string
@@ -543,6 +546,7 @@ export default function LeadDetailPage() {
   const [leadQuotations, setLeadQuotations] = useState<Array<{ id: string; quote_number: string; version: number }>>([])
   const [markingQuotationShared, setMarkingQuotationShared] = useState(false)
   const [hideConnectedWhenLastMcubeNotConnected, setHideConnectedWhenLastMcubeNotConnected] = useState(true)
+  const [syncingInboundCalls, setSyncingInboundCalls] = useState(false)
   // Quotation shared / negotiation: call outcome (accepted | not_accepted | negotiation)
   const [quotationCallOutcome, setQuotationCallOutcome] = useState<'accepted' | 'not_accepted' | 'negotiation' | ''>('')
   // Order created after "Accepted" → used to update order payment when user submits payment modal
@@ -653,6 +657,15 @@ export default function LeadDetailPage() {
     }
   }
 
+  function toTimeInputValue(isoLike: string | null | undefined): string {
+    if (!isoLike) return ''
+    const d = new Date(isoLike)
+    if (Number.isNaN(d.getTime())) return ''
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    return `${hh}:${mm}`
+  }
+
   async function handleMcubeOutbound() {
     setMcubeCalling(true)
     try {
@@ -674,6 +687,35 @@ export default function LeadDetailPage() {
     } finally {
       setMcubeCalling(false)
     }
+  }
+
+  async function syncMcubeInboundCalls(silent = true) {
+    try {
+      setSyncingInboundCalls(true)
+      const response = await cachedFetch('/api/integrations/mcube/inbound-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (!silent) alert(typeof data.error === 'string' ? data.error : 'Failed to sync MCUBE call details')
+        return
+      }
+      if ((data?.synced ?? 0) > 0) {
+        await fetchLead()
+      }
+    } catch (e) {
+      console.error(e)
+      if (!silent) alert('Failed to sync MCUBE call details')
+    } finally {
+      setSyncingInboundCalls(false)
+    }
+  }
+
+  async function handleConnectedClick() {
+    setCallOutcome('connected')
+    await syncMcubeInboundCalls(true)
   }
 
   async function handleStatusUpdate() {
@@ -916,6 +958,26 @@ export default function LeadDetailPage() {
     !hideConnectedWhenLastMcubeNotConnected ||
     !latestMcubeCall ||
     latestMcubeCall.outcome === CALL_OUTCOME.CONNECTED
+
+  useEffect(() => {
+    if (!showCallModal || callOutcome !== CALL_OUTCOME.CONNECTED) return
+    if (!latestMcubeCall) return
+
+    // Auto-fill from latest MCUBE hangup details, while allowing manual override.
+    if (!callStartTime && latestMcubeCall.started_at) {
+      setCallStartTime(toTimeInputValue(latestMcubeCall.started_at))
+    }
+    if (!callEndTime && latestMcubeCall.ended_at) {
+      setCallEndTime(toTimeInputValue(latestMcubeCall.ended_at))
+    }
+  }, [
+    showCallModal,
+    callOutcome,
+    latestMcubeCall?.started_at,
+    latestMcubeCall?.ended_at,
+    callStartTime,
+    callEndTime,
+  ])
 
   async function handleQuotationCallOutcomeSubmit() {
     if (!quotationCallOutcome) {
@@ -1869,7 +1931,15 @@ export default function LeadDetailPage() {
 
               {/* Action buttons */}
               <div className="flex flex-wrap gap-3 pt-1">
-                <button onClick={() => setShowCallModal(true)} className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+                <button
+                  onClick={async () => {
+                    await fetchLead()
+                    await syncMcubeInboundCalls(true)
+                    setShowCallModal(true)
+                  }}
+                  className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]"
+                  style={{ fontFamily: 'Roboto, sans-serif' }}
+                >
                   <Phone size={16} />
                   Update status
                 </button>
@@ -2002,6 +2072,15 @@ export default function LeadDetailPage() {
                         {timeWindow ? (
                           <p className="text-[11px] text-[#717d8a] leading-[1.3] mt-0.5">
                             Call timing: {timeWindow}
+                          </p>
+                        ) : null}
+                        {call.integration === 'mcube' && (call.mcube_agent_name || call.disconnected_by || call.mcube_group_name) ? (
+                          <p className="text-[11px] text-[#717d8a] leading-[1.3] mt-0.5">
+                            {call.mcube_agent_name ? `Agent: ${call.mcube_agent_name}` : ''}
+                            {call.mcube_agent_name && (call.disconnected_by || call.mcube_group_name) ? ' · ' : ''}
+                            {call.disconnected_by ? `Disconnected by: ${call.disconnected_by}` : ''}
+                            {call.disconnected_by && call.mcube_group_name ? ' · ' : ''}
+                            {call.mcube_group_name ? `Group: ${call.mcube_group_name}` : ''}
                           </p>
                         ) : null}
                         {call.recording_url ? (
@@ -2180,6 +2259,9 @@ export default function LeadDetailPage() {
                 <>
               {/* Question */}
               <h4 className="text-base font-medium text-gray-900 mb-4">What was the call outcome?</h4>
+              {syncingInboundCalls && (
+                <p className="text-xs text-gray-500 mb-3">Syncing latest MCUBE call details...</p>
+              )}
               
               {/* Outcome Options */}
               <div className="space-y-3 mb-6">
@@ -2187,7 +2269,7 @@ export default function LeadDetailPage() {
                     {canShowConnectedOption && (
                       <button
                         type="button"
-                        onClick={() => setCallOutcome('connected')}
+                        onClick={() => void handleConnectedClick()}
                         className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
                           callOutcome === CALL_OUTCOME.CONNECTED
                             ? 'border-green-500 bg-green-50'

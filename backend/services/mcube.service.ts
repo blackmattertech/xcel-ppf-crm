@@ -3,6 +3,7 @@ import { normalizePhoneForStorage } from '@/backend/services/whatsapp-chat.servi
 import type { CallOutcome } from '@/backend/services/call-lead-journey.service'
 
 export const MCUBE_OUTBOUND_URL = 'https://api.mcube.com/Restmcube-api/outbound-calls'
+export const MCUBE_INBOUND_URL = process.env.MCUBE_INBOUND_API_URL?.trim() || ''
 
 /**
  * MCUBE outbound API expects domestic numbers **without** country code (10 digits for India).
@@ -140,6 +141,81 @@ export async function triggerMcubeOutbound(params: {
     }
   }
   return { ok, status: res.status, body: text }
+}
+
+function extractCallListFromUnknown(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload
+  if (!payload || typeof payload !== 'object') return []
+
+  const obj = payload as Record<string, unknown>
+  const directKeys = ['data', 'calls', 'result', 'results', 'list', 'records']
+  for (const key of directKeys) {
+    const v = obj[key]
+    if (Array.isArray(v)) return v
+    if (v && typeof v === 'object') {
+      const nested = extractCallListFromUnknown(v)
+      if (nested.length > 0) return nested
+    }
+  }
+  return []
+}
+
+function mapUnknownToMcubePayload(item: unknown): McubeWebhookPayload | null {
+  if (!item || typeof item !== 'object') return null
+  const r = item as Record<string, unknown>
+  const callid = String(r.callid ?? r.call_id ?? r.callId ?? '').trim()
+  if (!callid) return null
+  return {
+    callid,
+    starttime: String(r.starttime ?? r.start_time ?? r.startTime ?? '').trim() || undefined,
+    emp_phone: String(r.emp_phone ?? r.empPhone ?? r.agent_phone ?? '').trim() || undefined,
+    clicktocalldid: String(r.clicktocalldid ?? r.did ?? '').trim() || undefined,
+    callto: String(r.callto ?? r.customer_number ?? r.custnumber ?? '').trim() || undefined,
+    dialstatus: String(r.dialstatus ?? r.status ?? '').trim() || undefined,
+    filename: String(r.filename ?? r.recording ?? r.recording_url ?? '').trim() || undefined,
+    direction: String(r.direction ?? '').trim() || undefined,
+    endtime: String(r.endtime ?? r.end_time ?? r.endTime ?? '').trim() || undefined,
+    disconnectedby: String(r.disconnectedby ?? r.disconnected_by ?? '').trim() || undefined,
+    answeredtime: String(r.answeredtime ?? r.answered_time ?? '').trim() || undefined,
+    groupname: String(r.groupname ?? r.group_name ?? '').trim() || undefined,
+    agentname: String(r.agentname ?? r.agent_name ?? '').trim() || undefined,
+  }
+}
+
+export async function fetchMcubeInboundCallsByPhone(params: {
+  token: string
+  phone: string
+}): Promise<McubeWebhookPayload[]> {
+  if (!MCUBE_INBOUND_URL) return []
+
+  const normalized = formatPhoneForMcubeDial(params.phone)
+  const body = {
+    HTTP_AUTHORIZATION: params.token,
+    phone: normalized,
+    custnumber: normalized,
+    callto: normalized,
+    number: normalized,
+  }
+
+  const res = await fetch(MCUBE_INBOUND_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return []
+
+  const text = await res.text()
+  let parsed: unknown = null
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return []
+  }
+
+  const rawList = extractCallListFromUnknown(parsed)
+  return rawList
+    .map((it) => mapUnknownToMcubePayload(it))
+    .filter((v): v is McubeWebhookPayload => Boolean(v && v.callid))
 }
 
 /**
