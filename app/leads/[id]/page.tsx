@@ -1643,6 +1643,32 @@ export default function LeadDetailPage() {
     return null
   }
 
+  /**
+   * Follow-up rows store a system prefix plus user text (e.g. "Follow-up scheduled after call: … . user note").
+   * Notes panel should show only the user-entered part.
+   */
+  function extractFollowUpUserNote(raw: string | null | undefined): string | null {
+    let t = (raw ?? '').trim()
+    if (!t) return null
+    const afterScheduledCall = t.replace(/^Follow-up scheduled after call:\s*.+?\.\s*/i, '').trim()
+    if (afterScheduledCall !== t) {
+      t = afterScheduledCall
+    } else {
+      t = t.replace(/^Call Later - Follow-up scheduled\.\s*/i, '').trim()
+    }
+    if (!t) return null
+    if (/^Follow-up completed$/i.test(t)) return null
+    return t
+  }
+
+  /** Follow-ups with user-visible note text only, newest scheduled first (for Notes panel). */
+  function getFollowUpsWithNotesSorted() {
+    if (!lead?.follow_ups?.length) return []
+    return lead.follow_ups
+      .filter((fu) => extractFollowUpUserNote(fu.notes) != null)
+      .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime())
+  }
+
   // Get interests from meta_data
   function getInterests() {
     if (lead?.meta_data) {
@@ -1822,8 +1848,8 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* Content - slightly larger text and spacing */}
-        <div className="px-6 py-6 overflow-y-auto flex-1">
+        {/* Scrollable body – footer stays pinned below */}
+        <div className="px-6 pt-6 pb-2 overflow-y-auto flex-1 min-h-0">
           <div className="grid gap-6 grid-cols-1 md:grid-cols-[360px_170px_170px] max-w-[800px] mx-auto">
             {/* Column 1 (360px) - Contact, Lead Details, Interests, Buttons */}
             <div className="flex flex-col gap-6">
@@ -1953,41 +1979,6 @@ export default function LeadDetailPage() {
                   )}
                 </div>
               </div>
-
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-3 pt-1">
-                <button
-                  onClick={async () => {
-                    await fetchLead()
-                    await syncMcubeInboundCalls(true)
-                    setShowCallModal(true)
-                  }}
-                  className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]"
-                  style={{ fontFamily: 'Roboto, sans-serif' }}
-                >
-                  <Phone size={16} />
-                  Update status
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleMcubeOutbound()}
-                  disabled={mcubeCalling}
-                  className="h-10 px-5 rounded-[6px] bg-[#1a1a1a] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px] disabled:opacity-50"
-                  style={{ fontFamily: 'Roboto, sans-serif' }}
-                >
-                  <Phone size={16} />
-                  {mcubeCalling ? 'Calling…' : 'Call via MCUBE'}
-                </button>
-                {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
-                  <Link href={`/quotations/${leadQuotations[0].id}`} className="h-10 px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
-                    <Eye size={18} />
-                    View Quotation
-                  </Link>
-                )}
-                <button onClick={() => router.push(`/leads/${leadId}/history`)} className="h-10 px-5 rounded-[6px] bg-[#fafafa] border border-[#e0e0e0] text-black font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
-                  View full History
-                </button>
-              </div>
             </div>
 
             {/* Column 2 (170px) - Assigned To + Next Follow-up */}
@@ -2044,8 +2035,26 @@ export default function LeadDetailPage() {
                   </span>
                   Notes
                 </h2>
-                <div className="text-[11px] text-black leading-[1.4] whitespace-pre-wrap line-clamp-5">
-                  {(lead?.requirement || lead?.meta_data?.notes || 'No notes yet.').replace(/_/g, ' ')}
+                <div className="max-h-52 overflow-y-auto text-[11px] text-black leading-[1.4] space-y-3 pr-0.5">
+                  {(() => {
+                    const followUpsWithNotes = getFollowUpsWithNotesSorted()
+                    const otherNotes = (lead?.requirement || lead?.meta_data?.notes || '').trim().replace(/_/g, ' ')
+                    if (followUpsWithNotes.length === 0 && !otherNotes) {
+                      return <p className="whitespace-pre-wrap">No notes yet.</p>
+                    }
+                    return (
+                      <>
+                        {followUpsWithNotes.map((fu) => (
+                          <p key={fu.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                            {extractFollowUpUserNote(fu.notes) ?? ''}
+                          </p>
+                        ))}
+                        {otherNotes ? (
+                          <p className={`whitespace-pre-wrap ${followUpsWithNotes.length > 0 ? 'pt-2' : ''}`}>{otherNotes}</p>
+                        ) : null}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
 
@@ -2138,51 +2147,80 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* Footer - extra actions only (main actions are in content per Figma) */}
-        {(lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0) || (lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) ? (
-          <div className="sticky bottom-0 bg-white border-t border-[#eaecee] px-6 py-4 flex flex-wrap gap-3 rounded-b-[12px]">
-            {lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0 && (
-              <button
-                onClick={async () => {
-                  setMarkingQuotationShared(true)
-                  try {
-                    const res = await cachedFetch(`/api/leads/${leadId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: LEAD_STATUS.QUOTATION_SHARED, notes: 'Quotation shared with lead' }) })
-                    if (res.ok) await fetchLead()
-                    else { const err = await res.json(); alert(err.error || 'Failed to update status') }
-                  } catch (e) { console.error(e); alert('Failed to update status') }
-                  finally { setMarkingQuotationShared(false) }
-                }}
-                disabled={markingQuotationShared}
-                className="h-[37px] px-5 rounded-[6px] bg-amber-600 text-white font-bold text-[15px] hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ fontFamily: 'Roboto, sans-serif' }}
-              >
-                <Share2 size={18} />
-                {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
-              </button>
-            )}
-            {lead?.status === LEAD_STATUS.QUALIFIED && (
-              <button
-                onClick={() => setShowQuotationModal(true)}
-                className="h-[37px] px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] hover:bg-[#45a050] flex items-center justify-center gap-2"
-                style={{ fontFamily: 'Roboto, sans-serif' }}
-              >
-                <FilePlus size={18} />
-                {leadQuotations.length > 0 ? 'Create Another Quotation' : 'Create Quotation'}
-              </button>
-            )}
-            {(lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
-              <button
-                type="button"
-                onClick={() => { setFollowUpNotes('Follow-up for quotation / negotiation'); setShowFollowUpModal(true) }}
-                className="h-[37px] px-5 rounded-[6px] bg-sky-600 text-white font-bold text-[15px] hover:bg-sky-700 flex items-center justify-center gap-2"
-                style={{ fontFamily: 'Roboto, sans-serif' }}
-              >
-                <Calendar size={18} />
-                Schedule Follow-up
-              </button>
-            )}
-          </div>
-        ) : null}
+        {/* Footer – pinned to bottom of dialog; body scrolls above */}
+        <div className="shrink-0 bg-white border-t border-[#eaecee] px-6 py-4 flex flex-wrap gap-3 rounded-b-[12px]">
+          <button
+            onClick={async () => {
+              await fetchLead()
+              await syncMcubeInboundCalls(true)
+              setShowCallModal(true)
+            }}
+            className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]"
+            style={{ fontFamily: 'Roboto, sans-serif' }}
+          >
+            <Phone size={16} />
+            Update status
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleMcubeOutbound()}
+            disabled={mcubeCalling}
+            className="h-10 px-5 rounded-[6px] bg-[#1a1a1a] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px] disabled:opacity-50"
+            style={{ fontFamily: 'Roboto, sans-serif' }}
+          >
+            <Phone size={16} />
+            {mcubeCalling ? 'Calling…' : 'Call via MCUBE'}
+          </button>
+          {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
+            <Link href={`/quotations/${leadQuotations[0].id}`} className="h-10 px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+              <Eye size={18} />
+              View Quotation
+            </Link>
+          )}
+          <button onClick={() => router.push(`/leads/${leadId}/history`)} className="h-10 px-5 rounded-[6px] bg-[#fafafa] border border-[#e0e0e0] text-black font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+            View full History
+          </button>
+          {lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0 && (
+            <button
+              onClick={async () => {
+                setMarkingQuotationShared(true)
+                try {
+                  const res = await cachedFetch(`/api/leads/${leadId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: LEAD_STATUS.QUOTATION_SHARED, notes: 'Quotation shared with lead' }) })
+                  if (res.ok) await fetchLead()
+                  else { const err = await res.json(); alert(err.error || 'Failed to update status') }
+                } catch (e) { console.error(e); alert('Failed to update status') }
+                finally { setMarkingQuotationShared(false) }
+              }}
+              disabled={markingQuotationShared}
+              className="h-[37px] px-5 rounded-[6px] bg-amber-600 text-white font-bold text-[15px] hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ fontFamily: 'Roboto, sans-serif' }}
+            >
+              <Share2 size={18} />
+              {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
+            </button>
+          )}
+          {lead?.status === LEAD_STATUS.QUALIFIED && (
+            <button
+              onClick={() => setShowQuotationModal(true)}
+              className="h-[37px] px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] hover:bg-[#45a050] flex items-center justify-center gap-2"
+              style={{ fontFamily: 'Roboto, sans-serif' }}
+            >
+              <FilePlus size={18} />
+              {leadQuotations.length > 0 ? 'Create Another Quotation' : 'Create Quotation'}
+            </button>
+          )}
+          {(lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
+            <button
+              type="button"
+              onClick={() => { setFollowUpNotes('Follow-up for quotation / negotiation'); setShowFollowUpModal(true) }}
+              className="h-[37px] px-5 rounded-[6px] bg-sky-600 text-white font-bold text-[15px] hover:bg-sky-700 flex items-center justify-center gap-2"
+              style={{ fontFamily: 'Roboto, sans-serif' }}
+            >
+              <Calendar size={18} />
+              Schedule Follow-up
+            </button>
+          )}
+        </div>
         </div>
       </div>
 
