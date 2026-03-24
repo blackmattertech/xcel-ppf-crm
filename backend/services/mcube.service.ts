@@ -205,6 +205,7 @@ export async function fetchMcubeInboundCallsByPhone(params: {
   if (!res.ok) return []
 
   const text = await res.text()
+  console.info('[mcube/inbound-sync] raw_response_text', text)
   let parsed: unknown = null
   try {
     parsed = JSON.parse(text)

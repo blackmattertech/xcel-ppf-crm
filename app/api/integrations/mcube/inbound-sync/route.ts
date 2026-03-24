@@ -111,6 +111,15 @@ export async function POST(request: NextRequest) {
     }
 
     const calls = await fetchMcubeInboundCallsByPhone({ token, phone: lead.phone })
+    console.info(
+      '[mcube/inbound-sync] fetched_calls',
+      JSON.stringify({
+        leadId,
+        leadPhone: lead.phone,
+        total: calls.length,
+        calls,
+      })
+    )
     if (!calls.length) {
       return NextResponse.json({ synced: 0, totalFetched: 0 })
     }

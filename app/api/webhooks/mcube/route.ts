@@ -38,16 +38,6 @@ function isUuidString(s: string): boolean {
   return UUID_RE.test(s)
 }
 
-function verifyMcubeWebhook(request: NextRequest): boolean {
-  const secret = process.env.MCUBE_WEBHOOK_SECRET
-  if (!secret) return false
-  const auth = request.headers.get('authorization')
-  if (auth === `Bearer ${secret}`) return true
-  if (request.headers.get('x-mcube-webhook-secret') === secret) return true
-  if (request.nextUrl.searchParams.get('secret') === secret) return true
-  return false
-}
-
 function computeDurationSeconds(payload: McubeWebhookPayload): number | null {
   const fromAnswered = parseAnsweredTimeToSeconds(payload.answeredtime)
   if (fromAnswered != null) return fromAnswered
@@ -259,10 +249,6 @@ async function handleHangup(
 }
 
 export async function POST(request: NextRequest) {
-  if (!verifyMcubeWebhook(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   let body: unknown
   try {
     body = await request.json()
@@ -281,6 +267,7 @@ export async function POST(request: NextRequest) {
   const payload = parsed.data as McubeWebhookPayload & { event?: string }
   const supabase = createServiceClient()
   const phase = deriveWebhookPhase(payload)
+  console.info('[webhooks/mcube] full_payload', JSON.stringify(payload))
   console.info('[webhooks/mcube] received', {
     phase,
     callid: payload.callid,
