@@ -53,19 +53,60 @@ function normalizeDialStatus(raw: string | undefined): string | undefined {
   return s
 }
 
+function pickFirstObject(value: unknown): Record<string, unknown> | null {
+  if (!value) return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = pickFirstObject(item)
+      if (found) return found
+    }
+    return null
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    const candidateKeys = ['data', 'Data', 'result', 'Result', 'payload', 'Payload', 'call', 'Call']
+    for (const key of candidateKeys) {
+      if (obj[key] !== undefined) {
+        const found = pickFirstObject(obj[key])
+        if (found) return found
+      }
+    }
+    return obj
+  }
+  return null
+}
+
+function getString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = obj[k]
+    if (v !== undefined && v !== null) {
+      const s = String(v).trim()
+      if (s) return s
+    }
+  }
+  return undefined
+}
+
 function normalizeIncomingPayload(body: unknown): unknown {
-  if (!body || typeof body !== 'object') return body
-  const r = body as Record<string, unknown>
+  const r = pickFirstObject(body)
+  if (!r) return body
 
   // Existing native shape already handled.
   if (typeof r.callid === 'string') return body
 
   // Alternate MCUBE payload shape (TitleCase keys).
-  const callSessionId = String(r.CallSessionId ?? '').trim()
+  const callSessionId = getString(r, [
+    'CallSessionId',
+    'CallSessionID',
+    'callSessionId',
+    'callsessionid',
+    'session_id',
+    'sessionId',
+  ])
   if (!callSessionId) return body
 
-  const starttime = String(r.StartTime ?? '').trim() || undefined
-  const durationRaw = String(r.CallDuration ?? '').trim()
+  const starttime = getString(r, ['StartTime', 'start_time', 'startTime', 'starttime'])
+  const durationRaw = getString(r, ['CallDuration', 'call_duration', 'Duration', 'duration']) ?? ''
   const durationSec = /^\d+$/.test(durationRaw) ? parseInt(durationRaw, 10) : null
   let endtime: string | undefined
   if (starttime && durationSec != null) {
@@ -82,16 +123,16 @@ function normalizeIncomingPayload(body: unknown): unknown {
 
   return {
     callid: callSessionId,
-    emp_phone: String(r.SourceNumber ?? '').trim() || undefined,
-    callto: String(r.DestinationNumber ?? '').trim() || undefined,
-    clicktocalldid: String(r.DisplayNumber ?? '').trim() || undefined,
-    dialstatus: normalizeDialStatus(String(r.Status ?? '').trim() || undefined),
+    emp_phone: getString(r, ['SourceNumber', 'source_number', 'emp_phone', 'empPhone']),
+    callto: getString(r, ['DestinationNumber', 'destination_number', 'callto', 'custnumber']),
+    clicktocalldid: getString(r, ['DisplayNumber', 'display_number', 'clicktocalldid']),
+    dialstatus: normalizeDialStatus(getString(r, ['Status', 'status', 'dialstatus'])),
     starttime,
     endtime,
     answeredtime:
       durationSec != null ? formatSecondsToAnsweredTime(durationSec) : undefined,
-    filename: String(r.ResourceURL ?? '').trim() || undefined,
-    direction: String(r.Direction ?? '').trim() || undefined,
+    filename: getString(r, ['ResourceURL', 'resource_url', 'filename', 'recording_url']),
+    direction: getString(r, ['Direction', 'direction']),
     // This payload is typically final hangup callback.
     event: 'hangup',
   }
@@ -319,6 +360,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = mcubeBodySchema.safeParse(body)
   if (!parsed.success) {
+    console.info('[webhooks/mcube] invalid_payload_raw', JSON.stringify(body))
     return NextResponse.json(
       { error: 'Invalid payload', details: parsed.error.flatten() },
       { status: 400 }
