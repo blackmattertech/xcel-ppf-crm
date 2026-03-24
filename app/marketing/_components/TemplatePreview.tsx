@@ -1,8 +1,27 @@
 'use client'
 
+import { Fragment, type ReactNode } from 'react'
+
 /** True if the value is a URL we can use in img src (not a Meta media handle). */
 function isDisplayableMediaUrl(value: string): boolean {
   return /^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')
+}
+
+function renderWhatsAppFormatting(text: string): ReactNode[] {
+  const lines = text.split('\n')
+  return lines.flatMap((line, lineIndex) => {
+    const tokens = line.split(/(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g)
+    const formatted = tokens.map((token, tokenIndex) => {
+      if (/^\*[^*\n]+\*$/.test(token)) return <strong key={`b-${lineIndex}-${tokenIndex}`}>{token.slice(1, -1)}</strong>
+      if (/^_[^_\n]+_$/.test(token)) return <em key={`i-${lineIndex}-${tokenIndex}`}>{token.slice(1, -1)}</em>
+      if (/^~[^~\n]+~$/.test(token)) return <s key={`s-${lineIndex}-${tokenIndex}`}>{token.slice(1, -1)}</s>
+      if (/^`[^`\n]+`$/.test(token)) return <code key={`c-${lineIndex}-${tokenIndex}`}>{token.slice(1, -1)}</code>
+      return <Fragment key={`t-${lineIndex}-${tokenIndex}`}>{token}</Fragment>
+    })
+
+    if (lineIndex === lines.length - 1) return formatted
+    return [...formatted, <br key={`br-${lineIndex}`} />]
+  })
 }
 
 export function TemplatePreview({
@@ -27,15 +46,25 @@ export function TemplatePreview({
     const samples: Record<string, string> = { '1': 'John', '2': 'Offer', '3': 'Code' }
     return samples[n] ?? `{{${n}}}`
   })
-  const headerImageSrc = headerFormat === 'IMAGE' && (headerPreviewUrl ?? (isDisplayableMediaUrl(headerMediaUrl) ? headerMediaUrl : null))
+  const headerMediaSrc = (headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT')
+    ? (headerPreviewUrl ?? (isDisplayableMediaUrl(headerMediaUrl) ? headerMediaUrl : null))
+    : null
   return (
     <div className="rounded-2xl bg-[#e5ddd5] p-4 max-w-sm transition-all duration-300 ease-out">
       <div className="bg-white rounded-xl shadow-md overflow-hidden text-left border border-gray-100">
         {headerFormat !== 'TEXT' && (headerMediaUrl || headerPreviewUrl || headerFormat !== 'TEXT') && (
           <div className="aspect-video bg-gray-100 flex items-center justify-center text-gray-400 text-sm">
-            {headerImageSrc || (headerFormat !== 'IMAGE' && headerMediaUrl) ? (
-              headerFormat === 'IMAGE' && headerImageSrc ? (
-                <img src={headerImageSrc} alt="Header" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+            {headerMediaSrc || (headerFormat !== 'IMAGE' && headerMediaUrl) ? (
+              headerFormat === 'IMAGE' && headerMediaSrc ? (
+                <img src={headerMediaSrc} alt="Header" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              ) : headerFormat === 'VIDEO' && headerMediaSrc ? (
+                <video className="w-full h-full object-cover" src={headerMediaSrc} controls muted playsInline preload="metadata" />
+              ) : headerFormat === 'DOCUMENT' && headerMediaSrc ? (
+                <iframe
+                  title="Document preview"
+                  src={headerMediaSrc}
+                  className="w-full h-full border-0 bg-white"
+                />
               ) : (
                 <span className="p-2">{headerFormat === 'VIDEO' ? '▶ Video' : '📄 Document'}</span>
               )
@@ -47,7 +76,7 @@ export function TemplatePreview({
         {headerFormat === 'TEXT' && headerText && (
           <div className="px-3 pt-3 pb-1 font-semibold text-gray-900 text-sm">{headerText}</div>
         )}
-        <div className="px-3 py-2 text-gray-800 text-sm whitespace-pre-wrap transition-opacity duration-200">{bodyPreview || 'Body text…'}</div>
+        <div className="px-3 py-2 text-gray-800 text-sm whitespace-pre-wrap transition-opacity duration-200">{bodyPreview ? renderWhatsAppFormatting(bodyPreview) : 'Body text…'}</div>
         {footer && <div className="px-3 pb-2 pt-0 text-gray-500 text-xs">{footer}</div>}
         {buttons.length > 0 && (
           <div className="px-2 pb-3 pt-1 flex flex-col gap-1.5">

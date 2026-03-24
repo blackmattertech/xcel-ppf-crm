@@ -545,6 +545,9 @@ export default function CreateTemplatePage() {
                   rows={4}
                   className={fieldInput}
                 />
+                <p className="mt-1 text-xs text-slate-500">
+                  Formatting: <span className="font-mono">*bold*</span>, <span className="font-mono">_italic_</span>, <span className="font-mono">~strike~</span>, <span className="font-mono">`monospace`</span>. Use single asterisks for bold.
+                </p>
               </div>
               {subtype === 'STANDARD' && (
                 <div>
