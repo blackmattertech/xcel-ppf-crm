@@ -436,6 +436,16 @@ interface Lead {
     notes: string | null
     call_duration: number | null
     created_at: string
+    integration?: 'manual' | 'mcube'
+    recording_url?: string | null
+    started_at?: string | null
+    ended_at?: string | null
+    dial_status?: string | null
+    direction?: string | null
+    mcube_agent_name?: string | null
+    mcube_group_name?: string | null
+    disconnected_by?: string | null
+    answered_duration_seconds?: number | null
     called_by_user: {
       id: string
       name: string
@@ -486,6 +496,7 @@ export default function LeadDetailPage() {
   const [callFollowUpDate, setCallFollowUpDate] = useState('')
   const [callFollowUpTime, setCallFollowUpTime] = useState('')
   const [submittingCall, setSubmittingCall] = useState(false)
+  const [mcubeCalling, setMcubeCalling] = useState(false)
   
   // LEAD JOURNEY: Connected flow sub-options
   const [connectedSubOption, setConnectedSubOption] = useState<'interested' | 'not_interested' | 'call_later' | ''>('')
@@ -534,6 +545,8 @@ export default function LeadDetailPage() {
   const [showQuotationSuccessModal, setShowQuotationSuccessModal] = useState(false)
   const [leadQuotations, setLeadQuotations] = useState<Array<{ id: string; quote_number: string; version: number }>>([])
   const [markingQuotationShared, setMarkingQuotationShared] = useState(false)
+  const [hideConnectedWhenLastMcubeNotConnected, setHideConnectedWhenLastMcubeNotConnected] = useState(true)
+  const [syncingInboundCalls, setSyncingInboundCalls] = useState(false)
   // Quotation shared / negotiation: call outcome (accepted | not_accepted | negotiation)
   const [quotationCallOutcome, setQuotationCallOutcome] = useState<'accepted' | 'not_accepted' | 'negotiation' | ''>('')
   // Order created after "Accepted" → used to update order payment when user submits payment modal
@@ -543,6 +556,7 @@ export default function LeadDetailPage() {
     checkAuth()
     fetchLead()
     fetchProducts()
+    fetchMcubeSettings()
   }, [leadId])
 
   useEffect(() => {
@@ -552,6 +566,15 @@ export default function LeadDetailPage() {
       setLeadQuotations([])
     }
   }, [leadId, lead?.status])
+
+  useEffect(() => {
+    if (!leadId) return
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void fetchLeadLive()
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [leadId, showStatusUpdateModal])
 
   async function fetchProducts() {
     try {
@@ -627,6 +650,97 @@ export default function LeadDetailPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function fetchLeadLive() {
+    try {
+      // Bypass in-memory cache so webhook updates appear seamlessly.
+      const response = await cachedFetch(`/api/leads/${leadId}?live=${Date.now()}`, undefined, 0)
+      if (!response.ok) return
+      const data = await response.json()
+      if (!data?.lead) return
+      setLead(data.lead)
+      if (!showStatusUpdateModal) {
+        setNewStatus(data.lead.status)
+      }
+    } catch {
+      // Silent polling to avoid UI flicker/toasts.
+    }
+  }
+
+  async function fetchMcubeSettings() {
+    try {
+      const response = await cachedFetch('/api/integrations/mcube/settings')
+      if (!response.ok) return
+      const data = await response.json().catch(() => ({}))
+      const shouldHide = data?.settings?.hideConnectedWhenLastMcubeNotConnected
+      if (typeof shouldHide === 'boolean') {
+        setHideConnectedWhenLastMcubeNotConnected(shouldHide)
+      }
+    } catch {
+      // Keep default behavior if settings cannot be fetched.
+    }
+  }
+
+  function toTimeInputValue(isoLike: string | null | undefined): string {
+    if (!isoLike) return ''
+    const d = new Date(isoLike)
+    if (Number.isNaN(d.getTime())) return ''
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    return `${hh}:${mm}`
+  }
+
+  async function handleMcubeOutbound() {
+    setMcubeCalling(true)
+    try {
+      const response = await cachedFetch('/api/integrations/mcube/outbound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(typeof data.error === 'string' ? data.error : 'MCUBE call failed')
+        return
+      }
+      alert('Call initiated via MCUBE. Recording will appear when the call ends.')
+      await fetchLead()
+    } catch (e) {
+      console.error(e)
+      alert('MCUBE call failed')
+    } finally {
+      setMcubeCalling(false)
+    }
+  }
+
+  async function syncMcubeInboundCalls(silent = true) {
+    try {
+      setSyncingInboundCalls(true)
+      const response = await cachedFetch('/api/integrations/mcube/inbound-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (!silent) alert(typeof data.error === 'string' ? data.error : 'Failed to sync MCUBE call details')
+        return
+      }
+      if ((data?.synced ?? 0) > 0) {
+        await fetchLead()
+      }
+    } catch (e) {
+      console.error(e)
+      if (!silent) alert('Failed to sync MCUBE call details')
+    } finally {
+      setSyncingInboundCalls(false)
+    }
+  }
+
+  async function handleConnectedClick() {
+    setCallOutcome('connected')
+    await syncMcubeInboundCalls(true)
   }
 
   async function handleStatusUpdate() {
@@ -861,6 +975,34 @@ export default function LeadDetailPage() {
 
   // When lead is Quotation Shared or Negotiation: handle Accepted / Not Accepted / Negotiation
   const isQuotationCallFlow = lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION
+  const latestMcubeCall = (lead?.calls ?? [])
+    .filter((call) => call.integration === 'mcube')
+    .slice()
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+  const canShowConnectedOption =
+    !hideConnectedWhenLastMcubeNotConnected ||
+    !latestMcubeCall ||
+    latestMcubeCall.outcome === CALL_OUTCOME.CONNECTED
+
+  useEffect(() => {
+    if (!showCallModal || callOutcome !== CALL_OUTCOME.CONNECTED) return
+    if (!latestMcubeCall) return
+
+    // Auto-fill from latest MCUBE hangup details, while allowing manual override.
+    if (!callStartTime && latestMcubeCall.started_at) {
+      setCallStartTime(toTimeInputValue(latestMcubeCall.started_at))
+    }
+    if (!callEndTime && latestMcubeCall.ended_at) {
+      setCallEndTime(toTimeInputValue(latestMcubeCall.ended_at))
+    }
+  }, [
+    showCallModal,
+    callOutcome,
+    latestMcubeCall?.started_at,
+    latestMcubeCall?.ended_at,
+    callStartTime,
+    callEndTime,
+  ])
 
   async function handleQuotationCallOutcomeSubmit() {
     if (!quotationCallOutcome) {
@@ -1501,6 +1643,32 @@ export default function LeadDetailPage() {
     return null
   }
 
+  /**
+   * Follow-up rows store a system prefix plus user text (e.g. "Follow-up scheduled after call: … . user note").
+   * Notes panel should show only the user-entered part.
+   */
+  function extractFollowUpUserNote(raw: string | null | undefined): string | null {
+    let t = (raw ?? '').trim()
+    if (!t) return null
+    const afterScheduledCall = t.replace(/^Follow-up scheduled after call:\s*.+?\.\s*/i, '').trim()
+    if (afterScheduledCall !== t) {
+      t = afterScheduledCall
+    } else {
+      t = t.replace(/^Call Later - Follow-up scheduled\.\s*/i, '').trim()
+    }
+    if (!t) return null
+    if (/^Follow-up completed$/i.test(t)) return null
+    return t
+  }
+
+  /** Follow-ups with user-visible note text only, newest scheduled first (for Notes panel). */
+  function getFollowUpsWithNotesSorted() {
+    if (!lead?.follow_ups?.length) return []
+    return lead.follow_ups
+      .filter((fu) => extractFollowUpUserNote(fu.notes) != null)
+      .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime())
+  }
+
   // Get interests from meta_data
   function getInterests() {
     if (lead?.meta_data) {
@@ -1680,8 +1848,8 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* Content - slightly larger text and spacing */}
-        <div className="px-6 py-6 overflow-y-auto flex-1">
+        {/* Scrollable body – footer stays pinned below */}
+        <div className="px-6 pt-6 pb-2 overflow-y-auto flex-1 min-h-0">
           <div className="grid gap-6 grid-cols-1 md:grid-cols-[360px_170px_170px] max-w-[800px] mx-auto">
             {/* Column 1 (360px) - Contact, Lead Details, Interests, Buttons */}
             <div className="flex flex-col gap-6">
@@ -1811,23 +1979,6 @@ export default function LeadDetailPage() {
                   )}
                 </div>
               </div>
-
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-3 pt-1">
-                <button onClick={() => setShowCallModal(true)} className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
-                  <Phone size={16} />
-                  Make call
-                </button>
-                {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
-                  <Link href={`/quotations/${leadQuotations[0].id}`} className="h-10 px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
-                    <Eye size={18} />
-                    View Quotation
-                  </Link>
-                )}
-                <button onClick={() => router.push(`/leads/${leadId}/history`)} className="h-10 px-5 rounded-[6px] bg-[#fafafa] border border-[#e0e0e0] text-black font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
-                  View full History
-                </button>
-              </div>
             </div>
 
             {/* Column 2 (170px) - Assigned To + Next Follow-up */}
@@ -1884,8 +2035,26 @@ export default function LeadDetailPage() {
                   </span>
                   Notes
                 </h2>
-                <div className="text-[11px] text-black leading-[1.4] whitespace-pre-wrap line-clamp-5">
-                  {(lead?.requirement || lead?.meta_data?.notes || 'No notes yet.').replace(/_/g, ' ')}
+                <div className="max-h-52 overflow-y-auto text-[11px] text-black leading-[1.4] space-y-3 pr-0.5">
+                  {(() => {
+                    const followUpsWithNotes = getFollowUpsWithNotesSorted()
+                    const otherNotes = (lead?.requirement || lead?.meta_data?.notes || '').trim().replace(/_/g, ' ')
+                    if (followUpsWithNotes.length === 0 && !otherNotes) {
+                      return <p className="whitespace-pre-wrap">No notes yet.</p>
+                    }
+                    return (
+                      <>
+                        {followUpsWithNotes.map((fu) => (
+                          <p key={fu.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                            {extractFollowUpUserNote(fu.notes) ?? ''}
+                          </p>
+                        ))}
+                        {otherNotes ? (
+                          <p className={`whitespace-pre-wrap ${followUpsWithNotes.length > 0 ? 'pt-2' : ''}`}>{otherNotes}</p>
+                        ) : null}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
 
@@ -1911,10 +2080,61 @@ export default function LeadDetailPage() {
                   })}
                   {lead?.calls && lead.calls.length > 0 && lead.calls.slice(0, 2).map((call) => {
                     const timeStr = `${Math.floor((Date.now() - new Date(call.created_at).getTime()) / (1000 * 60 * 60))} hours ago`
+                    const dur =
+                      call.call_duration != null
+                        ? `${Math.floor(call.call_duration / 60)}:${String(call.call_duration % 60).padStart(2, '0')}`
+                        : null
+                    const startedAt = call.started_at ? new Date(call.started_at) : null
+                    const endedAt = call.ended_at ? new Date(call.ended_at) : null
+                    const timeWindow =
+                      startedAt && endedAt
+                        ? `${startedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - ${endedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+                        : null
                     return (
                       <div key={call.id}>
                         <p className="text-[#717d8a] leading-[1.3]">{timeStr}</p>
-                        <p className="font-semibold text-black leading-[1.3]">Phone call with customer - {call.notes || 'Discussed pricing and features'}</p>
+                        <p className="font-semibold text-black leading-[1.3]">
+                          {call.integration === 'mcube' ? 'MCUBE call' : 'Phone call'} —{' '}
+                          {CALL_OUTCOME_LABELS[call.outcome as keyof typeof CALL_OUTCOME_LABELS] ?? call.outcome}
+                          {dur ? ` · ${dur}` : ''}
+                          {call.direction ? ` · ${call.direction}` : ''}
+                          {call.dial_status ? ` · ${call.dial_status}` : ''}
+                        </p>
+                        <p className="text-black/80 leading-[1.3] mt-0.5">
+                          {call.notes || (call.integration === 'mcube' ? 'Logged from MCUBE' : 'Discussed pricing and features')}
+                        </p>
+                        {timeWindow ? (
+                          <p className="text-[11px] text-[#717d8a] leading-[1.3] mt-0.5">
+                            Call timing: {timeWindow}
+                          </p>
+                        ) : null}
+                        {call.integration === 'mcube' && (call.mcube_agent_name || call.disconnected_by || call.mcube_group_name) ? (
+                          <p className="text-[11px] text-[#717d8a] leading-[1.3] mt-0.5">
+                            {call.mcube_agent_name ? `Agent: ${call.mcube_agent_name}` : ''}
+                            {call.mcube_agent_name && (call.disconnected_by || call.mcube_group_name) ? ' · ' : ''}
+                            {call.disconnected_by ? `Disconnected by: ${call.disconnected_by}` : ''}
+                            {call.disconnected_by && call.mcube_group_name ? ' · ' : ''}
+                            {call.mcube_group_name ? `Group: ${call.mcube_group_name}` : ''}
+                          </p>
+                        ) : null}
+                        {call.recording_url ? (
+                          <div className="mt-2 p-2 rounded-md border border-[#e5e7eb] bg-[#f8fafc]">
+                            <p className="text-[10px] font-medium text-[#4b5563] mb-1">Call recording</p>
+                            <audio controls preload="none" className="w-full max-w-full h-8">
+                              <source src={call.recording_url} type="audio/wav" />
+                              <source src={call.recording_url} type="audio/mpeg" />
+                              Your browser does not support audio preview.
+                            </audio>
+                            <a
+                              href={call.recording_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-[#2563eb] hover:text-[#1d4ed8] underline mt-1 inline-block"
+                            >
+                              Open in new tab
+                            </a>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}
@@ -1927,51 +2147,80 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* Footer - extra actions only (main actions are in content per Figma) */}
-        {(lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0) || (lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) ? (
-          <div className="sticky bottom-0 bg-white border-t border-[#eaecee] px-6 py-4 flex flex-wrap gap-3 rounded-b-[12px]">
-            {lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0 && (
-              <button
-                onClick={async () => {
-                  setMarkingQuotationShared(true)
-                  try {
-                    const res = await cachedFetch(`/api/leads/${leadId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: LEAD_STATUS.QUOTATION_SHARED, notes: 'Quotation shared with lead' }) })
-                    if (res.ok) await fetchLead()
-                    else { const err = await res.json(); alert(err.error || 'Failed to update status') }
-                  } catch (e) { console.error(e); alert('Failed to update status') }
-                  finally { setMarkingQuotationShared(false) }
-                }}
-                disabled={markingQuotationShared}
-                className="h-[37px] px-5 rounded-[6px] bg-amber-600 text-white font-bold text-[15px] hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ fontFamily: 'Roboto, sans-serif' }}
-              >
-                <Share2 size={18} />
-                {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
-              </button>
-            )}
-            {lead?.status === LEAD_STATUS.QUALIFIED && (
-              <button
-                onClick={() => setShowQuotationModal(true)}
-                className="h-[37px] px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] hover:bg-[#45a050] flex items-center justify-center gap-2"
-                style={{ fontFamily: 'Roboto, sans-serif' }}
-              >
-                <FilePlus size={18} />
-                {leadQuotations.length > 0 ? 'Create Another Quotation' : 'Create Quotation'}
-              </button>
-            )}
-            {(lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
-              <button
-                type="button"
-                onClick={() => { setFollowUpNotes('Follow-up for quotation / negotiation'); setShowFollowUpModal(true) }}
-                className="h-[37px] px-5 rounded-[6px] bg-sky-600 text-white font-bold text-[15px] hover:bg-sky-700 flex items-center justify-center gap-2"
-                style={{ fontFamily: 'Roboto, sans-serif' }}
-              >
-                <Calendar size={18} />
-                Schedule Follow-up
-              </button>
-            )}
-          </div>
-        ) : null}
+        {/* Footer – pinned to bottom of dialog; body scrolls above */}
+        <div className="shrink-0 bg-white border-t border-[#eaecee] px-6 py-4 flex flex-wrap gap-3 rounded-b-[12px]">
+          <button
+            onClick={async () => {
+              await fetchLead()
+              await syncMcubeInboundCalls(true)
+              setShowCallModal(true)
+            }}
+            className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]"
+            style={{ fontFamily: 'Roboto, sans-serif' }}
+          >
+            <Phone size={16} />
+            Update status
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleMcubeOutbound()}
+            disabled={mcubeCalling}
+            className="h-10 px-5 rounded-[6px] bg-[#1a1a1a] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px] disabled:opacity-50"
+            style={{ fontFamily: 'Roboto, sans-serif' }}
+          >
+            <Phone size={16} />
+            {mcubeCalling ? 'Calling…' : 'Call via MCUBE'}
+          </button>
+          {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
+            <Link href={`/quotations/${leadQuotations[0].id}`} className="h-10 px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+              <Eye size={18} />
+              View Quotation
+            </Link>
+          )}
+          <button onClick={() => router.push(`/leads/${leadId}/history`)} className="h-10 px-5 rounded-[6px] bg-[#fafafa] border border-[#e0e0e0] text-black font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
+            View full History
+          </button>
+          {lead?.status === LEAD_STATUS.QUALIFIED && leadQuotations.length > 0 && (
+            <button
+              onClick={async () => {
+                setMarkingQuotationShared(true)
+                try {
+                  const res = await cachedFetch(`/api/leads/${leadId}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: LEAD_STATUS.QUOTATION_SHARED, notes: 'Quotation shared with lead' }) })
+                  if (res.ok) await fetchLead()
+                  else { const err = await res.json(); alert(err.error || 'Failed to update status') }
+                } catch (e) { console.error(e); alert('Failed to update status') }
+                finally { setMarkingQuotationShared(false) }
+              }}
+              disabled={markingQuotationShared}
+              className="h-[37px] px-5 rounded-[6px] bg-amber-600 text-white font-bold text-[15px] hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ fontFamily: 'Roboto, sans-serif' }}
+            >
+              <Share2 size={18} />
+              {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
+            </button>
+          )}
+          {lead?.status === LEAD_STATUS.QUALIFIED && (
+            <button
+              onClick={() => setShowQuotationModal(true)}
+              className="h-[37px] px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] hover:bg-[#45a050] flex items-center justify-center gap-2"
+              style={{ fontFamily: 'Roboto, sans-serif' }}
+            >
+              <FilePlus size={18} />
+              {leadQuotations.length > 0 ? 'Create Another Quotation' : 'Create Quotation'}
+            </button>
+          )}
+          {(lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
+            <button
+              type="button"
+              onClick={() => { setFollowUpNotes('Follow-up for quotation / negotiation'); setShowFollowUpModal(true) }}
+              className="h-[37px] px-5 rounded-[6px] bg-sky-600 text-white font-bold text-[15px] hover:bg-sky-700 flex items-center justify-center gap-2"
+              style={{ fontFamily: 'Roboto, sans-serif' }}
+            >
+              <Calendar size={18} />
+              Schedule Follow-up
+            </button>
+          )}
+        </div>
         </div>
       </div>
 
@@ -2081,33 +2330,38 @@ export default function LeadDetailPage() {
                 <>
               {/* Question */}
               <h4 className="text-base font-medium text-gray-900 mb-4">What was the call outcome?</h4>
+              {syncingInboundCalls && (
+                <p className="text-xs text-gray-500 mb-3">Syncing latest MCUBE call details...</p>
+              )}
               
               {/* Outcome Options */}
               <div className="space-y-3 mb-6">
                     {/* Connected - Green */}
-                    <button
-                      type="button"
-                      onClick={() => setCallOutcome('connected')}
-                      className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
-                        callOutcome === CALL_OUTCOME.CONNECTED
-                          ? 'border-green-500 bg-green-50'
-                          : 'border-gray-200 hover:border-green-300 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                          callOutcome === CALL_OUTCOME.CONNECTED ? 'bg-green-500' : 'bg-gray-100'
-                        }`}>
-                          <Phone size={24} className={callOutcome === CALL_OUTCOME.CONNECTED ? 'text-white' : 'text-gray-400'} />
-      </div>
-                        <div className="flex-1">
-                          <p className={`font-semibold mb-1 ${callOutcome === CALL_OUTCOME.CONNECTED ? 'text-green-700' : 'text-gray-900'}`}>
-                            Connected
-                          </p>
-                          <p className="text-sm text-gray-600">Successfully spoke with the lead.</p>
+                    {canShowConnectedOption && (
+                      <button
+                        type="button"
+                        onClick={() => void handleConnectedClick()}
+                        className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
+                          callOutcome === CALL_OUTCOME.CONNECTED
+                            ? 'border-green-500 bg-green-50'
+                            : 'border-gray-200 hover:border-green-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                            callOutcome === CALL_OUTCOME.CONNECTED ? 'bg-green-500' : 'bg-gray-100'
+                          }`}>
+                            <Phone size={24} className={callOutcome === CALL_OUTCOME.CONNECTED ? 'text-white' : 'text-gray-400'} />
+        </div>
+                          <div className="flex-1">
+                            <p className={`font-semibold mb-1 ${callOutcome === CALL_OUTCOME.CONNECTED ? 'text-green-700' : 'text-gray-900'}`}>
+                              Connected
+                            </p>
+                            <p className="text-sm text-gray-600">Successfully spoke with the lead.</p>
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                    )}
 
                     {/* Not Reachable - Orange */}
                     <button

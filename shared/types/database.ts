@@ -231,6 +231,55 @@ export interface Database {
           created_at?: string
         }
       }
+      mcube_outbound_sessions: {
+        Row: {
+          id: string
+          lead_id: string
+          initiated_by: string
+          mcube_call_id: string | null
+          created_at: string
+          completed_at: string | null
+        }
+        Insert: {
+          id?: string
+          lead_id: string
+          initiated_by: string
+          mcube_call_id?: string | null
+          created_at?: string
+          completed_at?: string | null
+        }
+        Update: {
+          id?: string
+          lead_id?: string
+          initiated_by?: string
+          mcube_call_id?: string | null
+          created_at?: string
+          completed_at?: string | null
+        }
+      }
+      mcube_settings: {
+        Row: {
+          id: boolean
+          hide_connected_when_last_mcube_not_connected: boolean
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: boolean
+          hide_connected_when_last_mcube_not_connected?: boolean
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: boolean
+          hide_connected_when_last_mcube_not_connected?: boolean
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       calls: {
         Row: {
           id: string
@@ -241,6 +290,18 @@ export interface Database {
           notes: string | null
           call_duration: number | null
           created_at: string
+          mcube_call_id: string | null
+          recording_url: string | null
+          started_at: string | null
+          ended_at: string | null
+          answered_duration_seconds: number | null
+          dial_status: string | null
+          direction: 'inbound' | 'outbound' | null
+          disconnected_by: string | null
+          mcube_group_name: string | null
+          mcube_agent_name: string | null
+          integration: 'manual' | 'mcube'
+          mcube_session_id: string | null
         }
         Insert: {
           id?: string
@@ -251,6 +312,18 @@ export interface Database {
           notes?: string | null
           call_duration?: number | null
           created_at?: string
+          mcube_call_id?: string | null
+          recording_url?: string | null
+          started_at?: string | null
+          ended_at?: string | null
+          answered_duration_seconds?: number | null
+          dial_status?: string | null
+          direction?: 'inbound' | 'outbound' | null
+          disconnected_by?: string | null
+          mcube_group_name?: string | null
+          mcube_agent_name?: string | null
+          integration?: 'manual' | 'mcube'
+          mcube_session_id?: string | null
         }
         Update: {
           id?: string
@@ -261,6 +334,18 @@ export interface Database {
           notes?: string | null
           call_duration?: number | null
           created_at?: string
+          mcube_call_id?: string | null
+          recording_url?: string | null
+          started_at?: string | null
+          ended_at?: string | null
+          answered_duration_seconds?: number | null
+          dial_status?: string | null
+          direction?: 'inbound' | 'outbound' | null
+          disconnected_by?: string | null
+          mcube_group_name?: string | null
+          mcube_agent_name?: string | null
+          integration?: 'manual' | 'mcube'
+          mcube_session_id?: string | null
         }
       }
       follow_ups: {
