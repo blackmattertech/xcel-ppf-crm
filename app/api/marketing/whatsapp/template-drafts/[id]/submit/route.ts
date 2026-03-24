@@ -102,11 +102,24 @@ export async function POST(
   const footerComp = normalized.components.find((c) => c.type === 'FOOTER') as
     | { type: 'FOOTER'; text?: string }
     | undefined
+  const buttonsComp = normalized.components.find((c) => c.type === 'BUTTONS') as
+    | { type: 'BUTTONS'; buttons?: Array<{ type?: string; text?: string; example?: unknown }> }
+    | undefined
 
   const headerFormat = (headerComp?.format ?? null) as 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
   const headerText = headerFormat === 'TEXT' ? (headerComp?.text ?? null) : null
   const headerMediaId = headerFormat && headerFormat !== 'TEXT' ? (headerComp?.headerHandle ?? null) : null
   const headerMediaUrl = headerFormat && headerFormat !== 'TEXT' ? (headerComp?.headerMediaUrl ?? null) : null
+  const normalizedButtons = (buttonsComp?.buttons ?? [])
+    .map((b) => {
+      const type = String(b.type || '').trim()
+      const text = String(b.text || '').trim()
+      if (!type || !text) return null
+      const out: { type: string; text: string; example?: string } = { type, text }
+      if (typeof b.example === 'string' && b.example.trim()) out.example = b.example.trim()
+      return out
+    })
+    .filter((b): b is { type: string; text: string; example?: string } => b !== null)
 
   templateRow = await repo.insertTemplate({
     name: normalized.name,
@@ -118,6 +131,7 @@ export async function POST(
     header_format: headerFormat,
     header_media_id: headerMediaId,
     header_media_url: headerMediaUrl,
+    buttons: normalizedButtons,
     status: mappedStatus,
     meta_id: metaId,
     meta_template_id: metaId,
