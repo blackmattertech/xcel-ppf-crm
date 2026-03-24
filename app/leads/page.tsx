@@ -144,6 +144,8 @@ function GridView({
   onDeleteLead,
   canDeleteLeads,
   deletingLeadId,
+  onMcubeOutbound,
+  mcubeOutboundLeadId,
 }: {
   leads: Lead[]
   getVehicleName: (lead: Lead) => string
@@ -156,6 +158,8 @@ function GridView({
   onDeleteLead?: (leadId: string) => void
   canDeleteLeads?: boolean
   deletingLeadId?: string | null
+  onMcubeOutbound?: (leadId: string) => void | Promise<void>
+  mcubeOutboundLeadId?: string | null
 }) {
   // Get budget/amount from meta_data
   function getBudget(lead: Lead): string {
@@ -404,7 +408,7 @@ function GridView({
 
             {/* CARD FOOTER - Action Buttons */}
             <div className="px-4 py-3 bg-[#fafafa] border-t border-[#eaecee]">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -415,6 +419,19 @@ function GridView({
                   <Phone className="w-3 h-3" />
                   <span>Call</span>
                 </button>
+                {onMcubeOutbound && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void onMcubeOutbound(lead.id)
+                    }}
+                    disabled={mcubeOutboundLeadId === lead.id}
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#1a1a1a] text-white rounded-md text-[10px] font-medium hover:bg-black transition-colors disabled:opacity-50"
+                  >
+                    <span>{mcubeOutboundLeadId === lead.id ? '…' : 'MCUBE'}</span>
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -921,7 +938,30 @@ function LeadsPageContent() {
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false)
   const [metaSyncLoading, setMetaSyncLoading] = useState(false)
-  
+  const [mcubeOutboundLeadId, setMcubeOutboundLeadId] = useState<string | null>(null)
+
+  async function handleMcubeOutboundList(leadId: string) {
+    setMcubeOutboundLeadId(leadId)
+    try {
+      const response = await cachedFetch('/api/integrations/mcube/outbound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(typeof data.error === 'string' ? data.error : 'MCUBE call failed')
+        return
+      }
+      alert('Call initiated via MCUBE. Recording will appear when the call ends.')
+    } catch (e) {
+      console.error(e)
+      alert('MCUBE call failed')
+    } finally {
+      setMcubeOutboundLeadId(null)
+    }
+  }
+
   // Pagination: current page is derived from URL so closing lead detail always shows the right page
   const pageParam = searchParams.get('page')
   const currentPage = !pageParam ? 1 : Math.max(1, parseInt(pageParam, 10) || 1)
@@ -2574,6 +2614,17 @@ function LeadsPageContent() {
                   >
                     <Phone size={16} />
                   </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleMcubeOutboundList(lead.id)
+                    }}
+                    disabled={mcubeOutboundLeadId === lead.id}
+                    className="bg-[#1a1a1a] text-white rounded-full min-w-[2.5rem] h-10 px-2 flex items-center justify-center flex-shrink-0 text-[10px] font-semibold disabled:opacity-50"
+                  >
+                    {mcubeOutboundLeadId === lead.id ? '…' : 'MC'}
+                  </button>
                   {/* Email Button */}
                   <button
                     onClick={(e) => {
@@ -3825,6 +3876,8 @@ function LeadsPageContent() {
                 onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
                 canDeleteLeads={canDeleteLeads}
                 deletingLeadId={deletingLeadId}
+                onMcubeOutbound={handleMcubeOutboundList}
+                mcubeOutboundLeadId={mcubeOutboundLeadId}
               />
               {/* Pagination for Grid View */}
               {totalPages >= 1 && (

@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Layout from '@/components/Layout'
 import FacebookIntegration from '@/components/FacebookIntegration'
 import WhatsAppIntegration from '@/components/WhatsAppIntegration'
+import McubeSettings from '@/components/McubeSettings'
 import { useAuthContext } from '@/components/AuthProvider'
 import { CheckCircle2, XCircle } from 'lucide-react'
 
 function SettingsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isAuthenticated, loading: authLoading } = useAuthContext()
+  const { isAuthenticated, loading: authLoading, role } = useAuthContext()
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   useEffect(() => {
@@ -134,6 +135,12 @@ function SettingsContent() {
               <WhatsAppIntegration />
             </div>
           </div>
+          {(role?.name === 'admin' || role?.name === 'super_admin') && (
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Admin Controls</h2>
+              <McubeSettings />
+            </div>
+          )}
         </div>
       </div>
     </Layout>

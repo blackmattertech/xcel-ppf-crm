@@ -436,6 +436,13 @@ interface Lead {
     notes: string | null
     call_duration: number | null
     created_at: string
+    integration?: 'manual' | 'mcube'
+    recording_url?: string | null
+    started_at?: string | null
+    ended_at?: string | null
+    dial_status?: string | null
+    direction?: string | null
+    mcube_agent_name?: string | null
     called_by_user: {
       id: string
       name: string
@@ -486,6 +493,7 @@ export default function LeadDetailPage() {
   const [callFollowUpDate, setCallFollowUpDate] = useState('')
   const [callFollowUpTime, setCallFollowUpTime] = useState('')
   const [submittingCall, setSubmittingCall] = useState(false)
+  const [mcubeCalling, setMcubeCalling] = useState(false)
   
   // LEAD JOURNEY: Connected flow sub-options
   const [connectedSubOption, setConnectedSubOption] = useState<'interested' | 'not_interested' | 'call_later' | ''>('')
@@ -534,6 +542,7 @@ export default function LeadDetailPage() {
   const [showQuotationSuccessModal, setShowQuotationSuccessModal] = useState(false)
   const [leadQuotations, setLeadQuotations] = useState<Array<{ id: string; quote_number: string; version: number }>>([])
   const [markingQuotationShared, setMarkingQuotationShared] = useState(false)
+  const [hideConnectedWhenLastMcubeNotConnected, setHideConnectedWhenLastMcubeNotConnected] = useState(true)
   // Quotation shared / negotiation: call outcome (accepted | not_accepted | negotiation)
   const [quotationCallOutcome, setQuotationCallOutcome] = useState<'accepted' | 'not_accepted' | 'negotiation' | ''>('')
   // Order created after "Accepted" → used to update order payment when user submits payment modal
@@ -543,6 +552,7 @@ export default function LeadDetailPage() {
     checkAuth()
     fetchLead()
     fetchProducts()
+    fetchMcubeSettings()
   }, [leadId])
 
   useEffect(() => {
@@ -626,6 +636,43 @@ export default function LeadDetailPage() {
       setError('Failed to fetch lead')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchMcubeSettings() {
+    try {
+      const response = await cachedFetch('/api/integrations/mcube/settings')
+      if (!response.ok) return
+      const data = await response.json().catch(() => ({}))
+      const shouldHide = data?.settings?.hideConnectedWhenLastMcubeNotConnected
+      if (typeof shouldHide === 'boolean') {
+        setHideConnectedWhenLastMcubeNotConnected(shouldHide)
+      }
+    } catch {
+      // Keep default behavior if settings cannot be fetched.
+    }
+  }
+
+  async function handleMcubeOutbound() {
+    setMcubeCalling(true)
+    try {
+      const response = await cachedFetch('/api/integrations/mcube/outbound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(typeof data.error === 'string' ? data.error : 'MCUBE call failed')
+        return
+      }
+      alert('Call initiated via MCUBE. Recording will appear when the call ends.')
+      await fetchLead()
+    } catch (e) {
+      console.error(e)
+      alert('MCUBE call failed')
+    } finally {
+      setMcubeCalling(false)
     }
   }
 
@@ -861,6 +908,14 @@ export default function LeadDetailPage() {
 
   // When lead is Quotation Shared or Negotiation: handle Accepted / Not Accepted / Negotiation
   const isQuotationCallFlow = lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.NEGOTIATION
+  const latestMcubeCall = (lead?.calls ?? [])
+    .filter((call) => call.integration === 'mcube')
+    .slice()
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+  const canShowConnectedOption =
+    !hideConnectedWhenLastMcubeNotConnected ||
+    !latestMcubeCall ||
+    latestMcubeCall.outcome === CALL_OUTCOME.CONNECTED
 
   async function handleQuotationCallOutcomeSubmit() {
     if (!quotationCallOutcome) {
@@ -1816,7 +1871,17 @@ export default function LeadDetailPage() {
               <div className="flex flex-wrap gap-3 pt-1">
                 <button onClick={() => setShowCallModal(true)} className="h-10 px-5 rounded-[6px] bg-[#ed1b24] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
                   <Phone size={16} />
-                  Make call
+                  Update status
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleMcubeOutbound()}
+                  disabled={mcubeCalling}
+                  className="h-10 px-5 rounded-[6px] bg-[#1a1a1a] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px] disabled:opacity-50"
+                  style={{ fontFamily: 'Roboto, sans-serif' }}
+                >
+                  <Phone size={16} />
+                  {mcubeCalling ? 'Calling…' : 'Call via MCUBE'}
                 </button>
                 {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
                   <Link href={`/quotations/${leadQuotations[0].id}`} className="h-10 px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
@@ -1911,10 +1976,44 @@ export default function LeadDetailPage() {
                   })}
                   {lead?.calls && lead.calls.length > 0 && lead.calls.slice(0, 2).map((call) => {
                     const timeStr = `${Math.floor((Date.now() - new Date(call.created_at).getTime()) / (1000 * 60 * 60))} hours ago`
+                    const dur =
+                      call.call_duration != null
+                        ? `${Math.floor(call.call_duration / 60)}:${String(call.call_duration % 60).padStart(2, '0')}`
+                        : null
+                    const startedAt = call.started_at ? new Date(call.started_at) : null
+                    const endedAt = call.ended_at ? new Date(call.ended_at) : null
+                    const timeWindow =
+                      startedAt && endedAt
+                        ? `${startedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} - ${endedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+                        : null
                     return (
                       <div key={call.id}>
                         <p className="text-[#717d8a] leading-[1.3]">{timeStr}</p>
-                        <p className="font-semibold text-black leading-[1.3]">Phone call with customer - {call.notes || 'Discussed pricing and features'}</p>
+                        <p className="font-semibold text-black leading-[1.3]">
+                          {call.integration === 'mcube' ? 'MCUBE call' : 'Phone call'} —{' '}
+                          {CALL_OUTCOME_LABELS[call.outcome as keyof typeof CALL_OUTCOME_LABELS] ?? call.outcome}
+                          {dur ? ` · ${dur}` : ''}
+                          {call.direction ? ` · ${call.direction}` : ''}
+                          {call.dial_status ? ` · ${call.dial_status}` : ''}
+                        </p>
+                        <p className="text-black/80 leading-[1.3] mt-0.5">
+                          {call.notes || (call.integration === 'mcube' ? 'Logged from MCUBE' : 'Discussed pricing and features')}
+                        </p>
+                        {timeWindow ? (
+                          <p className="text-[11px] text-[#717d8a] leading-[1.3] mt-0.5">
+                            Call timing: {timeWindow}
+                          </p>
+                        ) : null}
+                        {call.recording_url ? (
+                          <a
+                            href={call.recording_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-[#2563eb] underline mt-0.5 inline-block"
+                          >
+                            Recording
+                          </a>
+                        ) : null}
                       </div>
                     )
                   })}
@@ -2085,29 +2184,31 @@ export default function LeadDetailPage() {
               {/* Outcome Options */}
               <div className="space-y-3 mb-6">
                     {/* Connected - Green */}
-                    <button
-                      type="button"
-                      onClick={() => setCallOutcome('connected')}
-                      className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
-                        callOutcome === CALL_OUTCOME.CONNECTED
-                          ? 'border-green-500 bg-green-50'
-                          : 'border-gray-200 hover:border-green-300 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                          callOutcome === CALL_OUTCOME.CONNECTED ? 'bg-green-500' : 'bg-gray-100'
-                        }`}>
-                          <Phone size={24} className={callOutcome === CALL_OUTCOME.CONNECTED ? 'text-white' : 'text-gray-400'} />
-      </div>
-                        <div className="flex-1">
-                          <p className={`font-semibold mb-1 ${callOutcome === CALL_OUTCOME.CONNECTED ? 'text-green-700' : 'text-gray-900'}`}>
-                            Connected
-                          </p>
-                          <p className="text-sm text-gray-600">Successfully spoke with the lead.</p>
+                    {canShowConnectedOption && (
+                      <button
+                        type="button"
+                        onClick={() => setCallOutcome('connected')}
+                        className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
+                          callOutcome === CALL_OUTCOME.CONNECTED
+                            ? 'border-green-500 bg-green-50'
+                            : 'border-gray-200 hover:border-green-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                            callOutcome === CALL_OUTCOME.CONNECTED ? 'bg-green-500' : 'bg-gray-100'
+                          }`}>
+                            <Phone size={24} className={callOutcome === CALL_OUTCOME.CONNECTED ? 'text-white' : 'text-gray-400'} />
+        </div>
+                          <div className="flex-1">
+                            <p className={`font-semibold mb-1 ${callOutcome === CALL_OUTCOME.CONNECTED ? 'text-green-700' : 'text-gray-900'}`}>
+                              Connected
+                            </p>
+                            <p className="text-sm text-gray-600">Successfully spoke with the lead.</p>
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                    )}
 
                     {/* Not Reachable - Orange */}
                     <button
