@@ -567,6 +567,15 @@ export default function LeadDetailPage() {
     }
   }, [leadId, lead?.status])
 
+  useEffect(() => {
+    if (!leadId) return
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void fetchLeadLive()
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [leadId, showStatusUpdateModal])
+
   async function fetchProducts() {
     try {
       const response = await cachedFetch('/api/products')
@@ -640,6 +649,22 @@ export default function LeadDetailPage() {
       setError('Failed to fetch lead')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchLeadLive() {
+    try {
+      // Bypass in-memory cache so webhook updates appear seamlessly.
+      const response = await cachedFetch(`/api/leads/${leadId}?live=${Date.now()}`, undefined, 0)
+      if (!response.ok) return
+      const data = await response.json()
+      if (!data?.lead) return
+      setLead(data.lead)
+      if (!showStatusUpdateModal) {
+        setNewStatus(data.lead.status)
+      }
+    } catch {
+      // Silent polling to avoid UI flicker/toasts.
     }
   }
 
