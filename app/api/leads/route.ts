@@ -4,6 +4,7 @@ import { getAllLeads, createLead } from '@/backend/services/lead.service'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 import { getCache, setCache, invalidateCachePrefix, CACHE_KEYS, CACHE_TTL } from '@/lib/cache'
+import { logRouteTiming } from '@/lib/route-timing'
 
 const createLeadSchema = z.object({
   name: z.string().min(1),
@@ -27,6 +28,7 @@ const createLeadSchema = z.object({
 })
 
 export async function GET(request: NextRequest) {
+  const t0 = performance.now()
   try {
     const authResult = await requirePermission(request, PERMISSIONS.LEADS_READ)
     
@@ -55,6 +57,9 @@ export async function GET(request: NextRequest) {
     // Check cache first
     const cached = await getCache<{ leads: any[] }>(cacheKey)
     if (cached) {
+      logRouteTiming('GET /api/leads cache', t0, {
+        leadCount: cached.leads?.length,
+      })
       return NextResponse.json(cached)
     }
 
@@ -64,7 +69,8 @@ export async function GET(request: NextRequest) {
     
     // Cache result for 30 seconds (leads list changes frequently)
     await setCache(cacheKey, result, CACHE_TTL.SHORT)
-    
+
+    logRouteTiming('GET /api/leads', t0, { leadCount: result.leads?.length })
     return NextResponse.json(result)
   } catch (error) {
     return NextResponse.json(

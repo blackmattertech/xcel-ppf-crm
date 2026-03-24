@@ -147,6 +147,55 @@ export async function assignLeadRoundRobin(leadSource: LeadSource): Promise<stri
   return selected.user_id
 }
 
+type ReassignUpdate = { id: string; status: string; newAssignee: string }
+
+async function applyRoundRobinReassignments(
+  supabase: ReturnType<typeof createServiceClient>,
+  updates: ReassignUpdate[],
+  triggeredByUserId?: string | null
+): Promise<number> {
+  if (updates.length === 0) return 0
+
+  const buckets = new Map<string, string[]>()
+  for (const u of updates) {
+    if (!buckets.has(u.newAssignee)) buckets.set(u.newAssignee, [])
+    buckets.get(u.newAssignee)!.push(u.id)
+  }
+
+  const succeeded: ReassignUpdate[] = []
+  for (const [assigneeId, ids] of buckets) {
+    const { error } = await supabase
+      .from('leads')
+      // @ts-expect-error - Supabase builder infers update payload as 'never'
+      .update({ assigned_to: assigneeId })
+      .in('id', ids)
+
+    if (error) {
+      console.error('[assignment] bulk reassignment failed:', error.message)
+      continue
+    }
+    const idSet = new Set(ids)
+    for (const u of updates) {
+      if (idSet.has(u.id)) succeeded.push(u)
+    }
+  }
+
+  if (triggeredByUserId && succeeded.length > 0) {
+    const historyRows = succeeded.map((u) => ({
+      lead_id: u.id,
+      old_status: u.status,
+      new_status: u.status,
+      changed_by: triggeredByUserId,
+    }))
+    const { error: hErr } = await supabase.from('lead_status_history').insert(historyRows as any)
+    if (hErr) {
+      console.error('[assignment] bulk lead_status_history insert failed:', hErr.message)
+    }
+  }
+
+  return succeeded.length
+}
+
 /**
  * Redistribute existing leads with status "new" among assignable users (tele_caller + sales) in round-robin.
  * Call this when a new assignable user is added, or to fix leads assigned to non-assignable roles.
@@ -182,35 +231,14 @@ export async function redistributeNewLeadsAmongTeleCallers(
     if (!leadsError && leads && leads.length > 0) {
       const leadRows = leads as { id: string; assigned_to: string; status: string }[]
       const n = assignableUserIds.length
+      const updates: ReassignUpdate[] = []
       for (let i = 0; i < leadRows.length; i++) {
         const lead = leadRows[i]
         const newAssigneeId = assignableUserIds[i % n]
         if (lead.assigned_to === newAssigneeId) continue
-
-        const { error: updateError } = await supabase
-          .from('leads')
-          // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
-          .update({ assigned_to: newAssigneeId })
-          .eq('id', lead.id)
-
-        if (updateError) {
-          console.error(`[redistributeNewLeads] Failed to reassign lead ${lead.id}:`, updateError.message)
-          continue
-        }
-        reassigned++
-        if (triggeredByUserId) {
-          try {
-            await supabase.from('lead_status_history').insert({
-              lead_id: lead.id,
-              old_status: lead.status,
-              new_status: lead.status,
-              changed_by: triggeredByUserId,
-            } as any)
-          } catch {
-            // Non-fatal
-          }
-        }
+        updates.push({ id: lead.id, status: lead.status, newAssignee: newAssigneeId })
       }
+      reassigned += await applyRoundRobinReassignments(supabase, updates, triggeredByUserId)
     }
   }
 
@@ -225,32 +253,12 @@ export async function redistributeNewLeadsAmongTeleCallers(
   if (!unassignedError && unassignedLeads && unassignedLeads.length > 0) {
     const rows = unassignedLeads as { id: string; status: string }[]
     const n = Math.max(1, assignableUserIds.length)
-    for (let i = 0; i < rows.length; i++) {
-      const newAssigneeId = assignableUserIds[i % n]
-      const { error: updateError } = await supabase
-        .from('leads')
-        // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
-        .update({ assigned_to: newAssigneeId })
-        .eq('id', rows[i].id)
-
-      if (updateError) {
-        console.error(`[redistributeNewLeads] Failed to assign unassigned lead ${rows[i].id}:`, updateError.message)
-        continue
-      }
-      reassigned++
-      if (triggeredByUserId) {
-        try {
-          await supabase.from('lead_status_history').insert({
-            lead_id: rows[i].id,
-            old_status: rows[i].status,
-            new_status: rows[i].status,
-            changed_by: triggeredByUserId,
-          } as any)
-        } catch {
-          // Non-fatal
-        }
-      }
-    }
+    const updates: ReassignUpdate[] = rows.map((row, i) => ({
+      id: row.id,
+      status: row.status,
+      newAssignee: assignableUserIds[i % n],
+    }))
+    reassigned += await applyRoundRobinReassignments(supabase, updates, triggeredByUserId)
   }
 
   // 3) Reassign NEW leads assigned to a non-assignable role (e.g. admin, marketing) to assignable users (tele_caller/sales) in round-robin
@@ -266,33 +274,12 @@ export async function redistributeNewLeadsAmongTeleCallers(
       (row) => !assignableIdSet.has(row.assigned_to)
     )
     const n = Math.max(1, assignableUserIds.length)
-    for (let i = 0; i < toReassign.length; i++) {
-      const lead = toReassign[i]
-      const newAssigneeId = assignableUserIds[i % n]
-      const { error: updateError } = await supabase
-        .from('leads')
-        // @ts-expect-error - Supabase builder infers update payload as 'never'; leads.Update is defined in database.ts
-        .update({ assigned_to: newAssigneeId })
-        .eq('id', lead.id)
-
-      if (updateError) {
-        console.error(`[redistributeNewLeads] Failed to reassign lead ${lead.id} from non-assignable user:`, updateError.message)
-        continue
-      }
-      reassigned++
-      if (triggeredByUserId) {
-        try {
-          await supabase.from('lead_status_history').insert({
-            lead_id: lead.id,
-            old_status: lead.status,
-            new_status: lead.status,
-            changed_by: triggeredByUserId,
-          } as any)
-        } catch {
-          // Non-fatal
-        }
-      }
-    }
+    const updates: ReassignUpdate[] = toReassign.map((lead, i) => ({
+      id: lead.id,
+      status: lead.status,
+      newAssignee: assignableUserIds[i % n],
+    }))
+    reassigned += await applyRoundRobinReassignments(supabase, updates, triggeredByUserId)
   }
 
   return reassigned
@@ -327,30 +314,35 @@ export async function reassignLeadsFromDeletedUser(
   const assigneeIds = await getAssignableUserIds(supabase, deletedUserId)
 
   if (assigneeIds.length === 0) {
-    // No assignable users: leave leads unassigned so they can be picked up by redistribution later
-    for (const leadId of leadIds) {
-      await supabase
-        .from('leads')
-        // @ts-expect-error - Supabase builder infers update payload as 'never'
-        .update({ assigned_to: null })
-        .eq('id', leadId)
+    const { error } = await supabase
+      .from('leads')
+      // @ts-expect-error - Supabase builder infers update payload as 'never'
+      .update({ assigned_to: null })
+      .in('id', leadIds)
+    if (error) {
+      console.error('[reassignLeadsFromDeletedUser] bulk unassign failed:', error.message)
+      return 0
     }
     return leadIds.length
   }
 
   const n = assigneeIds.length
-  let reassigned = 0
+  const buckets = new Map<string, string[]>()
   for (let i = 0; i < leadIds.length; i++) {
     const newAssigneeId = assigneeIds[i % n]
+    if (!buckets.has(newAssigneeId)) buckets.set(newAssigneeId, [])
+    buckets.get(newAssigneeId)!.push(leadIds[i])
+  }
+
+  let reassigned = 0
+  for (const [assigneeId, ids] of buckets) {
     const { error: updateError } = await supabase
       .from('leads')
       // @ts-expect-error - Supabase builder infers update payload as 'never'
-      .update({ assigned_to: newAssigneeId })
-      .eq('id', leadIds[i])
-
-    if (!updateError) {
-      reassigned++
-    }
+      .update({ assigned_to: assigneeId })
+      .in('id', ids)
+    if (!updateError) reassigned += ids.length
+    else console.error('[reassignLeadsFromDeletedUser] bulk update failed:', updateError.message)
   }
 
   return reassigned

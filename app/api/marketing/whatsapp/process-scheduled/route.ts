@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { sendTemplateBulk } from '@/backend/services/whatsapp.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
-import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
+import { saveOutgoingMessagesBatch } from '@/backend/services/whatsapp-chat.service'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { ResolvedBroadcastPayload } from '@/backend/services/whatsapp-broadcast-resolve'
 
@@ -106,18 +106,27 @@ export async function GET(request: NextRequest) {
       )
 
       const bodyForChat = `[Template: ${payload.templateName}]`
+      const toSave: Array<{
+        leadId: null
+        phone: string
+        body: string
+        metaMessageId?: string | null
+      }> = []
       for (let i = 0; i < result.results.length; i++) {
         const r = result.results[i]
         if (r.success) {
           const recipient = payload.recipients[i]
-          await saveOutgoingMessage({
+          toSave.push({
             leadId: null,
-            phone: recipient?.phone ?? r.phone,
+            phone: recipient?.phone ?? r.phone ?? '',
             body: bodyForChat,
             metaMessageId: r.messageId ?? undefined,
           })
         }
       }
+      await saveOutgoingMessagesBatch(
+        toSave.filter((r) => (r.phone && String(r.phone).replace(/\D/g, '').length > 0))
+      )
 
       await supabase
         .from('scheduled_broadcasts')

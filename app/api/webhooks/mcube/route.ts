@@ -12,6 +12,7 @@ import {
   type McubeWebhookPayload,
 } from '@/backend/services/mcube.service'
 import { invalidateLeadCaches } from '@/lib/cache-invalidation'
+import { logRouteTiming } from '@/lib/route-timing'
 
 const nullableText = z.string().nullable().optional().transform((v) => v ?? undefined)
 
@@ -451,6 +452,7 @@ export async function POST(request: NextRequest) {
   const payload = parsed.data as McubeWebhookPayload & { event?: string }
   const supabase = createServiceClient()
   const phase = deriveWebhookPhase(payload)
+  const t0 = performance.now()
   console.info('[webhooks/mcube] full_payload', JSON.stringify(payload))
   console.info('[webhooks/mcube] received', {
     phase,
@@ -462,15 +464,21 @@ export async function POST(request: NextRequest) {
   try {
     if (phase === 'on_call') {
       await handleOnCall(supabase, payload)
+      logRouteTiming('POST /api/webhooks/mcube', t0, { phase: 'on_call' })
       return NextResponse.json({ ok: true, phase: 'on_call' })
     }
 
     const result = await handleHangup(supabase, payload)
     if (result.duplicate) {
       console.info('[webhooks/mcube] duplicate hangup ignored', { callid: payload.callid })
+      logRouteTiming('POST /api/webhooks/mcube', t0, {
+        phase: 'on_hangup',
+        duplicate: true,
+      })
       return NextResponse.json({ ok: true, duplicate: true })
     }
     console.info('[webhooks/mcube] hangup processed', { callid: payload.callid })
+    logRouteTiming('POST /api/webhooks/mcube', t0, { phase: 'on_hangup' })
     return NextResponse.json({ ok: true, phase: 'on_hangup' })
   } catch (e) {
     console.error('[webhooks/mcube]', e)

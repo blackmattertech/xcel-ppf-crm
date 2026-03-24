@@ -47,6 +47,7 @@ import {
   Pencil
 } from 'lucide-react'
 import { cachedFetch } from '@/lib/api-client'
+import { useQuery } from '@tanstack/react-query'
 
 // Interactive Time Picker Component
 function TimePicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
@@ -528,7 +529,6 @@ export default function LeadDetailPage() {
   const [deletingLead, setDeletingLead] = useState(false)
   const [showStatusUpdateModal, setShowStatusUpdateModal] = useState(false)
   const [showQuotationModal, setShowQuotationModal] = useState(false)
-  const [products, setProducts] = useState<any[]>([])
   const [quotationItems, setQuotationItems] = useState<Array<{
     productId: string
     name: string
@@ -552,11 +552,38 @@ export default function LeadDetailPage() {
   // Order created after "Accepted" → used to update order payment when user submits payment modal
   const [lastCreatedOrderId, setLastCreatedOrderId] = useState<string | null>(null)
 
+  const { data: products = [] } = useQuery({
+    queryKey: ['crm', 'products'],
+    queryFn: async () => {
+      const response = await cachedFetch('/api/products')
+      if (!response.ok) throw new Error('Failed to load products')
+      const data = await response.json()
+      return Array.isArray(data) ? data : []
+    },
+    staleTime: 60_000,
+  })
+
+  const { data: mcubeSettingsPayload } = useQuery({
+    queryKey: ['crm', 'mcube-settings'],
+    queryFn: async () => {
+      const response = await cachedFetch('/api/integrations/mcube/settings')
+      if (!response.ok) return null
+      return response.json()
+    },
+    staleTime: 120_000,
+  })
+
+  useEffect(() => {
+    const shouldHide =
+      mcubeSettingsPayload?.settings?.hideConnectedWhenLastMcubeNotConnected
+    if (typeof shouldHide === 'boolean') {
+      setHideConnectedWhenLastMcubeNotConnected(shouldHide)
+    }
+  }, [mcubeSettingsPayload])
+
   useEffect(() => {
     checkAuth()
     fetchLead()
-    fetchProducts()
-    fetchMcubeSettings()
   }, [leadId])
 
   useEffect(() => {
@@ -575,18 +602,6 @@ export default function LeadDetailPage() {
     }, 4000)
     return () => clearInterval(interval)
   }, [leadId, showStatusUpdateModal])
-
-  async function fetchProducts() {
-    try {
-      const response = await cachedFetch('/api/products')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(data || [])
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error)
-    }
-  }
 
   async function checkAuth() {
     const supabase = createClient()
@@ -630,17 +645,38 @@ export default function LeadDetailPage() {
 
   async function fetchLead() {
     try {
-      const response = await cachedFetch(`/api/leads/${leadId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setLead(data.lead)
-        setNewStatus(data.lead.status)
+      const [minRes, relRes] = await Promise.all([
+        cachedFetch(`/api/leads/${leadId}?include=minimal`),
+        cachedFetch(`/api/leads/${leadId}/relations`),
+      ])
+      if (minRes.ok) {
+        const min = await minRes.json()
+        let statusHistory: unknown[] = []
+        let calls: unknown[] = []
+        let followUps: unknown[] = []
+        if (relRes.ok) {
+          const r = await relRes.json()
+          const payload = r.relations ?? r
+          statusHistory = Array.isArray(payload.status_history)
+            ? payload.status_history
+            : []
+          calls = Array.isArray(payload.calls) ? payload.calls : []
+          followUps = Array.isArray(payload.follow_ups) ? payload.follow_ups : []
+        }
+        const merged = {
+          ...min.lead,
+          status_history: statusHistory,
+          calls,
+          follow_ups: followUps,
+        }
+        setLead(merged)
+        setNewStatus(min.lead.status)
       } else {
-        const errorData = await response.json()
+        const errorData = await minRes.json().catch(() => ({}))
         setError(errorData.error || 'Failed to fetch lead')
-        if (response.status === 404) {
+        if (minRes.status === 404) {
           setError('Lead not found')
-        } else if (response.status === 403) {
+        } else if (minRes.status === 403) {
           setError('You do not have permission to view this lead')
         }
       }
@@ -665,20 +701,6 @@ export default function LeadDetailPage() {
       }
     } catch {
       // Silent polling to avoid UI flicker/toasts.
-    }
-  }
-
-  async function fetchMcubeSettings() {
-    try {
-      const response = await cachedFetch('/api/integrations/mcube/settings')
-      if (!response.ok) return
-      const data = await response.json().catch(() => ({}))
-      const shouldHide = data?.settings?.hideConnectedWhenLastMcubeNotConnected
-      if (typeof shouldHide === 'boolean') {
-        setHideConnectedWhenLastMcubeNotConnected(shouldHide)
-      }
-    } catch {
-      // Keep default behavior if settings cannot be fetched.
     }
   }
 

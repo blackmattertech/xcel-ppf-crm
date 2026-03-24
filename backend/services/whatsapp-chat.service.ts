@@ -81,6 +81,30 @@ export async function saveOutgoingMessage(params: {
   return { success: false, errorCode: error?.code, errorMessage: error?.message }
 }
 
+/** Bulk insert outgoing rows (one DB round-trip). For broadcast sends with lead_id null. */
+export async function saveOutgoingMessagesBatch(
+  rows: Array<{
+    leadId: string | null
+    phone: string
+    body: string
+    metaMessageId?: string | null
+  }>
+): Promise<void> {
+  if (rows.length === 0) return
+  const supabase = createServiceClient()
+  const payload = rows.map((r) => ({
+    lead_id: r.leadId || null,
+    phone: normalizePhoneForStorage(r.phone),
+    direction: 'out' as const,
+    body: r.body,
+    meta_message_id: r.metaMessageId || null,
+  }))
+  const { error } = await supabase.from('whatsapp_messages').insert(payload as never)
+  if (error) {
+    console.error('[whatsapp-chat] saveOutgoingMessagesBatch FAILED:', error.message)
+  }
+}
+
 /** Insert incoming message (from webhook). */
 export async function saveIncomingMessage(params: {
   phone: string

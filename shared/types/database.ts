@@ -691,7 +691,14 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_lead_counts_by_status: {
+        Args: { p_assigned_to?: string | null }
+        Returns: { status: string; cnt: number }[]
+      }
+      get_analytics_dashboard: {
+        Args: { p_start: string; p_end: string }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
