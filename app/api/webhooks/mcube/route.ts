@@ -13,22 +13,24 @@ import {
 } from '@/backend/services/mcube.service'
 import { invalidateLeadCaches } from '@/lib/cache-invalidation'
 
+const nullableText = z.string().nullable().optional().transform((v) => v ?? undefined)
+
 const mcubeBodySchema = z.object({
-  starttime: z.string().optional(),
+  starttime: nullableText,
   callid: z.string().min(1),
-  emp_phone: z.string().optional(),
-  clicktocalldid: z.string().optional(),
-  callto: z.string().optional(),
-  dialstatus: z.string().optional(),
-  filename: z.string().optional(),
-  direction: z.string().optional(),
-  endtime: z.string().optional(),
-  disconnectedby: z.string().optional(),
-  answeredtime: z.string().optional(),
-  groupname: z.string().optional(),
-  agentname: z.string().optional(),
-  refid: z.string().optional(),
-  event: z.string().optional(),
+  emp_phone: nullableText,
+  clicktocalldid: nullableText,
+  callto: nullableText,
+  dialstatus: nullableText,
+  filename: nullableText,
+  direction: nullableText,
+  endtime: nullableText,
+  disconnectedby: nullableText,
+  answeredtime: nullableText,
+  groupname: nullableText,
+  agentname: nullableText,
+  refid: nullableText,
+  event: nullableText,
 })
 
 const UUID_RE =
