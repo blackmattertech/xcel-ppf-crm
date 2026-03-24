@@ -219,30 +219,33 @@ async function resolveLeadAndAgent(
 }> {
   let leadId: string | null = null
   let sessionId: string | null = null
+  let initiatedBy: string | null = null
 
   if (payload.refid && isUuidString(payload.refid)) {
     const { data: session } = await supabase
       .from('mcube_outbound_sessions')
-      .select('id, lead_id')
+      .select('id, lead_id, initiated_by')
       .eq('id', payload.refid)
       .maybeSingle()
-    const s = session as { id: string; lead_id: string } | null
+    const s = session as { id: string; lead_id: string; initiated_by: string | null } | null
     if (s) {
       sessionId = s.id
       leadId = s.lead_id
+      initiatedBy = s.initiated_by ?? null
     }
   }
 
   if (!leadId && payload.callid) {
     const { data: session } = await supabase
       .from('mcube_outbound_sessions')
-      .select('id, lead_id')
+      .select('id, lead_id, initiated_by')
       .eq('mcube_call_id', payload.callid)
       .maybeSingle()
-    const s = session as { id: string; lead_id: string } | null
+    const s = session as { id: string; lead_id: string; initiated_by: string | null } | null
     if (s) {
       sessionId = s.id
       leadId = s.lead_id
+      initiatedBy = s.initiated_by ?? null
     }
   }
 
@@ -255,6 +258,12 @@ async function resolveLeadAndAgent(
   }
 
   let calledById = await findUserIdByAgentPhone(supabase, payload.emp_phone ?? null)
+
+  if (!calledById) {
+    if (initiatedBy) {
+      calledById = initiatedBy
+    }
+  }
 
   if (!calledById) {
     const { data: leadRow } = await supabase
