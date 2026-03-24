@@ -38,6 +38,65 @@ function isUuidString(s: string): boolean {
   return UUID_RE.test(s)
 }
 
+function formatSecondsToAnsweredTime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0')
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0')
+  const ss = String(s % 60).padStart(2, '0')
+  return `${hh}:${mm}:${ss}`
+}
+
+function normalizeDialStatus(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const s = raw.trim().toUpperCase()
+  if (s === 'ANSWERED') return 'ANSWER'
+  return s
+}
+
+function normalizeIncomingPayload(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return body
+  const r = body as Record<string, unknown>
+
+  // Existing native shape already handled.
+  if (typeof r.callid === 'string') return body
+
+  // Alternate MCUBE payload shape (TitleCase keys).
+  const callSessionId = String(r.CallSessionId ?? '').trim()
+  if (!callSessionId) return body
+
+  const starttime = String(r.StartTime ?? '').trim() || undefined
+  const durationRaw = String(r.CallDuration ?? '').trim()
+  const durationSec = /^\d+$/.test(durationRaw) ? parseInt(durationRaw, 10) : null
+  let endtime: string | undefined
+  if (starttime && durationSec != null) {
+    const startIso = parseMcubeTimestamp(starttime)
+    if (startIso) {
+      const end = new Date(new Date(startIso).getTime() + durationSec * 1000)
+      endtime = end
+        .toISOString()
+        .replace('T', ' ')
+        .replace('Z', '')
+        .slice(0, 19)
+    }
+  }
+
+  return {
+    callid: callSessionId,
+    emp_phone: String(r.SourceNumber ?? '').trim() || undefined,
+    callto: String(r.DestinationNumber ?? '').trim() || undefined,
+    clicktocalldid: String(r.DisplayNumber ?? '').trim() || undefined,
+    dialstatus: normalizeDialStatus(String(r.Status ?? '').trim() || undefined),
+    starttime,
+    endtime,
+    answeredtime:
+      durationSec != null ? formatSecondsToAnsweredTime(durationSec) : undefined,
+    filename: String(r.ResourceURL ?? '').trim() || undefined,
+    direction: String(r.Direction ?? '').trim() || undefined,
+    // This payload is typically final hangup callback.
+    event: 'hangup',
+  }
+}
+
 function computeDurationSeconds(payload: McubeWebhookPayload): number | null {
   const fromAnswered = parseAnsweredTimeToSeconds(payload.answeredtime)
   if (fromAnswered != null) return fromAnswered
@@ -255,6 +314,8 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  body = normalizeIncomingPayload(body)
 
   const parsed = mcubeBodySchema.safeParse(body)
   if (!parsed.success) {

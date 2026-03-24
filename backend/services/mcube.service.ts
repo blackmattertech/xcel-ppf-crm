@@ -27,7 +27,12 @@ export function parseMcubeTimestamp(value: string | undefined | null): string | 
 /** Parses "HH:MM:SS" or "M:SS" to seconds. */
 export function parseAnsweredTimeToSeconds(value: string | undefined | null): number | null {
   if (!value || !String(value).trim()) return null
-  const parts = String(value).trim().split(':').map((p) => parseInt(p, 10))
+  const raw = String(value).trim()
+  if (/^\d+$/.test(raw)) {
+    const n = parseInt(raw, 10)
+    return Number.isNaN(n) ? null : n
+  }
+  const parts = raw.split(':').map((p) => parseInt(p, 10))
   if (parts.some((n) => Number.isNaN(n))) return null
   if (parts.length === 3) {
     return parts[0] * 3600 + parts[1] * 60 + parts[2]
@@ -40,7 +45,7 @@ export function parseAnsweredTimeToSeconds(value: string | undefined | null): nu
 
 export function mapDialStatusToOutcome(dialstatus: string | undefined | null): CallOutcome {
   const s = (dialstatus ?? '').trim().toUpperCase().replace(/\s+/g, '_')
-  if (s === 'ANSWER') return 'connected'
+  if (s === 'ANSWER' || s === 'ANSWERED') return 'connected'
   if (s === 'CANCEL' || s === 'NOANSWER' || s === 'NO_ANSWER' || s === 'BUSY' || s === 'EXECUTIVE_BUSY') {
     return 'not_reachable'
   }
@@ -163,20 +168,20 @@ function extractCallListFromUnknown(payload: unknown): unknown[] {
 function mapUnknownToMcubePayload(item: unknown): McubeWebhookPayload | null {
   if (!item || typeof item !== 'object') return null
   const r = item as Record<string, unknown>
-  const callid = String(r.callid ?? r.call_id ?? r.callId ?? '').trim()
+  const callid = String(r.callid ?? r.call_id ?? r.callId ?? r.CallSessionId ?? '').trim()
   if (!callid) return null
   return {
     callid,
-    starttime: String(r.starttime ?? r.start_time ?? r.startTime ?? '').trim() || undefined,
-    emp_phone: String(r.emp_phone ?? r.empPhone ?? r.agent_phone ?? '').trim() || undefined,
-    clicktocalldid: String(r.clicktocalldid ?? r.did ?? '').trim() || undefined,
-    callto: String(r.callto ?? r.customer_number ?? r.custnumber ?? '').trim() || undefined,
-    dialstatus: String(r.dialstatus ?? r.status ?? '').trim() || undefined,
-    filename: String(r.filename ?? r.recording ?? r.recording_url ?? '').trim() || undefined,
-    direction: String(r.direction ?? '').trim() || undefined,
-    endtime: String(r.endtime ?? r.end_time ?? r.endTime ?? '').trim() || undefined,
+    starttime: String(r.starttime ?? r.start_time ?? r.startTime ?? r.StartTime ?? '').trim() || undefined,
+    emp_phone: String(r.emp_phone ?? r.empPhone ?? r.agent_phone ?? r.SourceNumber ?? '').trim() || undefined,
+    clicktocalldid: String(r.clicktocalldid ?? r.did ?? r.DisplayNumber ?? '').trim() || undefined,
+    callto: String(r.callto ?? r.customer_number ?? r.custnumber ?? r.DestinationNumber ?? '').trim() || undefined,
+    dialstatus: String(r.dialstatus ?? r.status ?? r.Status ?? '').trim() || undefined,
+    filename: String(r.filename ?? r.recording ?? r.recording_url ?? r.ResourceURL ?? '').trim() || undefined,
+    direction: String(r.direction ?? r.Direction ?? '').trim() || undefined,
+    endtime: String(r.endtime ?? r.end_time ?? r.endTime ?? r.EndTime ?? '').trim() || undefined,
     disconnectedby: String(r.disconnectedby ?? r.disconnected_by ?? '').trim() || undefined,
-    answeredtime: String(r.answeredtime ?? r.answered_time ?? '').trim() || undefined,
+    answeredtime: String(r.answeredtime ?? r.answered_time ?? r.CallDuration ?? '').trim() || undefined,
     groupname: String(r.groupname ?? r.group_name ?? '').trim() || undefined,
     agentname: String(r.agentname ?? r.agent_name ?? '').trim() || undefined,
   }
