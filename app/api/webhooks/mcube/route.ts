@@ -259,7 +259,31 @@ async function resolveLeadAndAgent(
     throw new Error('Could not resolve lead for MCUBE call')
   }
 
+  // Fallback: for outbound calls without explicit ref/session mapping,
+  // use the latest session for this lead to recover initiating user.
+  if (!sessionId) {
+    const { data: latestSession } = await supabase
+      .from('mcube_outbound_sessions')
+      .select('id, initiated_by')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const ls = latestSession as { id: string; initiated_by: string | null } | null
+    if (ls) {
+      sessionId = ls.id
+      initiatedBy = ls.initiated_by ?? initiatedBy
+    }
+  }
+
   let calledById = await findUserIdByAgentPhone(supabase, payload.emp_phone ?? null)
+
+  if (!calledById) {
+    const configuredExec = process.env.MCUBE_EXECUTIVE_NUMBER?.trim()
+    if (configuredExec) {
+      calledById = await findUserIdByAgentPhone(supabase, configuredExec)
+    }
+  }
 
   if (!calledById) {
     if (initiatedBy) {
