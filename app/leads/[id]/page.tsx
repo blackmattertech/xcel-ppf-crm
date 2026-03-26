@@ -2082,25 +2082,22 @@ export default function LeadDetailPage() {
                   {(() => {
                     const followUpsWithNotes = getFollowUpsWithNotesSorted()
                     const leadNotes = getLeadNotesSorted()
-                    const otherNotes = (lead?.requirement || lead?.meta_data?.notes || '').trim().replace(/_/g, ' ')
-                    if (followUpsWithNotes.length === 0 && leadNotes.length === 0 && !otherNotes) {
+                    if (leadNotes.length === 0 && followUpsWithNotes.length === 0) {
                       return <p className="whitespace-pre-wrap">No notes yet.</p>
                     }
                     return (
                       <>
-                        {leadNotes.map((ln) => (
-                          <p key={ln.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
-                            {ln.note}
-                          </p>
-                        ))}
-                        {followUpsWithNotes.map((fu) => (
-                          <p key={fu.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
-                            {extractFollowUpUserNote(fu.notes) ?? ''}
-                          </p>
-                        ))}
-                        {otherNotes ? (
-                          <p className={`whitespace-pre-wrap ${followUpsWithNotes.length > 0 ? 'pt-2' : ''}`}>{otherNotes}</p>
-                        ) : null}
+                        {leadNotes.length > 0
+                          ? leadNotes.map((ln) => (
+                              <p key={ln.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                                {ln.note}
+                              </p>
+                            ))
+                          : followUpsWithNotes.map((fu) => (
+                              <p key={fu.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                                {extractFollowUpUserNote(fu.notes) ?? ''}
+                              </p>
+                            ))}
                       </>
                     )
                   })()}
