@@ -2093,17 +2093,16 @@ export default function LeadDetailPage() {
                     }
                     return (
                       <>
-                        {leadNotes.length > 0
-                          ? leadNotes.map((ln) => (
-                              <p key={ln.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
-                                {ln.note}
-                              </p>
-                            ))
-                          : followUpsWithNotes.map((fu) => (
-                              <p key={fu.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
-                                {extractFollowUpUserNote(fu.notes) ?? ''}
-                              </p>
-                            ))}
+                        {leadNotes.map((ln) => (
+                          <p key={`lead-note-${ln.id}`} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                            {ln.note}
+                          </p>
+                        ))}
+                        {followUpsWithNotes.map((fu) => (
+                          <p key={`followup-note-${fu.id}`} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                            {extractFollowUpUserNote(fu.notes) ?? ''}
+                          </p>
+                        ))}
                       </>
                     )
                   })()}
