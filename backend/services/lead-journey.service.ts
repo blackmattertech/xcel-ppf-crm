@@ -8,7 +8,8 @@ export async function updateLeadStatus(
   leadId: string,
   newStatus: LeadStatus,
   changedBy: string,
-  notes?: string
+  notes?: string,
+  saveAsLeadNote: boolean = false
 ) {
   const supabase = createServiceClient()
 
@@ -65,6 +66,14 @@ export async function updateLeadStatus(
     changed_by: changedBy,
     notes: notes || null,
   } as any)
+
+  if (saveAsLeadNote && notes && notes.trim().length > 0) {
+    await supabase.from('lead_notes').insert({
+      lead_id: leadId,
+      note: notes.trim(),
+      created_by: changedBy,
+    } as any)
+  }
 
   return updatedLead
 }

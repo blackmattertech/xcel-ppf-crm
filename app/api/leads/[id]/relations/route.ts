@@ -24,12 +24,14 @@ export async function GET(
       status_history?: unknown
       calls?: unknown
       follow_ups?: unknown
+      lead_notes?: unknown
     }
     return NextResponse.json({
       relations: {
         status_history: rel.status_history ?? [],
         calls: rel.calls ?? [],
         follow_ups: rel.follow_ups ?? [],
+        lead_notes: rel.lead_notes ?? [],
       },
     })
   } catch (error) {

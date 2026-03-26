@@ -231,6 +231,32 @@ export interface Database {
           created_at?: string
         }
       }
+      lead_notes: {
+        Row: {
+          id: string
+          lead_id: string
+          note: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          lead_id: string
+          note: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string
+          note?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       mcube_outbound_sessions: {
         Row: {
           id: string

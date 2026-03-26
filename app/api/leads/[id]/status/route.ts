@@ -25,6 +25,7 @@ const updateStatusSchema = z.object({
     LEAD_STATUS.FULLY_PAID,
   ]),
   notes: z.string().nullable().optional(),
+  save_as_lead_note: z.boolean().optional(),
 })
 
 export async function PUT(
@@ -67,9 +68,9 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { status, notes } = updateStatusSchema.parse(body)
+    const { status, notes, save_as_lead_note } = updateStatusSchema.parse(body)
 
-    const lead = await updateLeadStatus(id, status, userId, notes || undefined)
+    const lead = await updateLeadStatus(id, status, userId, notes || undefined, Boolean(save_as_lead_note))
 
     return NextResponse.json({ lead })
   } catch (error) {

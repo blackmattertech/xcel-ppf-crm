@@ -463,6 +463,16 @@ interface Lead {
       name: string
     } | null
   }>
+  lead_notes?: Array<{
+    id: string
+    note: string
+    created_at: string
+    updated_at?: string
+    created_by_user: {
+      id: string
+      name: string
+    } | null
+  }>
 }
 
 export default function LeadDetailPage() {
@@ -654,6 +664,7 @@ export default function LeadDetailPage() {
         let statusHistory: unknown[] = []
         let calls: unknown[] = []
         let followUps: unknown[] = []
+        let leadNotes: unknown[] = []
         if (relRes.ok) {
           const r = await relRes.json()
           const payload = r.relations ?? r
@@ -662,12 +673,14 @@ export default function LeadDetailPage() {
             : []
           calls = Array.isArray(payload.calls) ? payload.calls : []
           followUps = Array.isArray(payload.follow_ups) ? payload.follow_ups : []
+          leadNotes = Array.isArray(payload.lead_notes) ? payload.lead_notes : []
         }
         const merged = {
           ...min.lead,
           status_history: statusHistory,
           calls,
           follow_ups: followUps,
+          lead_notes: leadNotes,
         }
         setLead(merged)
         setNewStatus(min.lead.status)
@@ -780,6 +793,7 @@ export default function LeadDetailPage() {
         body: JSON.stringify({
           status: newStatus,
           notes: statusNotes || null,
+          save_as_lead_note: Boolean(statusNotes.trim()),
         }),
       })
 
@@ -1691,6 +1705,13 @@ export default function LeadDetailPage() {
       .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime())
   }
 
+  function getLeadNotesSorted() {
+    if (!lead?.lead_notes?.length) return []
+    return [...lead.lead_notes]
+      .filter((n) => n.note?.trim())
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }
+
   // Get interests from meta_data
   function getInterests() {
     if (lead?.meta_data) {
@@ -2060,12 +2081,18 @@ export default function LeadDetailPage() {
                 <div className="max-h-52 overflow-y-auto text-[11px] text-black leading-[1.4] space-y-3 pr-0.5">
                   {(() => {
                     const followUpsWithNotes = getFollowUpsWithNotesSorted()
+                    const leadNotes = getLeadNotesSorted()
                     const otherNotes = (lead?.requirement || lead?.meta_data?.notes || '').trim().replace(/_/g, ' ')
-                    if (followUpsWithNotes.length === 0 && !otherNotes) {
+                    if (followUpsWithNotes.length === 0 && leadNotes.length === 0 && !otherNotes) {
                       return <p className="whitespace-pre-wrap">No notes yet.</p>
                     }
                     return (
                       <>
+                        {leadNotes.map((ln) => (
+                          <p key={ln.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
+                            {ln.note}
+                          </p>
+                        ))}
                         {followUpsWithNotes.map((fu) => (
                           <p key={fu.id} className="whitespace-pre-wrap border-b border-black/5 pb-2 last:border-0 last:pb-0">
                             {extractFollowUpUserNote(fu.notes) ?? ''}

@@ -80,6 +80,16 @@ const LEAD_DETAIL_NESTED_SELECT = `
       id,
       name
     )
+  ),
+  lead_notes:lead_notes (
+    id,
+    note,
+    created_at,
+    updated_at,
+    created_by_user:users!lead_notes_created_by_fkey (
+      id,
+      name
+    )
   )
 `
 
@@ -102,6 +112,16 @@ const LEAD_RELATIONS_ONLY_SELECT = `
   follow_ups:follow_ups (
     *,
     assigned_user:users!follow_ups_assigned_to_fkey (
+      id,
+      name
+    )
+  ),
+  lead_notes:lead_notes (
+    id,
+    note,
+    created_at,
+    updated_at,
+    created_by_user:users!lead_notes_created_by_fkey (
       id,
       name
     )
