@@ -1249,6 +1249,8 @@ export default function LeadDetailPage() {
         throw new Error('Failed to update lead')
       }
 
+      const trimmedInterestedNotes = interestedNotes.trim()
+
       // Update status with notes
       await cachedFetch(`/api/leads/${leadId}/status`, {
         method: 'PUT',
@@ -1256,6 +1258,7 @@ export default function LeadDetailPage() {
         body: JSON.stringify({
           status: LEAD_STATUS.QUALIFIED,
           notes: `Interested - Qualified as ${callInterestLevel ? INTEREST_LEVEL_LABELS[callInterestLevel] : ''}${interestedNotes ? ` - ${interestedNotes}` : ''}`,
+          save_as_lead_note: Boolean(trimmedInterestedNotes),
         }),
       })
 
@@ -1291,6 +1294,8 @@ export default function LeadDetailPage() {
       })
 
       if (response.ok) {
+        const trimmedQualifyNotes = qualifyNotes.trim()
+
         // Update status with notes
         await cachedFetch(`/api/leads/${leadId}/status`, {
           method: 'PUT',
@@ -1298,6 +1303,7 @@ export default function LeadDetailPage() {
           body: JSON.stringify({
             status: LEAD_STATUS.QUALIFIED,
             notes: `Qualified as ${interestLevel ? INTEREST_LEVEL_LABELS[interestLevel] : ''}${qualifyNotes ? ` - ${qualifyNotes}` : ''}`,
+            save_as_lead_note: Boolean(trimmedQualifyNotes),
           }),
         })
 
