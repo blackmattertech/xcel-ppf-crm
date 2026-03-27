@@ -100,18 +100,23 @@ export async function PUT(
       )
     }
 
+    const resolvedRoleId: string = roleId
+
     // If user is editing their own profile, prevent role change unless they're admin
     if (isOwnProfile && !isAdmin) {
       // Get current user's role and keep it
       const currentUserData = existingUser as any
-      roleId = (currentUserData as any).role?.id || roleId
+      const ownRoleId = (currentUserData as any).role?.id as string | undefined
+      if (ownRoleId) {
+        roleId = ownRoleId
+      }
     }
 
     const user = await updateUser(
       id,
       name,
       phone || null,
-      roleId,
+      roleId ?? resolvedRoleId,
       branchId || null,
       profileImageUrl || null,
       address || null,

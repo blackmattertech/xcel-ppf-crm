@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, type ChangeEvent } from 'react'
-import { Search, Loader2, Send, Users, MessageSquare, Paperclip, FileText, Image as ImageIcon, Video } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Loader2, Send, Users, MessageSquare, Paperclip, FileText, Image as ImageIcon, Video, X, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { LeadRecipient } from '../_lib/types'
 import type { CustomerRecipient } from '../_lib/types'
@@ -35,6 +36,10 @@ export default function ChatWithLeadsPage() {
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
   const [waProfile, setWaProfile] = useState<{ waba_name: string | null; phone_number_display: string | null; phone_number_id: string | null } | null>(null)
   const [messagesError, setMessagesError] = useState<string | null>(null)
+  const [showContactPanel, setShowContactPanel] = useState(false)
+  const [leadDetailsLoading, setLeadDetailsLoading] = useState(false)
+  const [leadDetailsError, setLeadDetailsError] = useState<string | null>(null)
+  const [leadDetails, setLeadDetails] = useState<Record<string, unknown> | null>(null)
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const [attachment, setAttachment] = useState<{
     url: string
@@ -56,6 +61,28 @@ export default function ChatWithLeadsPage() {
   }>>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [sendingTemplate, setSendingTemplate] = useState(false)
+
+  const openContactPanel = async () => {
+    if (!selectedContact) return
+    setShowContactPanel(true)
+    setLeadDetailsError(null)
+    if (selectedContact.type !== 'lead') {
+      setLeadDetails(null)
+      return
+    }
+    setLeadDetailsLoading(true)
+    try {
+      const res = await cachedFetch(`/api/leads/${encodeURIComponent(selectedContact.id)}`)
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error || 'Failed to load lead details')
+      setLeadDetails((data?.lead as Record<string, unknown>) ?? null)
+    } catch (e) {
+      setLeadDetails(null)
+      setLeadDetailsError(e instanceof Error ? e.message : 'Failed to load lead details')
+    } finally {
+      setLeadDetailsLoading(false)
+    }
+  }
 
   const templateNameFromBody = useCallback((body: string): string | null => {
     const match = body.match(/^\[Template:\s*(.+?)\](?:\n|$)/i)
@@ -465,7 +492,14 @@ export default function ChatWithLeadsPage() {
                   {selectedContact.name?.trim()?.charAt(0)?.toUpperCase() || 'W'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900 truncate">{selectedContact.name}</p>
+                  <button
+                    type="button"
+                    onClick={openContactPanel}
+                    className="font-medium text-gray-900 truncate hover:underline text-left"
+                    title="View contact details"
+                  >
+                    {selectedContact.name}
+                  </button>
                   <p className="text-xs text-gray-500 truncate">{selectedContact.phone} • {selectedContact.type} • WhatsApp</p>
                   {(waProfile?.waba_name || waProfile?.phone_number_display) && (
                     <p className="text-[11px] text-emerald-700 truncate">
@@ -671,6 +705,67 @@ export default function ChatWithLeadsPage() {
           )}
         </div>
       </div>
+      {showContactPanel && (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/20"
+            onClick={() => setShowContactPanel(false)}
+            aria-label="Close details panel"
+          />
+          <aside className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-gray-200 shadow-xl p-5 overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Contact details</h3>
+              <button
+                type="button"
+                onClick={() => setShowContactPanel(false)}
+                className="rounded-md p-1 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <p><span className="text-gray-500">Name:</span> <span className="font-medium">{selectedContact?.name || '—'}</span></p>
+              <p><span className="text-gray-500">Phone:</span> <span className="font-medium">{selectedContact?.phone || '—'}</span></p>
+              <p><span className="text-gray-500">Type:</span> <span className="font-medium capitalize">{selectedContact?.type || '—'}</span></p>
+            </div>
+
+            {selectedContact?.type === 'lead' && (
+              <div className="mt-4">
+                {leadDetailsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading lead details...
+                  </div>
+                ) : leadDetailsError ? (
+                  <p className="text-sm text-red-600">{leadDetailsError}</p>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    <p><span className="text-gray-500">Status:</span> <span className="font-medium">{String(leadDetails?.status ?? '—')}</span></p>
+                    <p><span className="text-gray-500">Email:</span> <span className="font-medium">{String(leadDetails?.email ?? '—')}</span></p>
+                    <p><span className="text-gray-500">Source:</span> <span className="font-medium">{String(leadDetails?.source ?? '—')}</span></p>
+                    <p><span className="text-gray-500">Interest:</span> <span className="font-medium">{String(leadDetails?.interest_level ?? '—')}</span></p>
+                    <p><span className="text-gray-500">Requirement:</span> <span className="font-medium">{String(leadDetails?.requirement ?? '—')}</span></p>
+                    <p><span className="text-gray-500">Timeline:</span> <span className="font-medium">{String(leadDetails?.timeline ?? '—')}</span></p>
+                    <p><span className="text-gray-500">Created:</span> <span className="font-medium">{leadDetails?.created_at ? new Date(String(leadDetails.created_at)).toLocaleString() : '—'}</span></p>
+                    {selectedContact?.id && (
+                      <Link
+                        href={`/leads/${selectedContact.id}`}
+                        className="inline-flex items-center gap-1 mt-2 text-emerald-700 hover:text-emerald-800 font-medium"
+                      >
+                        Open full lead page
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
     </div>
   )
 }
