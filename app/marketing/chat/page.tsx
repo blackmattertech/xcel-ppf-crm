@@ -9,7 +9,7 @@ import type { CustomerRecipient } from '../_lib/types'
 import type { ChatMessage } from '../_lib/types'
 import type { ConversationSummary } from '../_lib/types'
 import { normalizePhoneForChat, normalizePhoneForStorage } from '../_lib/utils'
-import { cachedFetch } from '@/lib/api-client'
+import { cachedFetch, invalidateApiCache } from '@/lib/api-client'
 
 const ENABLE_ATTACHMENTS = process.env.NEXT_PUBLIC_INBOX_ATTACHMENTS_ENABLED === 'true'
 const ENABLE_QUICK_REPLIES = process.env.NEXT_PUBLIC_INBOX_QUICK_REPLIES_ENABLED === 'true'
@@ -18,6 +18,49 @@ const QUICK_REPLIES = [
   'Can you please share your preferred time for a callback?',
   'Noted. We will send the details in a moment.',
 ]
+
+/** Index conversations by key, phone, and normalized conversation_key so CRM rows match API list order. */
+function buildConversationLookup(conversations: ConversationSummary[]): Map<string, ConversationSummary> {
+  const map = new Map<string, ConversationSummary>()
+  for (const c of conversations) {
+    map.set(c.conversation_key, c)
+    map.set(normalizePhoneForStorage(c.phone), c)
+    map.set(normalizePhoneForStorage(c.conversation_key), c)
+  }
+  return map
+}
+
+function findConversationForNormalizedKey(
+  normalizedKey: string,
+  conversations: ConversationSummary[]
+): ConversationSummary | null {
+  for (const c of conversations) {
+    if (c.conversation_key === normalizedKey) return c
+    if (normalizePhoneForStorage(c.phone) === normalizedKey) return c
+    if (normalizePhoneForStorage(c.conversation_key) === normalizedKey) return c
+  }
+  return null
+}
+
+function lastActivityMs(conv: ConversationSummary | null | undefined): number {
+  const raw = conv?.last_message?.created_at
+  if (!raw) return 0
+  const t = new Date(raw).getTime()
+  return Number.isFinite(t) ? t : 0
+}
+
+/** Same query shape as GET /api/marketing/whatsapp/chat for messages (includes leadId when applicable). */
+function buildThreadMessagesUrl(phone: string, conversationKey: string | undefined, leadIdForApi: string | undefined): string {
+  if (conversationKey) {
+    return `/api/marketing/whatsapp/chat?conversationKey=${encodeURIComponent(conversationKey)}`
+  }
+  const qs = new URLSearchParams()
+  qs.set('phone', normalizePhoneForChat(phone))
+  if (leadIdForApi && /^[0-9a-f-]{36}$/i.test(leadIdForApi)) {
+    qs.set('leadId', leadIdForApi)
+  }
+  return `/api/marketing/whatsapp/chat?${qs.toString()}`
+}
 
 export default function ChatWithLeadsPage() {
   const [contacts, setContacts] = useState<Array<LeadRecipient | CustomerRecipient>>([])
@@ -51,6 +94,10 @@ export default function ChatWithLeadsPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const sendingRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /** ETag from GET /chat?mode=conversations for silent If-None-Match refreshes. */
+  const conversationsEtagRef = useRef<string | null>(null)
+  /** ETag from GET /chat (messages) for conditional thread reloads (status / read receipts). */
+  const messagesEtagRef = useRef<string | null>(null)
   const [templates, setTemplates] = useState<Array<{
     id: string
     name: string
@@ -117,12 +164,88 @@ export default function ChatWithLeadsPage() {
       .catch(() => setApiConfigured(false))
   }, [])
 
+  const syncConversationsFromServer = useCallback(() => {
+    invalidateApiCache('GET:/api/marketing/whatsapp/chat')
+    const headers: Record<string, string> = {}
+    if (conversationsEtagRef.current) {
+      headers['If-None-Match'] = conversationsEtagRef.current
+    }
+    return fetch('/api/marketing/whatsapp/chat?mode=conversations', { credentials: 'include', headers })
+      .then((res) => {
+        if (res.status === 304) return null
+        if (!res.ok) return null
+        const etag = res.headers.get('etag')
+        if (etag) conversationsEtagRef.current = etag
+        return res.json()
+      })
+      .then((data: { conversations?: ConversationSummary[] } | null) => {
+        if (data?.conversations) setConversations(data.conversations)
+      })
+      .catch(() => {})
+  }, [])
+
+  const syncThreadMessagesSilent = useCallback(() => {
+    if (!selectedContact) return
+    const leadId =
+      selectedContact.type === 'lead' && /^[0-9a-f-]{36}$/i.test(selectedContact.id)
+        ? selectedContact.id
+        : undefined
+    const url = buildThreadMessagesUrl(selectedContact.phone, selectedConversationKey ?? undefined, leadId)
+    invalidateApiCache('GET:/api/marketing/whatsapp/chat')
+    const headers: Record<string, string> = {}
+    if (messagesEtagRef.current) {
+      headers['If-None-Match'] = messagesEtagRef.current
+    }
+    fetch(url, { credentials: 'include', headers })
+      .then((res) => {
+        if (res.status === 304) return null
+        if (!res.ok) return null
+        const etag = res.headers.get('etag')
+        if (etag) messagesEtagRef.current = etag
+        return res.json()
+      })
+      .then((data: { messages?: ChatMessage[] } | null) => {
+        if (data?.messages) setMessages(data.messages)
+      })
+      .catch(() => {})
+  }, [selectedContact, selectedConversationKey])
+
+  const fetchMessages = useCallback(() => {
+    if (!selectedContact) return
+    setLoadingMessages(true)
+    setMessagesError(null)
+    const leadId =
+      selectedContact.type === 'lead' && /^[0-9a-f-]{36}$/i.test(selectedContact.id)
+        ? selectedContact.id
+        : undefined
+    const url = buildThreadMessagesUrl(selectedContact.phone, selectedConversationKey ?? undefined, leadId)
+    messagesEtagRef.current = null
+    invalidateApiCache('GET:/api/marketing/whatsapp/chat')
+    fetch(url, { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error('bad')
+        const etag = res.headers.get('etag')
+        if (etag) messagesEtagRef.current = etag
+        return res.json()
+      })
+      .then((data) => setMessages(data.messages || []))
+      .catch(() => {
+        setMessages([])
+        setMessagesError('Failed to load conversation')
+      })
+      .finally(() => setLoadingMessages(false))
+  }, [selectedContact, selectedConversationKey])
+
   useEffect(() => {
     setLoading(true)
     Promise.all([
       cachedFetch('/api/leads').then((res) => (res.ok ? res.json() : { leads: [] })),
       cachedFetch('/api/customers').then((res) => (res.ok ? res.json() : { customers: [] })),
-      cachedFetch('/api/marketing/whatsapp/chat?mode=conversations').then((res) => (res.ok ? res.json() : { conversations: [] })),
+      fetch('/api/marketing/whatsapp/chat?mode=conversations', { credentials: 'include' }).then(async (res) => {
+        const etag = res.headers.get('etag')
+        if (etag) conversationsEtagRef.current = etag
+        return res.ok ? res.json() : { conversations: [] }
+      }),
       cachedFetch('/api/marketing/whatsapp/templates?status=approved').then((res) => (res.ok ? res.json() : { templates: [] })),
     ])
       .then(([leadsData, customersData, convData, templatesData]) => {
@@ -158,26 +281,40 @@ export default function ChatWithLeadsPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  const fetchMessages = useCallback((phone: string, conversationKey?: string) => {
-    setLoadingMessages(true)
-    setMessagesError(null)
-    const normalized = normalizePhoneForChat(phone)
-    const url = conversationKey
-      ? `/api/marketing/whatsapp/chat?conversationKey=${encodeURIComponent(conversationKey)}`
-      : `/api/marketing/whatsapp/chat?phone=${encodeURIComponent(normalized)}`
-    cachedFetch(url)
-      .then((res) => (res.ok ? res.json() : { messages: [] }))
-      .then((data) => setMessages(data.messages || []))
-      .catch(() => { setMessages([]); setMessagesError('Failed to load conversation') })
-      .finally(() => setLoadingMessages(false))
-  }, [])
+  useEffect(() => {
+    let debounce: ReturnType<typeof setTimeout> | undefined
+    const supabase = createClient()
+    const scheduleSidebarSync = () => {
+      if (debounce) clearTimeout(debounce)
+      debounce = setTimeout(() => {
+        syncConversationsFromServer()
+      }, 320)
+    }
+    const channel = supabase
+      .channel('inbox-sidebar-conversations')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_messages' },
+        scheduleSidebarSync
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[marketing/chat] Sidebar realtime — check migration 040 (whatsapp_messages publication)')
+        }
+      })
+    return () => {
+      if (debounce) clearTimeout(debounce)
+      supabase.removeChannel(channel)
+    }
+  }, [syncConversationsFromServer])
 
   useEffect(() => {
     if (!selectedContact) {
       setMessages([])
+      messagesEtagRef.current = null
       return
     }
-    fetchMessages(selectedContact.phone, selectedConversationKey ?? undefined)
+    fetchMessages()
     if (selectedConversationKey) {
       cachedFetch('/api/marketing/whatsapp/chat', {
         method: 'POST',
@@ -198,6 +335,14 @@ export default function ChatWithLeadsPage() {
       return { ...existing, ...patch }
     }
 
+    let threadEtagSyncDebounce: ReturnType<typeof setTimeout> | undefined
+    const scheduleThreadEtagSync = () => {
+      if (threadEtagSyncDebounce) clearTimeout(threadEtagSyncDebounce)
+      threadEtagSyncDebounce = setTimeout(() => {
+        syncThreadMessagesSilent()
+      }, 280)
+    }
+
     const handleChange = (payload: { eventType: string; new: unknown }) => {
       const row = payload.new as unknown as ChatMessage
       if (!row?.id) return
@@ -206,10 +351,12 @@ export default function ChatWithLeadsPage() {
           if (prev.some((m) => m.id === row.id)) return prev
           return [...prev, row].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
         })
+        scheduleThreadEtagSync()
       } else if (payload.eventType === 'UPDATE') {
         setMessages((prev) =>
           prev.map((m) => (m.id === row.id ? mergeMessageRow(m, row as unknown as Record<string, unknown>) : m))
         )
+        scheduleThreadEtagSync()
       }
     }
 
@@ -242,9 +389,10 @@ export default function ChatWithLeadsPage() {
     })
 
     return () => {
+      if (threadEtagSyncDebounce) clearTimeout(threadEtagSyncDebounce)
       supabase.removeChannel(channel)
     }
-  }, [selectedContact?.id, selectedContact?.phone, selectedContact?.type, selectedConversationKey, fetchMessages])
+  }, [selectedContact?.id, selectedContact?.phone, selectedContact?.type, selectedConversationKey, fetchMessages, syncThreadMessagesSilent])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -363,7 +511,12 @@ export default function ChatWithLeadsPage() {
           if (prev.some((m) => m.id === data.message.id)) return prev
           return [...prev, data.message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
         })
-      } else fetchMessages(selectedContact.phone, selectedConversationKey ?? undefined)
+        syncThreadMessagesSilent()
+        syncConversationsFromServer()
+      } else {
+        fetchMessages()
+        syncConversationsFromServer()
+      }
     } catch (e) {
       setSendStatus('error')
       setSendError(e instanceof Error ? e.message : 'Network or server error')
@@ -397,7 +550,8 @@ export default function ChatWithLeadsPage() {
       }
       setSendStatus('success')
       setSelectedTemplateId('')
-      fetchMessages(selectedContact.phone, selectedConversationKey ?? undefined)
+      fetchMessages()
+      syncConversationsFromServer()
     } catch (e) {
       setSendStatus('error')
       setSendError(e instanceof Error ? e.message : 'Template send failed')
@@ -407,25 +561,62 @@ export default function ChatWithLeadsPage() {
   }
 
   const listItems = useMemo(() => {
-    const convMap = new Map(filteredConversations.map((c) => [c.conversation_key, c]))
-    const base = filteredContacts.map((c) => {
+    const convLookup = buildConversationLookup(filteredConversations)
+    const base: Array<{
+      key: string
+      contact: LeadRecipient | CustomerRecipient
+      conversation: ConversationSummary | null
+    }> = []
+
+    for (const c of filteredContacts) {
       const key = normalizePhoneForStorage(c.phone)
-      return { key, contact: c, conversation: convMap.get(key) || null }
-    })
-    for (const conv of filteredConversations) {
-      if (!base.some((b) => b.key === conv.conversation_key)) {
-        base.push({
-          key: conv.conversation_key,
-          contact: {
-            id: conv.lead_id || conv.conversation_key,
-            name: conv.lead_name || conv.phone,
-            phone: conv.phone,
-            type: 'lead' as const,
-          },
-          conversation: conv,
-        })
+      const conversation =
+        convLookup.get(key) ?? findConversationForNormalizedKey(key, filteredConversations)
+      base.push({ key, contact: c, conversation: conversation ?? null })
+    }
+
+    const covered = new Set<string>()
+    for (const b of base) {
+      covered.add(b.key)
+      if (b.conversation) {
+        covered.add(b.conversation.conversation_key)
+        covered.add(normalizePhoneForStorage(b.conversation.phone))
+        covered.add(normalizePhoneForStorage(b.conversation.conversation_key))
       }
     }
+
+    for (const conv of filteredConversations) {
+      const nk = normalizePhoneForStorage(conv.phone)
+      const nck = normalizePhoneForStorage(conv.conversation_key)
+      if (
+        covered.has(conv.conversation_key) ||
+        covered.has(nk) ||
+        covered.has(nck)
+      ) {
+        continue
+      }
+      base.push({
+        key: conv.conversation_key,
+        contact: {
+          id: conv.lead_id || conv.conversation_key,
+          name: conv.lead_name || conv.phone,
+          phone: conv.phone,
+          type: 'lead' as const,
+        },
+        conversation: conv,
+      })
+      covered.add(conv.conversation_key)
+      covered.add(nk)
+      covered.add(nck)
+    }
+
+    base.sort((a, b) => {
+      const ta = lastActivityMs(a.conversation ?? undefined)
+      const tb = lastActivityMs(b.conversation ?? undefined)
+      if (tb !== ta) return tb - ta
+      return (a.contact.name || '').localeCompare(b.contact.name || '', undefined, { sensitivity: 'base' })
+    })
+
     return base
   }, [filteredContacts, filteredConversations])
 

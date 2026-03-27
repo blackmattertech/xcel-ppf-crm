@@ -3,11 +3,21 @@ import { requireAuth } from '@/backend/middleware/auth'
 import {
   assignConversation,
   getConversation,
+  getWhatsappInboxRevision,
+  getWhatsappThreadRevision,
   listConversations,
   listMessagesByConversationKey,
   markConversationRead,
   toInboxMessageDTO,
 } from '@/backend/services/whatsapp-chat.service'
+import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
+
+/** Strip weak prefix and quotes for If-None-Match comparison. */
+function normalizeIfNoneMatch(v: string | null): string | null {
+  if (!v) return null
+  const s = v.trim().replace(/^W\//i, '').replace(/^"|"$/g, '')
+  return s || null
+}
 
 export async function GET(request: NextRequest) {
   const authResult = await requireAuth(request)
@@ -18,12 +28,41 @@ export async function GET(request: NextRequest) {
     const search = request.nextUrl.searchParams.get('search') ?? ''
     const assignedTo = request.nextUrl.searchParams.get('assignedTo') || undefined
     const unreadOnly = request.nextUrl.searchParams.get('unreadOnly') === 'true'
+    const hasListFilters = !!(search.trim() || assignedTo || unreadOnly)
+
+    if (!hasListFilters) {
+      const revision = await getWhatsappInboxRevision()
+      if (revision) {
+        const etag = `"${revision}"`
+        const inm = normalizeIfNoneMatch(request.headers.get('if-none-match'))
+        if (inm && inm === revision) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag } })
+        }
+        const conversations = await listConversations({ search, assignedTo, unreadOnly })
+        const res = NextResponse.json({ conversations })
+        res.headers.set('ETag', etag)
+        return res
+      }
+    }
+
     const conversations = await listConversations({ search, assignedTo, unreadOnly })
     return NextResponse.json({ conversations })
   }
 
   const conversationKey = request.nextUrl.searchParams.get('conversationKey')
   if (conversationKey) {
+    const revision = await getWhatsappThreadRevision({ conversationKey })
+    if (revision) {
+      const etag = `"${revision}"`
+      const inm = normalizeIfNoneMatch(request.headers.get('if-none-match'))
+      if (inm && inm === revision) {
+        return new NextResponse(null, { status: 304, headers: { ETag: etag } })
+      }
+      const messages = await listMessagesByConversationKey(conversationKey)
+      const res = NextResponse.json({ messages })
+      res.headers.set('ETag', etag)
+      return res
+    }
     const messages = await listMessagesByConversationKey(conversationKey)
     return NextResponse.json({ messages })
   }
@@ -37,6 +76,19 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  const revision = await getWhatsappThreadRevision({ conversationKey: null, leadId, phone })
+  if (revision) {
+    const etag = `"${revision}"`
+    const inm = normalizeIfNoneMatch(request.headers.get('if-none-match'))
+    if (inm && inm === revision) {
+      return new NextResponse(null, { status: 304, headers: { ETag: etag } })
+    }
+    const messages = await getConversation(leadId || null, phone || '')
+    const res = NextResponse.json({ messages: messages.map(toInboxMessageDTO) })
+    res.headers.set('ETag', etag)
+    return res
+  }
+
   const messages = await getConversation(leadId || null, phone || '')
   return NextResponse.json({ messages: messages.map(toInboxMessageDTO) })
 }
@@ -44,6 +96,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
+  const { user } = authResult
 
   const body = await request.json().catch(() => null) as
     | { action?: 'mark_read' | 'assign'; conversationKey?: string; assignedTo?: string | null }
@@ -53,7 +106,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (body.action === 'mark_read') {
-    await markConversationRead(body.conversationKey)
+    const { config } = await getResolvedWhatsAppConfig(user.id)
+    await markConversationRead(body.conversationKey, config)
     return NextResponse.json({ success: true })
   }
   if (body.action === 'assign') {

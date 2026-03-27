@@ -263,8 +263,10 @@ export function toMetaSendTo(digits: string): string {
 }
 
 /**
- * Mark a message as read. Use the message.id from an incoming messages webhook.
- * Good practice to call within 30 days of receipt; also marks earlier messages in the thread as read.
+ * Mark an **incoming** customer message as read on WhatsApp (uses `messages.id` from the messages webhook).
+ * Meta marks that message and earlier ones in the thread as read on the user's phone.
+ * Good practice within 30 days of receipt. Response is `{ success: true }` — this does not return delivery status of
+ * **outgoing** messages; those come from webhook `statuses` (sent/delivered/read).
  * @see https://developers.facebook.com/docs/whatsapp/cloud-api/guides/mark-messages-as-read
  */
 export async function markMessageAsRead(

@@ -4,6 +4,8 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/service'
+import type { WhatsAppConfig } from '@/backend/services/whatsapp.service'
+import { markMessageAsRead } from '@/backend/services/whatsapp.service'
 
 export type MessageDirection = 'out' | 'in'
 
@@ -28,6 +30,53 @@ export interface WhatsAppMessageRow {
   meta_message_id: string | null
   status: MessageStatus | null
   created_at: string
+  updated_at?: string | null
+}
+
+/** Fingerprint for inbox list conditional GET (ETag). Null if RPC missing (migration not applied). */
+export async function getWhatsappInboxRevision(): Promise<string | null> {
+  try {
+    const supabase = createServiceClient()
+    const { data, error } = await supabase.rpc('whatsapp_inbox_revision')
+    if (error || data == null) return null
+    return String(data)
+  } catch {
+    return null
+  }
+}
+
+/** Fingerprint for a single thread (messages list) — includes delivery status / read updates via updated_at. */
+export async function getWhatsappThreadRevision(params: {
+  conversationKey?: string | null
+  leadId?: string | null
+  phone?: string | null
+}): Promise<string | null> {
+  try {
+    const supabase = createServiceClient()
+    if (params.conversationKey) {
+      const key = toConversationKey(params.conversationKey)
+      // DB migration 043 — RPC not in generated Database types yet
+      const { data, error } = await supabase.rpc('whatsapp_thread_revision' as never, {
+        p_conversation_key: key,
+        p_lead_id: null,
+        p_phone: null,
+      } as never)
+      if (error || data == null) return null
+      return String(data)
+    }
+    const normalizedPhone = params.phone ? normalizePhoneForStorage(params.phone) : null
+    const leadUuid =
+      params.leadId && /^[0-9a-f-]{36}$/i.test(params.leadId) ? params.leadId : null
+    const { data, error } = await supabase.rpc('whatsapp_thread_revision' as never, {
+      p_conversation_key: null,
+      p_lead_id: leadUuid,
+      p_phone: normalizedPhone,
+    } as never)
+    if (error || data == null) return null
+    return String(data)
+  } catch {
+    return null
+  }
 }
 
 export interface InboxMessageDTO {
@@ -342,7 +391,16 @@ export async function listConversations(params?: {
   return filtered.slice(0, limit)
 }
 
-export async function markConversationRead(conversationKey: string): Promise<void> {
+/**
+ * Mark inbound rows read in the DB; optionally notify Meta so the customer's WhatsApp shows read (blue ticks).
+ * Meta: POST /{phone_number_id}/messages with { messaging_product, status: "read", message_id } — marks that
+ * message and earlier ones in the thread as read on the user's device.
+ * @see https://developers.facebook.com/docs/whatsapp/cloud-api/guides/mark-messages-as-read
+ */
+export async function markConversationRead(
+  conversationKey: string,
+  whatsappConfig?: WhatsAppConfig | null
+): Promise<void> {
   const normalized = toConversationKey(conversationKey)
   const supabase = createServiceClient()
   const { error } = await supabase
@@ -353,6 +411,26 @@ export async function markConversationRead(conversationKey: string): Promise<voi
     .eq('is_read', false)
   if (error && error.code !== '42P01' && error.code !== '42703') {
     console.error('[whatsapp-chat] markConversationRead:', error)
+  }
+
+  if (!whatsappConfig?.phoneNumberId || !whatsappConfig?.accessToken) return
+
+  const { data: latestInbound } = await supabase
+    .from('whatsapp_messages')
+    .select('meta_message_id')
+    .eq('conversation_key', normalized)
+    .eq('direction', 'in')
+    .not('meta_message_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const wamid = (latestInbound as { meta_message_id?: string | null } | null)?.meta_message_id?.trim()
+  if (!wamid) return
+
+  const result = await markMessageAsRead(wamid, whatsappConfig)
+  if (!result.success && result.error) {
+    console.warn('[whatsapp-chat] Meta mark-as-read failed (CRM DB still updated):', result.error)
   }
 }
 
