@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, Suspense, type ChangeEvent } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -14,10 +14,18 @@ import {
   ArrowLeft,
   Clock,
   LayoutTemplate,
+  Upload,
+  Download,
 } from 'lucide-react'
 import type { LeadRecipient, CustomerRecipient, PastedRecipient, Recipient, SendResult, WhatsAppTemplate, MetaTemplateOption } from '../_lib/types'
 import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/utils'
 import { cachedFetch } from '@/lib/api-client'
+import {
+  parseRecipientsFromCsvText,
+  parseRecipientsFromXlsxBuffer,
+  getSampleRecipientCsv,
+  getSampleRecipientXlsxArrayBuffer,
+} from '../_lib/parse-recipient-file'
 
 const cardShell =
   'rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm ring-1 ring-slate-100/80 overflow-hidden'
@@ -34,6 +42,8 @@ function BulkWhatsAppPageContent() {
   const [leads, setLeads] = useState<LeadRecipient[]>([])
   const [customers, setCustomers] = useState<CustomerRecipient[]>([])
   const [pastedText, setPastedText] = useState('')
+  const [uploadHint, setUploadHint] = useState<string | null>(null)
+  const recipientFileInputRef = useRef<HTMLInputElement>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
@@ -210,6 +220,80 @@ function BulkWhatsAppPageContent() {
 
   const clearSelection = () => setSelectedIds(new Set())
   const clearSendResult = () => setSendResult(null)
+
+  const onRecipientFileSelected = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploadHint(null)
+    const ext = file.name.toLowerCase().split('.').pop() || ''
+    try {
+      if (ext === 'csv') {
+        const text = await file.text()
+        const result = parseRecipientsFromCsvText(text)
+        if (result.lines.length === 0) {
+          setUploadHint(
+            'No valid numbers found. Use a header row with a Phone or Mobile column, or two columns (name and number).'
+          )
+          return
+        }
+        setSource('paste')
+        setPastedText(result.lines.join('\n'))
+        setUploadHint(
+          `Loaded ${result.lines.length} number${result.lines.length !== 1 ? 's' : ''} from ${file.name}` +
+            (result.skipped ? ` (${result.skipped} row${result.skipped !== 1 ? 's' : ''} skipped)` : '') +
+            '.'
+        )
+        return
+      }
+      if (ext === 'xlsx' || ext === 'xls') {
+        const buf = await file.arrayBuffer()
+        const result = parseRecipientsFromXlsxBuffer(buf)
+        if (result.lines.length === 0) {
+          setUploadHint(
+            'No valid numbers found. Put numbers in a column named Phone or Mobile, or use two columns (name and number).'
+          )
+          return
+        }
+        setSource('paste')
+        setPastedText(result.lines.join('\n'))
+        setUploadHint(
+          `Loaded ${result.lines.length} number${result.lines.length !== 1 ? 's' : ''} from ${file.name}` +
+            (result.skipped ? ` (${result.skipped} row${result.skipped !== 1 ? 's' : ''} skipped)` : '') +
+            '.'
+        )
+        return
+      }
+      setUploadHint('Please choose a .csv, .xls, or .xlsx file.')
+    } catch (err) {
+      setUploadHint(err instanceof Error ? err.message : 'Could not read that file.')
+    }
+  }
+
+  const downloadSampleCsv = () => {
+    const blob = new Blob([getSampleRecipientCsv()], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'whatsapp-recipients-sample.csv'
+    a.rel = 'noopener'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const downloadSampleXlsx = () => {
+    const buf = getSampleRecipientXlsxArrayBuffer()
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'whatsapp-recipients-sample.xlsx'
+    a.rel = 'noopener'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const processScheduledNow = async () => {
     setProcessingScheduled(true)
@@ -434,7 +518,7 @@ function BulkWhatsAppPageContent() {
               {[
                 { value: 'leads' as const, label: 'Leads', icon: Users },
                 { value: 'customers' as const, label: 'Customers', icon: UserCheck },
-                { value: 'paste' as const, label: 'Paste numbers', icon: ListOrdered },
+                { value: 'paste' as const, label: 'Paste / upload', icon: ListOrdered },
               ].map(({ value, label, icon: Icon }) => (
                 <button
                   key={value}
@@ -457,19 +541,65 @@ function BulkWhatsAppPageContent() {
             <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
               <p className={sectionLabel}>Audience</p>
               <p className="mt-1 text-sm text-slate-600">
-                {source === 'paste' ? 'Paste one number per line or use Name, Number.' : 'Search and tick contacts to include.'}
+                {source === 'paste'
+                  ? 'Paste one number per line, use Name + number, or upload a CSV / Excel file.'
+                  : 'Search and tick contacts to include.'}
               </p>
             </div>
             {source === 'paste' ? (
               <div className="p-5 sm:p-6">
-                <label className={`mb-2 block ${sectionLabel}`}>Numbers</label>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <label className={sectionLabel}>Numbers</label>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <input
+                      ref={recipientFileInputRef}
+                      type="file"
+                      accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      className="sr-only"
+                      onChange={onRecipientFileSelected}
+                    />
+                    <button
+                      type="button"
+                      onClick={downloadSampleCsv}
+                      className={`${btnSecondary} inline-flex items-center gap-2`}
+                    >
+                      <Download className="h-4 w-4 text-slate-600" />
+                      Sample CSV
+                    </button>
+                
+                    <button
+                      type="button"
+                      onClick={() => recipientFileInputRef.current?.click()}
+                      className={`${btnSecondary} inline-flex items-center gap-2`}
+                    >
+                      <Upload className="h-4 w-4 text-slate-600" />
+                      Upload CSV / Excel
+                    </button>
+                  </div>
+                </div>
+                <p className="mb-3 text-xs leading-relaxed text-slate-500">
+                  Phone numbers are read from a column named <span className="font-mono text-slate-600">numbers</span>,{' '}
+                  <span className="font-mono text-slate-600">mobile</span>,{' '}
+                  <span className="font-mono text-slate-600">mobile_number</span>,{' '}
+                  <span className="font-mono text-slate-600">phone</span>, or{' '}
+                  <span className="font-mono text-slate-600">phone_number</span> (underscores and spaces are OK). Download
+                  a sample to see the layout.
+                </p>
                 <textarea
                   value={pastedText}
-                  onChange={(e) => setPastedText(e.target.value)}
-                  placeholder="9876543210&#10;John, 9876543210&#10;+91 98765 43210"
+                  onChange={(e) => {
+                    setPastedText(e.target.value)
+                    setUploadHint(null)
+                  }}
+                  placeholder="9876543210&#10;John, 9876543210&#10;+91 98765 43210&#10;&#10;Or upload a CSV/XLSX (use Sample CSV / Sample Excel for format)."
                   rows={7}
                   className={`${fieldInput} min-h-[160px] font-mono text-xs sm:text-sm`}
                 />
+                {uploadHint && (
+                  <p className="mt-2 text-sm text-slate-600" role="status">
+                    {uploadHint}
+                  </p>
+                )}
                 {pastedRecipients.length > 0 && (
                   <p className="mt-3 text-sm font-medium text-emerald-800">
                     {pastedRecipients.length} valid number{pastedRecipients.length !== 1 ? 's' : ''} (min 10 digits)

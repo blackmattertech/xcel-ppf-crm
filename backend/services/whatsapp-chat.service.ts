@@ -333,6 +333,41 @@ export async function listMessagesByConversationKey(conversationKey: string): Pr
   return ((data ?? []) as WhatsAppMessageRow[]).map(toInboxMessageDTO)
 }
 
+/**
+ * Remove all stored messages for the given conversation keys (CRM history only; does not affect WhatsApp on the client).
+ * Deletes by conversation_key, then legacy rows with only phone set.
+ */
+export async function deleteConversationsByKeys(rawKeys: string[]): Promise<{ deletedMessageCount: number }> {
+  const supabase = createServiceClient()
+  const normalized = [...new Set(rawKeys.map((k) => toConversationKey(k)))].filter((k) => k.length >= 10)
+  let deletedMessageCount = 0
+  for (const key of normalized) {
+    const { data: byKey, error: err1 } = await supabase
+      .from('whatsapp_messages')
+      .delete()
+      .eq('conversation_key', key)
+      .select('id')
+    if (err1 && err1.code !== '42P01' && err1.code !== '42703') {
+      console.error('[whatsapp-chat] deleteConversationsByKeys (conversation_key):', err1)
+      throw err1
+    }
+    deletedMessageCount += byKey?.length ?? 0
+
+    const { data: byPhone, error: err2 } = await supabase
+      .from('whatsapp_messages')
+      .delete()
+      .eq('phone', key)
+      .is('conversation_key', null)
+      .select('id')
+    if (err2 && err2.code !== '42P01' && err2.code !== '42703') {
+      console.error('[whatsapp-chat] deleteConversationsByKeys (legacy phone):', err2)
+      throw err2
+    }
+    deletedMessageCount += byPhone?.length ?? 0
+  }
+  return { deletedMessageCount }
+}
+
 export async function listConversations(params?: {
   search?: string
   assignedTo?: string

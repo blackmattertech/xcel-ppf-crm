@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import {
   assignConversation,
+  deleteConversationsByKeys,
   getConversation,
   getWhatsappInboxRevision,
   getWhatsappThreadRevision,
@@ -118,4 +119,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   }
   return NextResponse.json({ error: 'Unsupported action' }, { status: 400 })
+}
+
+const MAX_BULK_DELETE_KEYS = 50
+
+export async function DELETE(request: NextRequest) {
+  const authResult = await requireAuth(request)
+  if ('error' in authResult) return authResult.error
+
+  const body = (await request.json().catch(() => null)) as { conversationKeys?: unknown } | null
+  const keys = body?.conversationKeys
+  if (!Array.isArray(keys) || keys.length === 0) {
+    return NextResponse.json({ error: 'conversationKeys must be a non-empty array' }, { status: 400 })
+  }
+  const asStrings = keys.filter((k): k is string => typeof k === 'string')
+  if (asStrings.length !== keys.length) {
+    return NextResponse.json({ error: 'conversationKeys must be strings' }, { status: 400 })
+  }
+  if (asStrings.length > MAX_BULK_DELETE_KEYS) {
+    return NextResponse.json(
+      { error: `At most ${MAX_BULK_DELETE_KEYS} conversations per request` },
+      { status: 400 }
+    )
+  }
+
+  try {
+    const { deletedMessageCount } = await deleteConversationsByKeys(asStrings)
+    return NextResponse.json({ success: true, deletedMessageCount })
+  } catch (e) {
+    console.error('[whatsapp chat] DELETE conversations:', e)
+    return NextResponse.json({ error: 'Failed to delete conversations' }, { status: 500 })
+  }
 }

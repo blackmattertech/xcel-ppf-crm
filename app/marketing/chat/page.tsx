@@ -2,7 +2,22 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef, type ChangeEvent } from 'react'
 import Link from 'next/link'
-import { Search, Loader2, Send, Users, MessageSquare, Paperclip, FileText, Image as ImageIcon, Video, X, ExternalLink } from 'lucide-react'
+import {
+  Search,
+  Loader2,
+  Send,
+  Users,
+  MessageSquare,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
+  Video,
+  X,
+  ExternalLink,
+  ArrowLeft,
+  PlusCircle,
+  Trash2,
+} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { LeadRecipient } from '../_lib/types'
 import type { CustomerRecipient } from '../_lib/types'
@@ -108,6 +123,17 @@ export default function ChatWithLeadsPage() {
   }>>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [sendingTemplate, setSendingTemplate] = useState(false)
+  /** Numbers started from "New chat" (not in leads/customers API). */
+  const [manualContacts, setManualContacts] = useState<CustomerRecipient[]>([])
+  const [showNewChat, setShowNewChat] = useState(false)
+  const [newChatPhone, setNewChatPhone] = useState('')
+  const [newChatName, setNewChatName] = useState('')
+  const [newChatError, setNewChatError] = useState<string | null>(null)
+  /** Multi-select rows in the sidebar to delete CRM message history for those threads. */
+  const [bulkSelectMode, setBulkSelectMode] = useState(false)
+  const [selectedChatKeys, setSelectedChatKeys] = useState<string[]>([])
+  const [deleteChatsBusy, setDeleteChatsBusy] = useState(false)
+  const selectAllCheckboxRef = useRef<HTMLInputElement>(null)
 
   const openContactPanel = async () => {
     if (!selectedContact) return
@@ -398,11 +424,24 @@ export default function ChatWithLeadsPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  /** Manual "new chat" entries override same phone from leads/customers for display. */
+  const mergedContacts = useMemo(() => {
+    const map = new Map<string, LeadRecipient | CustomerRecipient>()
+    for (const c of manualContacts) {
+      map.set(normalizePhoneForStorage(c.phone), c)
+    }
+    for (const c of contacts) {
+      const k = normalizePhoneForStorage(c.phone)
+      if (!map.has(k)) map.set(k, c)
+    }
+    return Array.from(map.values())
+  }, [contacts, manualContacts])
+
   const filteredContacts = useMemo(() => {
-    if (!search.trim()) return contacts
+    if (!search.trim()) return mergedContacts
     const q = search.toLowerCase()
-    return contacts.filter((l) => l.name.toLowerCase().includes(q) || l.phone.includes(q))
-  }, [contacts, search])
+    return mergedContacts.filter((l) => l.name.toLowerCase().includes(q) || l.phone.includes(q))
+  }, [mergedContacts, search])
 
   const filteredConversations = useMemo(() => {
     if (!search.trim()) return conversations
@@ -620,17 +659,135 @@ export default function ChatWithLeadsPage() {
     return base
   }, [filteredContacts, filteredConversations])
 
+  const visibleChatKeys = useMemo(() => listItems.map((i) => i.key), [listItems])
+
+  const toggleChatKey = useCallback((key: string) => {
+    setSelectedChatKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  }, [])
+
+  const allVisibleChatsSelected =
+    visibleChatKeys.length > 0 && visibleChatKeys.every((k) => selectedChatKeys.includes(k))
+
+  useEffect(() => {
+    const el = selectAllCheckboxRef.current
+    if (!el) return
+    const n = visibleChatKeys.filter((k) => selectedChatKeys.includes(k)).length
+    el.indeterminate = n > 0 && n < visibleChatKeys.length
+  }, [visibleChatKeys, selectedChatKeys])
+
+  const toggleSelectAllVisibleChats = useCallback(() => {
+    setSelectedChatKeys((prev) => {
+      if (visibleChatKeys.length === 0) return prev
+      if (visibleChatKeys.every((k) => prev.includes(k))) {
+        return prev.filter((k) => !visibleChatKeys.includes(k))
+      }
+      return [...new Set([...prev, ...visibleChatKeys])]
+    })
+  }, [visibleChatKeys])
+
+  const exitBulkSelectMode = useCallback(() => {
+    setBulkSelectMode(false)
+    setSelectedChatKeys([])
+  }, [])
+
+  const handleBulkDeleteChats = useCallback(async () => {
+    if (selectedChatKeys.length === 0) return
+    if (
+      !window.confirm(
+        `Delete ${selectedChatKeys.length} chat(s)? Stored message history for these conversations will be removed from the CRM (this does not delete WhatsApp on anyone's phone).`
+      )
+    ) {
+      return
+    }
+    setDeleteChatsBusy(true)
+    try {
+      const res = await fetch('/api/marketing/whatsapp/chat', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ conversationKeys: selectedChatKeys }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete')
+
+      const keySet = new Set(selectedChatKeys.map((k) => normalizePhoneForStorage(k)))
+      setConversations((prev) =>
+        prev.filter(
+          (c) =>
+            !keySet.has(normalizePhoneForStorage(c.conversation_key)) &&
+            !keySet.has(normalizePhoneForStorage(c.phone))
+        )
+      )
+      setManualContacts((prev) => prev.filter((m) => !keySet.has(normalizePhoneForStorage(m.phone))))
+      if (selectedConversationKey && keySet.has(normalizePhoneForStorage(selectedConversationKey))) {
+        setSelectedContact(null)
+        setSelectedConversationKey(null)
+        setMessages([])
+      }
+      setMessagesError(null)
+      setSendStatus('idle')
+      setSendError(null)
+      conversationsEtagRef.current = null
+      invalidateApiCache('GET:/api/marketing/whatsapp/chat')
+      await syncConversationsFromServer()
+      exitBulkSelectMode()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setDeleteChatsBusy(false)
+    }
+  }, [selectedChatKeys, selectedConversationKey, syncConversationsFromServer, exitBulkSelectMode])
+
   const templateLookup = useMemo(() => {
     const byName = new Map<string, { body_text?: string; header_text?: string | null; footer_text?: string | null }>()
     for (const t of templates) byName.set(t.name.toLowerCase(), t)
     return byName
   }, [templates])
 
+  const startNewConversation = useCallback(() => {
+    setNewChatError(null)
+    const digits = newChatPhone.replace(/\D/g, '')
+    if (digits.length < 10) {
+      setNewChatError('Enter a valid mobile number (at least 10 digits).')
+      return
+    }
+    const normalized = normalizePhoneForStorage(newChatPhone)
+    const contact: CustomerRecipient = {
+      id: `inbox-direct-${normalized}`,
+      name: newChatName.trim() || 'New chat',
+      phone: newChatPhone.trim(),
+      type: 'customer',
+    }
+    setManualContacts((prev) => {
+      const next = prev.filter((p) => normalizePhoneForStorage(p.phone) !== normalized)
+      return [...next, contact]
+    })
+    setSelectedContact(contact)
+    setSelectedConversationKey(normalized)
+    setNewChatPhone('')
+    setNewChatName('')
+    setShowNewChat(false)
+    setSendStatus('idle')
+    setSendError(null)
+    setMessagesError(null)
+    setSaveError(null)
+  }, [newChatPhone, newChatName])
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex flex-col md:flex-row h-[calc(100vh-7rem)] min-h-[520px]">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href="/marketing/whatsapp"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50"
+        >
+          <ArrowLeft className="h-4 w-4 shrink-0" />
+          Back to WhatsApp
+        </Link>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-8.5rem)] min-h-[520px]">
         <div className="w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50/50">
-          <div className="p-3 border-b border-gray-200">
+          <div className="p-3 border-b border-gray-200 space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
@@ -641,58 +798,158 @@ export default function ChatWithLeadsPage() {
                 className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:ring-2 focus:ring-[#25D366]/30 focus:border-[#25D366] outline-none transition"
               />
             </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewChat((v) => !v)
+                  setNewChatError(null)
+                }}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#25D366]/40 bg-[#25D366]/10 px-3 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-[#25D366]/15"
+              >
+                <PlusCircle className="h-4 w-4 shrink-0" />
+                New conversation
+              </button>
+              {showNewChat && (
+                <div className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+                  <label className="block text-xs font-medium text-gray-600">Mobile number</label>
+                  <input
+                    type="tel"
+                    value={newChatPhone}
+                    onChange={(e) => setNewChatPhone(e.target.value)}
+                    placeholder="e.g. 9876543210 or +91 98765 43210"
+                    className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-[#25D366] focus:outline-none focus:ring-1 focus:ring-[#25D366]/30"
+                    autoComplete="tel"
+                  />
+                  <label className="block text-xs font-medium text-gray-600">Display name (optional)</label>
+                  <input
+                    type="text"
+                    value={newChatName}
+                    onChange={(e) => setNewChatName(e.target.value)}
+                    placeholder="Contact name"
+                    className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-[#25D366] focus:outline-none focus:ring-1 focus:ring-[#25D366]/30"
+                  />
+                  {newChatError && <p className="text-xs text-red-600">{newChatError}</p>}
+                  <button
+                    type="button"
+                    onClick={startNewConversation}
+                    className="w-full rounded-lg bg-[#25D366] py-2 text-sm font-semibold text-white transition hover:bg-[#20BA5A]"
+                  >
+                    Start messaging
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (bulkSelectMode) exitBulkSelectMode()
+                else setBulkSelectMode(true)
+              }}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+            >
+              {bulkSelectMode ? 'Done selecting' : 'Select chats to delete'}
+            </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-[#25D366]" />
               </div>
             ) : listItems.length > 0 ? (
-              <ul className="divide-y divide-gray-100">
-                {listItems.map((item) => (
-                  <li key={item.key}>
+              <>
+                {bulkSelectMode && (
+                  <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 shrink-0">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-700">
+                      <input
+                        ref={selectAllCheckboxRef}
+                        type="checkbox"
+                        checked={allVisibleChatsSelected}
+                        onChange={toggleSelectAllVisibleChats}
+                        className="rounded border-gray-300"
+                      />
+                      Select all ({visibleChatKeys.length})
+                    </label>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedContact(item.contact)
-                        setSelectedConversationKey(item.key)
-                        setSendStatus('idle')
-                        setSendError(null)
-                        setMessagesError(null)
-                        setSaveError(null)
-                      }}
-                      className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
-                        selectedConversationKey === item.key ? 'bg-[#25D366]/10 border-l-2 border-[#25D366]' : 'hover:bg-gray-100'
-                      }`}
+                      disabled={selectedChatKeys.length === 0 || deleteChatsBusy}
+                      onClick={handleBulkDeleteChats}
+                      className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-800 disabled:opacity-40"
                     >
-                      <div className="w-10 h-10 rounded-full bg-[#25D366]/20 flex items-center justify-center shrink-0">
-                        <Users className="h-5 w-5 text-[#25D366]" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium text-gray-900 truncate">{item.contact.name || item.contact.phone}</p>
-                          {item.conversation && item.conversation.unread_count > 0 && (
-                            <span className="min-w-5 h-5 px-1 rounded-full bg-[#25D366] text-white text-[10px] flex items-center justify-center">
-                              {item.conversation.unread_count}
-                            </span>
+                      {deleteChatsBusy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      Delete ({selectedChatKeys.length})
+                    </button>
+                  </div>
+                )}
+                <ul className="divide-y divide-gray-100 flex-1 min-h-0">
+                  {listItems.map((item) => (
+                    <li key={item.key} className="flex items-stretch">
+                      {bulkSelectMode && (
+                        <label
+                          className="flex shrink-0 cursor-pointer items-center pl-3 pr-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedChatKeys.includes(item.key)}
+                            onChange={() => toggleChatKey(item.key)}
+                            className="rounded border-gray-300"
+                          />
+                        </label>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (bulkSelectMode) {
+                            toggleChatKey(item.key)
+                            return
+                          }
+                          setSelectedContact(item.contact)
+                          setSelectedConversationKey(item.key)
+                          setSendStatus('idle')
+                          setSendError(null)
+                          setMessagesError(null)
+                          setSaveError(null)
+                        }}
+                        className={`min-w-0 flex-1 text-left px-4 py-3 flex items-center gap-3 transition-colors ${
+                          selectedConversationKey === item.key ? 'bg-[#25D366]/10 border-l-2 border-[#25D366]' : 'hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-[#25D366]/20 flex items-center justify-center shrink-0">
+                          <Users className="h-5 w-5 text-[#25D366]" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium text-gray-900 truncate">{item.contact.name || item.contact.phone}</p>
+                            {!bulkSelectMode && item.conversation && item.conversation.unread_count > 0 && (
+                              <span className="min-w-5 h-5 px-1 rounded-full bg-[#25D366] text-white text-[10px] flex items-center justify-center">
+                                {item.conversation.unread_count}
+                              </span>
+                            )}
+                          </div>
+                          {item.conversation ? (
+                            <div className="text-xs text-gray-500 truncate">
+                              {templateNameFromBody(item.conversation.last_message?.body || '')
+                                ? `[Template: ${templateNameFromBody(item.conversation.last_message?.body || '')}]`
+                                : (item.conversation.last_message?.body || item.contact.phone)}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-500 truncate">{item.contact.phone} • {item.contact.type}</p>
                           )}
                         </div>
-                        {item.conversation ? (
-                          <div className="text-xs text-gray-500 truncate">
-                            {templateNameFromBody(item.conversation.last_message?.body || '')
-                              ? `[Template: ${templateNameFromBody(item.conversation.last_message?.body || '')}]`
-                              : (item.conversation.last_message?.body || item.contact.phone)}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-500 truncate">{item.contact.phone} • {item.contact.type}</p>
-                        )}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             ) : (
-              <div className="p-4 text-center text-sm text-gray-500">No leads/customers with valid phone numbers.</div>
+              <div className="p-4 text-center text-sm text-gray-500">
+                No matches. Use <span className="font-medium text-gray-700">New conversation</span> above to message a number.
+              </div>
             )}
           </div>
         </div>
@@ -705,7 +962,7 @@ export default function ChatWithLeadsPage() {
             <div className="flex-1 flex items-center justify-center p-6 text-center">
               <div>
                 <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 text-sm">Select a lead/customer to start chatting</p>
+                <p className="text-gray-500 text-sm">Select a lead/customer to start chatting, or use New conversation to enter a number.</p>
               </div>
             </div>
           ) : (
@@ -936,6 +1193,7 @@ export default function ChatWithLeadsPage() {
             </>
           )}
         </div>
+      </div>
       </div>
       {showContactPanel && (
         <div className="fixed inset-0 z-50">
