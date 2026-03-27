@@ -546,8 +546,8 @@ export default function WhatsAppAnalyticsPage() {
                     centerLabel="Outgoing"
                     centerValue={formatInt(data.totals.sent)}
                   />
-                  <div className="overflow-hidden rounded-xl border border-slate-100">
-                    <table className="w-full text-sm">
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="w-full min-w-[560px] text-sm">
                       <thead>
                         <tr className="border-b border-slate-100 bg-slate-50/90 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                           <th className="px-4 py-2.5">Status</th>
@@ -683,8 +683,8 @@ export default function WhatsAppAnalyticsPage() {
               </div>
             ) : null}
             {templateTableRows.length > 0 ? (
-              <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-                <table className="w-full text-sm">
+              <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full min-w-[560px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
                       <th className="px-4 py-3">#</th>
@@ -825,8 +825,8 @@ export default function WhatsAppAnalyticsPage() {
                 </div>
               )}
 
-              <div className="mb-4 overflow-hidden rounded-xl border border-slate-200">
-                <table className="w-full text-sm">
+              <div className="mb-4 overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full min-w-[520px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
                       <th className="px-4 py-2.5">Stage</th>

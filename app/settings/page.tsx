@@ -87,7 +87,7 @@ function SettingsContent() {
   if (authLoading) {
     return (
       <Layout>
-        <div className="p-6">
+        <div className="p-4 md:p-6">
           <div className="flex items-center justify-center py-12">
             <div className="text-gray-500">Loading...</div>
           </div>
@@ -98,7 +98,7 @@ function SettingsContent() {
 
   return (
     <Layout>
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Settings</h1>
           <p className="text-gray-600">Manage your integrations and account settings</p>

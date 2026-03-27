@@ -70,7 +70,7 @@ export default function Layout({
         <Sidebar />
       </div>
       <FollowupNotificationsProvider>
-        <main className={`flex-1 overflow-x-hidden transition-all duration-300 ${isCollapsed ? 'md:ml-16' : 'md:ml-60'} md:pt-0 pt-[65px] w-full`}>
+        <main className={`flex-1 min-w-0 overflow-x-clip transition-all duration-300 ${isCollapsed ? 'md:ml-16' : 'md:ml-60'} md:pt-0 pt-[65px] w-full pb-[calc(98px+env(safe-area-inset-bottom))] md:pb-0`}>
           {/* <FollowUpNotifications /> */}
           {children}
           <PopupNotification />

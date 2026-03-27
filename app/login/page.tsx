@@ -188,7 +188,7 @@ export default function LoginPage() {
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="Email or phone number"
                       required
-                      className="w-full h-full px-3 md:px-4 lg:px-[16px] pr-8 md:pr-10 lg:pr-[40px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] rounded-md md:rounded-[6px] text-sm md:text-[15px] leading-[20px] font-roboto text-[#808080] placeholder:text-[#808080] focus:outline-none focus:ring-2 focus:ring-white/20"
+                      className="w-full h-full px-3 md:px-4 lg:px-[16px] pr-8 md:pr-10 lg:pr-[40px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] rounded-md md:rounded-[6px] text-base md:text-[15px] leading-[20px] font-roboto text-[#808080] placeholder:text-[#808080] focus:outline-none focus:ring-2 focus:ring-white/20"
                     />
                   </div>
                 </div>
@@ -206,7 +206,7 @@ export default function LoginPage() {
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Enter password"
                       required
-                      className="w-full h-full px-3 md:px-4 lg:px-[16px] pr-8 md:pr-10 lg:pr-[40px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] rounded-md md:rounded-[6px] text-sm md:text-[15px] leading-[20px] font-roboto text-[#808080] placeholder:text-[#808080] focus:outline-none focus:ring-2 focus:ring-white/20"
+                      className="w-full h-full px-3 md:px-4 lg:px-[16px] pr-8 md:pr-10 lg:pr-[40px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] rounded-md md:rounded-[6px] text-base md:text-[15px] leading-[20px] font-roboto text-[#808080] placeholder:text-[#808080] focus:outline-none focus:ring-2 focus:ring-white/20"
                     />
                     <button
                       type="button"

@@ -1049,7 +1049,7 @@ export default function ChatWithLeadsPage() {
         </Link>
       </div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex flex-col md:flex-row h-[calc(100vh-8.5rem)] min-h-[520px]">
+      <div className="flex min-h-[min(520px,calc(100dvh-8.5rem))] flex-col md:h-[calc(100vh-8.5rem)] md:min-h-[520px] md:flex-row">
         <div className="w-full md:w-80 border-r border-gray-200 flex flex-col bg-gray-50/50">
           <div className="p-3 border-b border-gray-200 space-y-3">
             <div className="relative">

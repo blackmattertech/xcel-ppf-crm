@@ -609,7 +609,7 @@ function BulkWhatsAppPageContent() {
             ) : (
               <>
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-4 sm:px-5">
-                  <div className="relative min-w-[200px] flex-1">
+                  <div className="relative w-full sm:min-w-[200px] sm:flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"

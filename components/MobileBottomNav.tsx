@@ -85,7 +85,7 @@ export default function MobileBottomNav() {
   }
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-[2px] h-[98px] z-30">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-[2px] h-[calc(98px+env(safe-area-inset-bottom))] z-30 pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-full px-2">
         {filteredNavItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
