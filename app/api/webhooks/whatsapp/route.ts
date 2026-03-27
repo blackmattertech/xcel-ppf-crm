@@ -35,7 +35,16 @@ export async function POST(request: NextRequest) {
         changes?: Array<{
           field?: string
           value?: {
-            messages?: Array<{ from: string; id: string; timestamp: string; type: string; text?: { body: string } }>
+            messages?: Array<{
+              from: string
+              id: string
+              timestamp: string
+              type: string
+              text?: { body: string }
+              image?: { id?: string; mime_type?: string; caption?: string; sha256?: string }
+              video?: { id?: string; mime_type?: string; caption?: string; sha256?: string }
+              document?: { id?: string; mime_type?: string; filename?: string; caption?: string; sha256?: string }
+            }>
             statuses?: Array<{
               id: string
               status: string
@@ -103,8 +112,37 @@ export async function POST(request: NextRequest) {
         if (!value.messages) continue
         for (const msg of value.messages) {
           const from = String(msg.from ?? '')
-          const textBody = msg.type === 'text' ? msg.text?.body : null
-          if (!from || textBody == null) continue
+          if (!from) continue
+
+          let messageType: 'text' | 'image' | 'video' | 'document' = 'text'
+          let bodyText = ''
+          let attachmentUrl: string | null = null
+          let attachmentMimeType: string | null = null
+          let attachmentFileName: string | null = null
+
+          if (msg.type === 'text') {
+            bodyText = msg.text?.body ?? ''
+          } else if (msg.type === 'image') {
+            messageType = 'image'
+            bodyText = msg.image?.caption ?? '[Image]'
+            attachmentUrl = msg.image?.id ? `meta-media://${msg.image.id}` : null
+            attachmentMimeType = msg.image?.mime_type ?? null
+          } else if (msg.type === 'video') {
+            messageType = 'video'
+            bodyText = msg.video?.caption ?? '[Video]'
+            attachmentUrl = msg.video?.id ? `meta-media://${msg.video.id}` : null
+            attachmentMimeType = msg.video?.mime_type ?? null
+          } else if (msg.type === 'document') {
+            messageType = 'document'
+            bodyText = msg.document?.caption ?? `[Document] ${msg.document?.filename ?? ''}`.trim()
+            attachmentUrl = msg.document?.id ? `meta-media://${msg.document.id}` : null
+            attachmentMimeType = msg.document?.mime_type ?? null
+            attachmentFileName = msg.document?.filename ?? null
+          } else {
+            continue
+          }
+
+          if (!bodyText.trim()) bodyText = `[${messageType}]`
 
           let leadId: string | null = null
           try {
@@ -124,9 +162,13 @@ export async function POST(request: NextRequest) {
 
           await saveIncomingMessage({
             phone: from,
-            body: textBody,
+            body: bodyText,
             metaMessageId: msg.id,
             leadId,
+            messageType,
+            attachmentUrl,
+            attachmentMimeType,
+            attachmentFileName,
           })
           markMessageAsRead(msg.id, config).catch((err) => console.warn('[webhooks/whatsapp] mark read failed:', err))
         }

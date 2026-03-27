@@ -687,6 +687,16 @@ export interface Database {
           phone: string
           direction: string
           body: string
+          message_type: 'text' | 'image' | 'video' | 'document'
+          attachment_url: string | null
+          attachment_mime_type: string | null
+          attachment_file_name: string | null
+          attachment_size_bytes: number | null
+          thumbnail_url: string | null
+          conversation_key: string | null
+          assigned_to: string | null
+          is_read: boolean
+          read_at: string | null
           meta_message_id: string | null
           status: 'sent' | 'delivered' | 'read' | null
           created_at: string
@@ -697,6 +707,16 @@ export interface Database {
           phone: string
           direction: string
           body: string
+          message_type?: 'text' | 'image' | 'video' | 'document'
+          attachment_url?: string | null
+          attachment_mime_type?: string | null
+          attachment_file_name?: string | null
+          attachment_size_bytes?: number | null
+          thumbnail_url?: string | null
+          conversation_key?: string | null
+          assigned_to?: string | null
+          is_read?: boolean
+          read_at?: string | null
           meta_message_id?: string | null
           status?: 'sent' | 'delivered' | 'read' | null
           created_at?: string
@@ -707,6 +727,16 @@ export interface Database {
           phone?: string
           direction?: string
           body?: string
+          message_type?: 'text' | 'image' | 'video' | 'document'
+          attachment_url?: string | null
+          attachment_mime_type?: string | null
+          attachment_file_name?: string | null
+          attachment_size_bytes?: number | null
+          thumbnail_url?: string | null
+          conversation_key?: string | null
+          assigned_to?: string | null
+          is_read?: boolean
+          read_at?: string | null
           meta_message_id?: string | null
           status?: 'sent' | 'delivered' | 'read' | null
           created_at?: string

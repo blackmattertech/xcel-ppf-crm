@@ -1,10 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { getConversation } from '@/backend/services/whatsapp-chat.service'
+import {
+  assignConversation,
+  getConversation,
+  listConversations,
+  listMessagesByConversationKey,
+  markConversationRead,
+  toInboxMessageDTO,
+} from '@/backend/services/whatsapp-chat.service'
 
 export async function GET(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
+
+  const mode = request.nextUrl.searchParams.get('mode')
+  if (mode === 'conversations') {
+    const search = request.nextUrl.searchParams.get('search') ?? ''
+    const assignedTo = request.nextUrl.searchParams.get('assignedTo') || undefined
+    const unreadOnly = request.nextUrl.searchParams.get('unreadOnly') === 'true'
+    const conversations = await listConversations({ search, assignedTo, unreadOnly })
+    return NextResponse.json({ conversations })
+  }
+
+  const conversationKey = request.nextUrl.searchParams.get('conversationKey')
+  if (conversationKey) {
+    const messages = await listMessagesByConversationKey(conversationKey)
+    return NextResponse.json({ messages })
+  }
 
   const leadId = request.nextUrl.searchParams.get('leadId')
   const phone = request.nextUrl.searchParams.get('phone')
@@ -16,5 +38,30 @@ export async function GET(request: NextRequest) {
   }
 
   const messages = await getConversation(leadId || null, phone || '')
-  return NextResponse.json({ messages })
+  return NextResponse.json({ messages: messages.map(toInboxMessageDTO) })
+}
+
+export async function POST(request: NextRequest) {
+  const authResult = await requireAuth(request)
+  if ('error' in authResult) return authResult.error
+
+  const body = await request.json().catch(() => null) as
+    | { action?: 'mark_read' | 'assign'; conversationKey?: string; assignedTo?: string | null }
+    | null
+  if (!body?.action || !body.conversationKey) {
+    return NextResponse.json({ error: 'action and conversationKey are required' }, { status: 400 })
+  }
+
+  if (body.action === 'mark_read') {
+    await markConversationRead(body.conversationKey)
+    return NextResponse.json({ success: true })
+  }
+  if (body.action === 'assign') {
+    if (process.env.INBOX_ASSIGNMENT_ENABLED !== 'true') {
+      return NextResponse.json({ error: 'Assignment is disabled by feature flag' }, { status: 403 })
+    }
+    await assignConversation(body.conversationKey, body.assignedTo ?? null)
+    return NextResponse.json({ success: true })
+  }
+  return NextResponse.json({ error: 'Unsupported action' }, { status: 400 })
 }

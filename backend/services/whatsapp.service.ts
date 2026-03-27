@@ -300,6 +300,8 @@ export interface SendTextResult {
   errorCode?: number
 }
 
+export type SendMediaResult = SendTextResult
+
 /**
  * Send a single text message via WhatsApp Cloud API.
  * Uses POST /<PHONE_NUMBER_ID>/messages; to field includes + and country code per Meta recommendation.
@@ -375,6 +377,58 @@ export async function sendWhatsAppText(
 
   const messageId = data?.messages?.[0]?.id
   return { success: true, messageId }
+}
+
+export async function sendWhatsAppMedia(
+  to: string,
+  options: {
+    mediaType: 'image' | 'video' | 'document'
+    mediaUrl: string
+    fileName?: string
+    caption?: string
+  },
+  config?: WhatsAppConfig | null
+): Promise<SendMediaResult> {
+  const cfg = config ?? getWhatsAppConfig()
+  if (!cfg) return { success: false, error: 'WhatsApp API not configured (missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN)' }
+
+  const digits = toE164Digits(to)
+  if (digits.length < 10) return { success: false, error: 'Invalid phone number' }
+  if (!options.mediaUrl?.trim()) return { success: false, error: 'mediaUrl is required' }
+
+  const type = options.mediaType
+  const mediaPayload: Record<string, unknown> = { link: options.mediaUrl.trim() }
+  if (type === 'document' && options.fileName?.trim()) mediaPayload.filename = options.fileName.trim()
+  if ((type === 'image' || type === 'video') && options.caption?.trim()) mediaPayload.caption = options.caption.trim().slice(0, 1024)
+
+  const payload: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: toMetaSendTo(digits),
+    type,
+    [type]: mediaPayload,
+  }
+
+  const res = await fetch(`${META_GRAPH_BASE}/${cfg.phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cfg.accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => ({})) as {
+    messages?: Array<{ id: string }>
+    error?: { message?: string; code?: number }
+  }
+  if (!res.ok) {
+    return {
+      success: false,
+      error: data?.error?.message ?? `HTTP ${res.status}`,
+      errorCode: data?.error?.code,
+    }
+  }
+  return { success: true, messageId: data?.messages?.[0]?.id }
 }
 
 /**
@@ -1144,7 +1198,7 @@ export async function sendTemplateMessage(
   } else if ((headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT') && headerParams.length > 0) {
     // Resumable Upload handle is only valid for template creation, not for sending. When sending we must use link (URL).
     // So: if value is a URL use it; else try to resolve handle/id to a temporary URL via Meta GET /{id}; else fail.
-    let value = headerParams[0].trim()
+    const value = headerParams[0].trim()
     let linkUrl: string | null = null
     if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('www.')) {
       linkUrl = value.startsWith('www.') ? 'https://' + value : value

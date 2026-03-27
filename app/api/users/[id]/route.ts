@@ -7,9 +7,9 @@ import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
 const updateUserSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).optional(),
   phone: z.string().nullable().optional(),
-  roleId: z.string().uuid(),
+  roleId: z.string().uuid().optional(),
   branchId: z.string().uuid().nullable().optional(),
   profileImageUrl: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
@@ -80,11 +80,30 @@ export async function PUT(
     const body = await request.json()
     let { name, phone, roleId, branchId, profileImageUrl, address, dob, doj, languagesKnown } = updateUserSchema.parse(body)
 
+    const existingUser = await getUserById(id) as {
+      name?: string
+      role?: { id?: string } | null
+      branch_id?: string | null
+    }
+
+    // Support partial updates (e.g. phone-only updates from team dialogs)
+    name = name ?? existingUser.name ?? ''
+    roleId = roleId ?? existingUser.role?.id
+    if (branchId === undefined) {
+      branchId = existingUser.branch_id ?? null
+    }
+
+    if (!name || !roleId) {
+      return NextResponse.json(
+        { error: 'Missing required fields: name and roleId' },
+        { status: 400 }
+      )
+    }
+
     // If user is editing their own profile, prevent role change unless they're admin
     if (isOwnProfile && !isAdmin) {
       // Get current user's role and keep it
-      const { getUserById } = await import('@/backend/services/user.service')
-      const currentUserData = await getUserById(id)
+      const currentUserData = existingUser as any
       roleId = (currentUserData as any).role?.id || roleId
     }
 
