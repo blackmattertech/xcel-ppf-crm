@@ -27,6 +27,7 @@ import type { CustomerRecipient } from '../_lib/types'
 import type { ChatMessage } from '../_lib/types'
 import type { ConversationSummary } from '../_lib/types'
 import { normalizePhoneForChat, normalizePhoneForStorage } from '../_lib/utils'
+import { resolveUploadMime } from '../_lib/whatsapp-upload-mime'
 import { cachedFetch, invalidateApiCache } from '@/lib/api-client'
 import { ForwardMessageDialog } from './forward-message-dialog'
 
@@ -560,21 +561,68 @@ export default function ChatWithLeadsPage() {
     )
   }, [conversations, search])
 
+  /**
+   * Same flow as template header media: signed Supabase upload URL → PUT file (bypasses Vercel ~4.5MB
+   * serverless body limit on multipart POST), then JSON to upload-media for Meta + public URL.
+   */
   const uploadAttachment = async (file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
     setUploadingAttachment(true)
     try {
-      const res = await cachedFetch('/api/marketing/whatsapp/upload-media', {
-        method: 'POST',
-        body: formData,
+      const signRes = await cachedFetch(
+        '/api/marketing/whatsapp/upload-media/signed-url',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+          }),
+        },
+        0
+      )
+      const signData = (await signRes.json()) as {
+        signedUrl?: string
+        token?: string
+        path?: string
+        error?: string
+      }
+      if (!signRes.ok || !signData.path || !signData.token || !signData.signedUrl) {
+        throw new Error(signData.error ?? 'Failed to create upload URL')
+      }
+
+      const uploadRes = await fetch(signData.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
       })
-      const data = await res.json()
+      if (!uploadRes.ok) {
+        throw new Error('Failed to upload file to storage')
+      }
+
+      const res = await cachedFetch(
+        '/api/marketing/whatsapp/upload-media',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            storagePath: signData.path,
+            mimeType: file.type || 'application/octet-stream',
+            fileName: file.name,
+          }),
+        },
+        0
+      )
+      const data = (await res.json()) as { url?: string; mimeType?: string; error?: string }
       if (!res.ok || !data?.url) throw new Error(data?.error || 'Upload failed')
-      const mime = file.type || data.mimeType || ''
+      const mime =
+        resolveUploadMime(file.type || '', file.name) ||
+        data.mimeType ||
+        file.type ||
+        'application/octet-stream'
       const type: 'image' | 'video' | 'document' =
-        mime.startsWith('image/') ? 'image' :
-        mime.startsWith('video/') ? 'video' : 'document'
+        mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'document'
       setAttachment({
         url: data.url,
         mimeType: mime,
