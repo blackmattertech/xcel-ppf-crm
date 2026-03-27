@@ -144,7 +144,7 @@ export async function saveOutgoingMessage(params: {
         assigned_to: params.assignedTo ?? null,
         is_read: true,
         read_at: new Date().toISOString(),
-        meta_message_id: params.metaMessageId || null,
+        meta_message_id: params.metaMessageId?.trim() || null,
       } as never)
       .select()
       .single()
@@ -182,7 +182,7 @@ export async function saveOutgoingMessagesBatch(
     phone: normalizePhoneForStorage(r.phone),
     direction: 'out' as const,
     body: r.body,
-    meta_message_id: r.metaMessageId || null,
+    meta_message_id: r.metaMessageId?.trim() || null,
   }))
   const { error } = await supabase.from('whatsapp_messages').insert(payload as never)
   if (error) {
@@ -375,17 +375,27 @@ export async function updateMessageStatus(
   metaMessageId: string,
   newStatus: MessageStatus
 ): Promise<void> {
+  const wamid = metaMessageId?.trim()
+  if (!wamid) return
   try {
     const supabase = createServiceClient()
-    const { data: raw } = await supabase
+    const { data: raw, error: fetchErr } = await supabase
       .from('whatsapp_messages')
       .select('id, status')
-      .eq('meta_message_id', metaMessageId)
+      .eq('meta_message_id', wamid)
       .eq('direction', 'out')
       .limit(1)
-      .single()
+      .maybeSingle()
+    if (fetchErr) throw fetchErr
     const existing = raw as { id: string; status?: string | null } | null
-    if (!existing || !existing.id) return
+    if (!existing?.id) {
+      if (newStatus === 'read') {
+        console.warn('[whatsapp-chat] updateMessageStatus: no outgoing row for wamid (read event ignored)', {
+          wamidPreview: wamid.slice(0, 24),
+        })
+      }
+      return
+    }
     if (newStatus === 'failed') {
       const { error } = await supabase
         .from('whatsapp_messages')
@@ -394,8 +404,11 @@ export async function updateMessageStatus(
       if (error) throw error
       return
     }
-    const current = (existing.status as MessageStatus | null) ?? 'sent'
-    if (STATUS_ORDER[newStatus as keyof typeof STATUS_ORDER] <= STATUS_ORDER[current as keyof typeof STATUS_ORDER]) return
+    const currentRaw = (existing.status as string | null) ?? 'sent'
+    const current = (currentRaw.toLowerCase() as MessageStatus) || 'sent'
+    const curOrder = STATUS_ORDER[current as keyof typeof STATUS_ORDER]
+    const nextOrder = STATUS_ORDER[newStatus as keyof typeof STATUS_ORDER]
+    if (curOrder != null && nextOrder != null && nextOrder <= curOrder) return
     const { error } = await supabase
       .from('whatsapp_messages')
       .update({ status: newStatus } as never)

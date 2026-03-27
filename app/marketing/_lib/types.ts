@@ -75,7 +75,7 @@ export interface LibraryTemplate {
   buttons: Array<{ type: string; text: string; example?: string }>
 }
 
-export type MessageStatus = 'sent' | 'delivered' | 'read'
+export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed'
 
 export interface ChatMessage {
   id: string

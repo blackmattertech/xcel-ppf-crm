@@ -188,31 +188,63 @@ export default function ChatWithLeadsPage() {
 
     const supabase = createClient()
     const storedPhone = normalizePhoneForStorage(selectedContact.phone)
+    const leadId =
+      selectedContact.type === 'lead' && /^[0-9a-f-]{36}$/i.test(selectedContact.id) ? selectedContact.id : null
+
+    const mergeMessageRow = (existing: ChatMessage, incoming: Record<string, unknown>): ChatMessage => {
+      const patch = Object.fromEntries(
+        Object.entries(incoming).filter(([, v]) => v !== undefined)
+      ) as Partial<ChatMessage>
+      return { ...existing, ...patch }
+    }
+
     const handleChange = (payload: { eventType: string; new: unknown }) => {
       const row = payload.new as unknown as ChatMessage
+      if (!row?.id) return
       if (payload.eventType === 'INSERT') {
         setMessages((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev
           return [...prev, row].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
         })
       } else if (payload.eventType === 'UPDATE') {
-        setMessages((prev) => prev.map((m) => (m.id === row.id ? { ...m, ...row } : m)))
+        setMessages((prev) =>
+          prev.map((m) => (m.id === row.id ? mergeMessageRow(m, row as unknown as Record<string, unknown>) : m))
+        )
       }
     }
-    const ch1 = supabase
-      .channel(`whatsapp-contact-${selectedContact.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `phone=eq.${storedPhone}` }, handleChange)
-      .subscribe()
-    const ch2 = supabase
-      .channel(`whatsapp-phone-${storedPhone}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `phone=eq.${storedPhone}` }, handleChange)
-      .subscribe()
+
+    const channelName = `whatsapp-inbox-${storedPhone}-${selectedConversationKey ?? 'nock'}-${leadId ?? 'nolead'}`
+    let channel = supabase.channel(channelName)
+    channel = channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `phone=eq.${storedPhone}` },
+      handleChange
+    )
+    // Rows may store legacy phone vs conversation_key differently; status updates still match by conversation_key.
+    if (selectedConversationKey) {
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `conversation_key=eq.${selectedConversationKey}` },
+        handleChange
+      )
+    }
+    if (leadId) {
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_messages', filter: `lead_id=eq.${leadId}` },
+        handleChange
+      )
+    }
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.warn('[marketing/chat] Realtime subscription error — check DB migration 040 (whatsapp_messages in supabase_realtime publication)')
+      }
+    })
 
     return () => {
-      supabase.removeChannel(ch1)
-      supabase.removeChannel(ch2)
+      supabase.removeChannel(channel)
     }
-  }, [selectedContact?.id, selectedContact?.phone, selectedConversationKey, fetchMessages])
+  }, [selectedContact?.id, selectedContact?.phone, selectedContact?.type, selectedConversationKey, fetchMessages])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -595,9 +627,15 @@ export default function ChatWithLeadsPage() {
                             {msg.direction === 'out' && (
                               <span
                                 className={`text-[10px] ${msg.status === 'read' ? 'text-red-600' : 'text-gray-500'}`}
-                                title={msg.status ?? 'sent'}
+                                title="From WhatsApp: Sent = accepted; Delivered = reached their phone; Read = they opened the chat on WhatsApp (not when you view this screen). If Read never appears, their read receipts may be off or Meta did not send a read event."
                               >
-                                {msg.status === 'read' || msg.status === 'delivered' ? '✓✓' : '✓'}
+                                {msg.status === 'failed'
+                                  ? 'Failed'
+                                  : msg.status === 'read'
+                                    ? 'Read'
+                                    : msg.status === 'delivered'
+                                      ? 'Delivered'
+                                      : 'Sent'}
                               </span>
                             )}
                           </div>
@@ -700,6 +738,9 @@ export default function ChatWithLeadsPage() {
                     {sendError || 'Failed to send. Check WhatsApp config and phone number.'}
                   </p>
                 )}
+                <p className="text-[10px] text-gray-400 mt-2 leading-snug">
+                  Status updates come from Meta webhooks. &quot;Read&quot; only appears when the <strong className="font-medium text-gray-500">customer</strong> opens your message on WhatsApp — not when you open this inbox. Read receipts can be disabled on their phone.
+                </p>
               </div>
             </>
           )}
