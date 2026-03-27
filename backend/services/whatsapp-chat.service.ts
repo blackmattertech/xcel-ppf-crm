@@ -28,6 +28,10 @@ export interface WhatsAppMessageRow {
   is_read?: boolean
   read_at?: string | null
   meta_message_id: string | null
+  /** Parent message wamid when this is a contextual reply (WhatsApp `context.message_id`). */
+  reply_to_meta_message_id?: string | null
+  /** Meta `context.from` — sender of the quoted message (helps label when parent row not found). */
+  reply_context_from?: string | null
   status: MessageStatus | null
   created_at: string
   updated_at?: string | null
@@ -96,6 +100,8 @@ export interface InboxMessageDTO {
   is_read: boolean
   read_at: string | null
   meta_message_id: string | null
+  reply_to_meta_message_id: string | null
+  reply_context_from: string | null
   status: MessageStatus | null
   created_at: string
 }
@@ -110,6 +116,25 @@ export interface ConversationSummary {
   last_message: InboxMessageDTO
 }
 
+const LEGACY_REPLY_META_PREFIX = /^\[\[wa_reply:([^\]|]+)?(?:\|([^\]]*))?\]\]\s*/i
+
+function encodeLegacyReplyMeta(body: string, replyToMeta?: string | null, replyFrom?: string | null): string {
+  const replyTo = (replyToMeta ?? '').trim()
+  const from = (replyFrom ?? '').trim()
+  if (!replyTo && !from) return body
+  if (LEGACY_REPLY_META_PREFIX.test(body)) return body
+  return `[[wa_reply:${replyTo}|${from}]] ${body}`
+}
+
+function decodeLegacyReplyMeta(body: string): { cleanBody: string; replyToMeta: string | null; replyFrom: string | null } {
+  const m = body.match(LEGACY_REPLY_META_PREFIX)
+  if (!m) return { cleanBody: body, replyToMeta: null, replyFrom: null }
+  const replyToMeta = (m[1] ?? '').trim() || null
+  const replyFrom = (m[2] ?? '').trim() || null
+  const cleanBody = body.replace(LEGACY_REPLY_META_PREFIX, '').trimStart()
+  return { cleanBody, replyToMeta, replyFrom }
+}
+
 /** Normalize phone to digits (E.164-ish) for matching. */
 export function normalizePhoneForStorage(phone: string, defaultCountryCode = '91'): string {
   const digits = phone.replace(/\D/g, '')
@@ -122,13 +147,16 @@ function toConversationKey(phone: string): string {
 }
 
 export function toInboxMessageDTO(row: WhatsAppMessageRow): InboxMessageDTO {
+  const legacy = decodeLegacyReplyMeta(row.body ?? '')
+  const effectiveReplyTo = row.reply_to_meta_message_id ?? legacy.replyToMeta
+  const effectiveReplyFrom = row.reply_context_from ?? legacy.replyFrom
   return {
     id: row.id,
     lead_id: row.lead_id,
     phone: row.phone,
     conversation_key: row.conversation_key ?? toConversationKey(row.phone),
     direction: row.direction,
-    body: row.body,
+    body: legacy.cleanBody,
     message_type: row.message_type ?? 'text',
     attachment_url: row.attachment_url ?? null,
     attachment_mime_type: row.attachment_mime_type ?? null,
@@ -139,6 +167,8 @@ export function toInboxMessageDTO(row: WhatsAppMessageRow): InboxMessageDTO {
     is_read: row.is_read ?? row.direction === 'out',
     read_at: row.read_at ?? null,
     meta_message_id: row.meta_message_id,
+    reply_to_meta_message_id: effectiveReplyTo ?? null,
+    reply_context_from: effectiveReplyFrom ?? null,
     status: row.status,
     created_at: row.created_at,
   }
@@ -161,6 +191,8 @@ export async function saveOutgoingMessage(params: {
   attachmentSizeBytes?: number | null
   thumbnailUrl?: string | null
   assignedTo?: string | null
+  /** When sending a contextual reply, store parent wamid for inbox quote UI. */
+  replyToMetaMessageId?: string | null
 }): Promise<SaveOutgoingResult> {
   const supabase = createServiceClient()
   const phone = normalizePhoneForStorage(params.phone)
@@ -194,6 +226,7 @@ export async function saveOutgoingMessage(params: {
         is_read: true,
         read_at: new Date().toISOString(),
         meta_message_id: params.metaMessageId?.trim() || null,
+        reply_to_meta_message_id: params.replyToMetaMessageId?.trim() || null,
       } as never)
       .select()
       .single()
@@ -251,33 +284,54 @@ export async function saveIncomingMessage(params: {
   attachmentFileName?: string | null
   attachmentSizeBytes?: number | null
   thumbnailUrl?: string | null
+  replyToMetaMessageId?: string | null
+  replyContextFrom?: string | null
 }): Promise<WhatsAppMessageRow | null> {
   const supabase = createServiceClient()
   const phone = normalizePhoneForStorage(params.phone)
-  const { data, error } = await supabase
-    .from('whatsapp_messages')
-    .insert({
-      lead_id: params.leadId || null,
-      phone,
-      conversation_key: toConversationKey(phone),
-      direction: 'in',
-      body: params.body,
-      message_type: params.messageType ?? 'text',
-      attachment_url: params.attachmentUrl ?? null,
-      attachment_mime_type: params.attachmentMimeType ?? null,
-      attachment_file_name: params.attachmentFileName ?? null,
-      attachment_size_bytes: params.attachmentSizeBytes ?? null,
-      thumbnail_url: params.thumbnailUrl ?? null,
-      is_read: false,
-      meta_message_id: params.metaMessageId || null,
-    } as never)
-    .select()
-    .single()
+  const insertPayload = {
+    lead_id: params.leadId || null,
+    phone,
+    conversation_key: toConversationKey(phone),
+    direction: 'in' as const,
+    body: params.body,
+    message_type: params.messageType ?? 'text',
+    attachment_url: params.attachmentUrl ?? null,
+    attachment_mime_type: params.attachmentMimeType ?? null,
+    attachment_file_name: params.attachmentFileName ?? null,
+    attachment_size_bytes: params.attachmentSizeBytes ?? null,
+    thumbnail_url: params.thumbnailUrl ?? null,
+    is_read: false,
+    meta_message_id: params.metaMessageId || null,
+    reply_to_meta_message_id: params.replyToMetaMessageId?.trim() || null,
+    reply_context_from: params.replyContextFrom?.trim() || null,
+  }
+  let { data, error } = await supabase.from('whatsapp_messages').insert(insertPayload as never).select().single()
+  // If reply columns are missing (migrations 044/045 not applied), save the message without them.
+  const missingReplyCols =
+    error &&
+    (error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      /reply_to_meta_message_id|reply_context_from|column.*does not exist/i.test(String((error as { message?: string }).message ?? '')))
+  if (missingReplyCols) {
+    const { reply_to_meta_message_id: _r, reply_context_from: _c, ...rest } = insertPayload
+    const retryPayload = {
+      ...rest,
+      body:
+        typeof rest.body === 'string'
+          ? encodeLegacyReplyMeta(rest.body, params.replyToMetaMessageId, params.replyContextFrom)
+          : rest.body,
+    }
+    const retry = await supabase.from('whatsapp_messages').insert(retryPayload as never).select().single()
+    data = retry.data
+    error = retry.error
+  }
   if (error) {
     if (error.code === '42P01') return null
     console.error('[whatsapp-chat] saveIncomingMessage:', error)
     return null
   }
+  if (!data) return null
   return data as WhatsAppMessageRow
 }
 
@@ -366,6 +420,31 @@ export async function deleteConversationsByKeys(rawKeys: string[]): Promise<{ de
     deletedMessageCount += byPhone?.length ?? 0
   }
   return { deletedMessageCount }
+}
+
+const MAX_MESSAGE_IDS_DELETE = 100
+
+/** Remove specific CRM message rows by primary key (does not affect WhatsApp on devices). */
+export async function deleteMessagesByIds(messageIds: string[]): Promise<{ deletedMessageCount: number }> {
+  const supabase = createServiceClient()
+  const ids = [
+    ...new Set(
+      messageIds
+        .map((id) => id.trim())
+        .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+    ),
+  ]
+  if (ids.length === 0) return { deletedMessageCount: 0 }
+  if (ids.length > MAX_MESSAGE_IDS_DELETE) {
+    throw new Error(`At most ${MAX_MESSAGE_IDS_DELETE} messages per request`)
+  }
+  const { data, error } = await supabase.from('whatsapp_messages').delete().in('id', ids).select('id')
+  if (error) {
+    if (error.code === '42P01') return { deletedMessageCount: 0 }
+    console.error('[whatsapp-chat] deleteMessagesByIds:', error)
+    throw error
+  }
+  return { deletedMessageCount: data?.length ?? 0 }
 }
 
 export async function listConversations(params?: {

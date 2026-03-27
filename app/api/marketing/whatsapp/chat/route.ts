@@ -3,6 +3,7 @@ import { requireAuth } from '@/backend/middleware/auth'
 import {
   assignConversation,
   deleteConversationsByKeys,
+  deleteMessagesByIds,
   getConversation,
   getWhatsappInboxRevision,
   getWhatsappThreadRevision,
@@ -122,15 +123,43 @@ export async function POST(request: NextRequest) {
 }
 
 const MAX_BULK_DELETE_KEYS = 50
+const MAX_MESSAGE_IDS_DELETE = 100
 
 export async function DELETE(request: NextRequest) {
   const authResult = await requireAuth(request)
   if ('error' in authResult) return authResult.error
 
-  const body = (await request.json().catch(() => null)) as { conversationKeys?: unknown } | null
+  const body = (await request.json().catch(() => null)) as {
+    conversationKeys?: unknown
+    messageIds?: unknown
+  } | null
+
+  if (Array.isArray(body?.messageIds) && body.messageIds.length > 0) {
+    const ids = body.messageIds.filter((x): x is string => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x))
+    if (ids.length === 0) {
+      return NextResponse.json({ error: 'messageIds must contain valid UUID strings' }, { status: 400 })
+    }
+    if (ids.length > MAX_MESSAGE_IDS_DELETE) {
+      return NextResponse.json(
+        { error: `At most ${MAX_MESSAGE_IDS_DELETE} messages per request` },
+        { status: 400 }
+      )
+    }
+    try {
+      const { deletedMessageCount } = await deleteMessagesByIds(ids)
+      return NextResponse.json({ success: true, deletedMessageCount })
+    } catch (e) {
+      console.error('[whatsapp chat] DELETE messages:', e)
+      return NextResponse.json({ error: 'Failed to delete messages' }, { status: 500 })
+    }
+  }
+
   const keys = body?.conversationKeys
   if (!Array.isArray(keys) || keys.length === 0) {
-    return NextResponse.json({ error: 'conversationKeys must be a non-empty array' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Provide conversationKeys or messageIds' },
+      { status: 400 }
+    )
   }
   const asStrings = keys.filter((k): k is string => typeof k === 'string')
   if (asStrings.length !== keys.length) {

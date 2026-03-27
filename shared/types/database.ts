@@ -698,6 +698,8 @@ export interface Database {
           is_read: boolean
           read_at: string | null
           meta_message_id: string | null
+          reply_to_meta_message_id: string | null
+          reply_context_from: string | null
           status: 'sent' | 'delivered' | 'read' | null
           created_at: string
         }
@@ -718,6 +720,8 @@ export interface Database {
           is_read?: boolean
           read_at?: string | null
           meta_message_id?: string | null
+          reply_to_meta_message_id?: string | null
+          reply_context_from?: string | null
           status?: 'sent' | 'delivered' | 'read' | null
           created_at?: string
         }
@@ -738,6 +742,8 @@ export interface Database {
           is_read?: boolean
           read_at?: string | null
           meta_message_id?: string | null
+          reply_to_meta_message_id?: string | null
+          reply_context_from?: string | null
           status?: 'sent' | 'delivered' | 'read' | null
           created_at?: string
         }

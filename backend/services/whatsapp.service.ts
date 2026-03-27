@@ -388,6 +388,8 @@ export async function sendWhatsAppMedia(
     mediaUrl: string
     fileName?: string
     caption?: string
+    /** WhatsApp message ID (wamid) — send as contextual reply to that message. */
+    contextMessageId?: string | null
   },
   config?: WhatsAppConfig | null
 ): Promise<SendMediaResult> {
@@ -401,7 +403,11 @@ export async function sendWhatsAppMedia(
   const type = options.mediaType
   const mediaPayload: Record<string, unknown> = { link: options.mediaUrl.trim() }
   if (type === 'document' && options.fileName?.trim()) mediaPayload.filename = options.fileName.trim()
-  if ((type === 'image' || type === 'video') && options.caption?.trim()) mediaPayload.caption = options.caption.trim().slice(0, 1024)
+  // Image, video, and document all support caption in Cloud API; document caption was missing and showed as attachment-only on the customer phone.
+  const cap = options.caption?.trim()
+  if (cap && (type === 'image' || type === 'video' || type === 'document')) {
+    mediaPayload.caption = cap.slice(0, 1024)
+  }
 
   const payload: Record<string, unknown> = {
     messaging_product: 'whatsapp',
@@ -409,6 +415,9 @@ export async function sendWhatsAppMedia(
     to: toMetaSendTo(digits),
     type,
     [type]: mediaPayload,
+  }
+  if (options.contextMessageId?.trim()) {
+    payload.context = { message_id: options.contextMessageId.trim() }
   }
 
   const res = await fetch(`${META_GRAPH_BASE}/${cfg.phoneNumberId}/messages`, {
@@ -504,7 +513,23 @@ const MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'video/mp4': 'mp4',
   'video/x-m4v': 'm4v',
+  'video/3gpp': '3gp',
   'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'application/zip': 'zip',
+  'application/x-zip-compressed': 'zip',
+  'audio/aac': 'aac',
+  'audio/mp4': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/amr': 'amr',
+  'audio/ogg': 'ogg',
 }
 
 /**

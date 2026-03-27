@@ -6,24 +6,85 @@ import { createServiceClient } from '@/lib/supabase/service'
 
 /** Create in Supabase Dashboard → Storage → New bucket → name "template-media" → Public bucket. */
 const BUCKET_TEMPLATE_MEDIA = 'template-media'
-const MAX_FILE_SIZE = 16 * 1024 * 1024 // 16 MB (Meta limit for template media)
+/** WhatsApp Cloud API document limit is 100 MB; keep same cap for inbox uploads. */
+const MAX_FILE_SIZE = 100 * 1024 * 1024
+
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/x-m4v']
-const ALLOWED_DOCUMENT_TYPES = ['application/pdf']
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/x-m4v', 'video/3gpp', 'video/quicktime']
+const ALLOWED_DOCUMENT_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'application/rtf',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/vnd.rar',
+  'application/x-7z-compressed',
+]
 const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, ...ALLOWED_DOCUMENT_TYPES]
 
-function getExtension(mime: string, fileName?: string): string {
-  const ext = fileName?.match(/\.(jpe?g|png|gif|webp|mp4|m4v|pdf)$/i)?.[1]?.toLowerCase()
-  if (ext) return ext
-  const map: Record<string, string> = {
-    'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
-    'video/mp4': 'mp4', 'video/x-m4v': 'm4v', 'application/pdf': 'pdf',
-  }
-  return map[mime] ?? 'bin'
+/** When the browser sends empty/octet-stream MIME, infer from filename for Meta upload. */
+const EXT_TO_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  zip: 'application/zip',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  m4v: 'video/x-m4v',
+  '3gp': 'video/3gpp',
+  mov: 'video/quicktime',
 }
 
 function normalizeMime(mime: string): string {
   return (mime || '').split(';')[0].trim().toLowerCase()
+}
+
+function inferMimeFromFileName(fileName: string): string | null {
+  const m = fileName.trim().match(/\.([a-z0-9]+)$/i)
+  const ext = m?.[1]?.toLowerCase()
+  return ext ? EXT_TO_MIME[ext] ?? null : null
+}
+
+function resolveUploadMime(rawMime: string, fileName?: string): string | null {
+  const m = normalizeMime(rawMime)
+  const inferred = fileName ? inferMimeFromFileName(fileName) : null
+  if (m && ALLOWED_TYPES.includes(m)) return m
+  if (inferred && ALLOWED_TYPES.includes(inferred)) return inferred
+  if ((m === 'application/octet-stream' || !m) && inferred) return inferred
+  return null
+}
+
+function getExtension(mime: string, fileName?: string): string {
+  const ext = fileName?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase()
+  if (ext) return ext
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+    'video/mp4': 'mp4', 'video/x-m4v': 'm4v', 'video/3gpp': '3gp', 'video/quicktime': 'mov',
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'text/plain': 'txt', 'text/csv': 'csv', 'application/zip': 'zip',
+  }
+  return map[mime] ?? 'bin'
 }
 
 function parseStoragePath(raw: string, userId: string): string | null {
@@ -77,13 +138,13 @@ export async function POST(request: NextRequest) {
       fileName?: string
     } | null
     const safePath = body?.storagePath ? parseStoragePath(body.storagePath, user.id) : null
-    mime = normalizeMime(body?.mimeType || '')
     fileName = (body?.fileName || '').trim() || undefined
-    if (!safePath || !mime || !ALLOWED_TYPES.includes(mime)) {
+    const rawMime = normalizeMime(body?.mimeType || '')
+    mime = resolveUploadMime(rawMime, fileName) ?? ''
+    if (!safePath || !mime) {
       return NextResponse.json(
         {
-          error: 'Invalid JSON payload. Expected { storagePath, mimeType, fileName? } with supported mime type.',
-          allowed: ALLOWED_TYPES,
+          error: 'Unsupported or unknown file type. Use a common office, image, video, or archive format, or set a correct fileName extension.',
         },
         { status: 400 }
       )
@@ -124,17 +185,18 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    mime = normalizeMime(file.type)
-    if (!mime || !ALLOWED_TYPES.includes(mime)) {
+    fileName = (file.name || '').trim() || undefined
+    const resolved = resolveUploadMime(normalizeMime(file.type), fileName)
+    if (!resolved) {
       return NextResponse.json(
         {
-          error: 'Unsupported file type. Use image (JPEG/PNG/GIF/WebP), video (MP4), or PDF.',
-          allowed: ALLOWED_TYPES,
+          error:
+            'Unsupported file type. Try office documents (PDF, Word, Excel…), images, or video (MP4). If the browser reports an unknown type, ensure the file has a standard extension.',
         },
         { status: 400 }
       )
     }
-    fileName = (file.name || '').trim() || undefined
+    mime = resolved
     try {
       buffer = await file.arrayBuffer()
     } catch {
@@ -147,7 +209,7 @@ export async function POST(request: NextRequest) {
 
   if (buffer.byteLength > MAX_FILE_SIZE) {
     return NextResponse.json(
-      { error: `File too large for WhatsApp template upload. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB.` },
+      { error: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB (WhatsApp Cloud API limit for documents).` },
       { status: 400 }
     )
   }

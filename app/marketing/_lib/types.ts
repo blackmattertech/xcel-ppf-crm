@@ -94,6 +94,10 @@ export interface ChatMessage {
   is_read?: boolean
   read_at?: string | null
   meta_message_id: string | null
+  /** Parent wamid when this message is a reply (incoming from webhook or outgoing saved from inbox). */
+  reply_to_meta_message_id?: string | null
+  /** Meta context.from — who sent the quoted message (incoming replies). */
+  reply_context_from?: string | null
   status: MessageStatus | null
   created_at: string
 }

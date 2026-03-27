@@ -17,6 +17,9 @@ import {
   ArrowLeft,
   PlusCircle,
   Trash2,
+  CornerUpLeft,
+  MoreVertical,
+  Forward,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { LeadRecipient } from '../_lib/types'
@@ -25,6 +28,7 @@ import type { ChatMessage } from '../_lib/types'
 import type { ConversationSummary } from '../_lib/types'
 import { normalizePhoneForChat, normalizePhoneForStorage } from '../_lib/utils'
 import { cachedFetch, invalidateApiCache } from '@/lib/api-client'
+import { ForwardMessageDialog } from './forward-message-dialog'
 
 const ENABLE_ATTACHMENTS = process.env.NEXT_PUBLIC_INBOX_ATTACHMENTS_ENABLED === 'true'
 const ENABLE_QUICK_REPLIES = process.env.NEXT_PUBLIC_INBOX_QUICK_REPLIES_ENABLED === 'true'
@@ -62,6 +66,46 @@ function lastActivityMs(conv: ConversationSummary | null | undefined): number {
   if (!raw) return 0
   const t = new Date(raw).getTime()
   return Number.isFinite(t) ? t : 0
+}
+
+/** Short preview for reply banner (WhatsApp requires wamid; preview is UI-only). */
+function replyPreviewForMessage(msg: ChatMessage): string {
+  const mt = msg.message_type ?? 'text'
+  if (mt === 'image') return msg.body?.trim() || 'Photo'
+  if (mt === 'video') return msg.body?.trim() || 'Video'
+  if (mt === 'document') return msg.attachment_file_name?.trim() || msg.body?.trim() || 'Document'
+  const t = msg.body?.trim() || ''
+  if (t.length > 100) return `${t.slice(0, 100)}…`
+  return t || '(Message)'
+}
+
+/** Match Meta wamids across webhook/API/realtime (trim only; IDs are case-sensitive). */
+function normalizeWamid(id: string | null | undefined): string {
+  return (id ?? '').trim()
+}
+
+/** Resolve parent message; Meta may differ slightly in wamid string vs stored `meta_message_id`. */
+function findQuotedMessage(messages: ChatMessage[], replyId: string): ChatMessage | undefined {
+  const rid = normalizeWamid(replyId)
+  if (!rid) return undefined
+  const exact = messages.find((m) => normalizeWamid(m.meta_message_id) === rid)
+  if (exact) return exact
+  if (rid.length < 20) return undefined
+  const tail = rid.slice(-20)
+  return messages.find((m) => {
+    const mid = normalizeWamid(m.meta_message_id)
+    if (!mid || mid.length < 20) return false
+    return mid.endsWith(tail) || rid.endsWith(mid.slice(-20))
+  })
+}
+
+/**
+ * When parent row is missing: Meta `context.from` is who sent the quoted message.
+ * Same digits as contact → customer wrote the quoted bubble; otherwise → business (you).
+ */
+function inferQuotedIsUsFromContext(contactPhone: string, replyContextFrom?: string | null): boolean | null {
+  if (!replyContextFrom?.trim()) return null
+  return normalizePhoneForStorage(contactPhone) !== normalizePhoneForStorage(replyContextFrom)
 }
 
 /** Same query shape as GET /api/marketing/whatsapp/chat for messages (includes leadId when applicable). */
@@ -107,6 +151,7 @@ export default function ChatWithLeadsPage() {
     messageType: 'image' | 'video' | 'document'
   } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const threadSelectAllRef = useRef<HTMLInputElement>(null)
   const sendingRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   /** ETag from GET /chat?mode=conversations for silent If-None-Match refreshes. */
@@ -134,6 +179,34 @@ export default function ChatWithLeadsPage() {
   const [selectedChatKeys, setSelectedChatKeys] = useState<string[]>([])
   const [deleteChatsBusy, setDeleteChatsBusy] = useState(false)
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null)
+  /** Reply target: Meta message id for Cloud API `context.message_id`, plus UI preview. */
+  const [replyToMessage, setReplyToMessage] = useState<{
+    metaMessageId: string
+    messageDbId: string
+    direction: 'in' | 'out'
+    preview: string
+  } | null>(null)
+  /** Brief ring when jumping to a message from a quoted reply. */
+  const [jumpHighlightId, setJumpHighlightId] = useState<string | null>(null)
+  /** Per-message overflow menu (Reply / Forward / Delete). */
+  const [openMessageMenuId, setOpenMessageMenuId] = useState<string | null>(null)
+  /** Multi-select messages in the open thread for delete or forward. */
+  const [threadMsgSelectMode, setThreadMsgSelectMode] = useState(false)
+  const [selectedThreadMsgIds, setSelectedThreadMsgIds] = useState<string[]>([])
+  const [forwardDialogOpen, setForwardDialogOpen] = useState(false)
+  const [messagesToForward, setMessagesToForward] = useState<ChatMessage[]>([])
+  const [forwardSearch, setForwardSearch] = useState('')
+  const [forwardSelectedPhoneKeys, setForwardSelectedPhoneKeys] = useState<string[]>([])
+  const [forwardBusy, setForwardBusy] = useState(false)
+  const [deleteThreadMsgsBusy, setDeleteThreadMsgsBusy] = useState(false)
+
+  const scrollToQuotedMessage = useCallback((messageDbId: string) => {
+    const el = document.getElementById(`inbox-msg-${messageDbId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setJumpHighlightId(messageDbId)
+    window.setTimeout(() => setJumpHighlightId((id) => (id === messageDbId ? null : id)), 2200)
+  }, [])
 
   const openContactPanel = async () => {
     if (!selectedContact) return
@@ -370,7 +443,12 @@ export default function ChatWithLeadsPage() {
     }
 
     const handleChange = (payload: { eventType: string; new: unknown }) => {
-      const row = payload.new as unknown as ChatMessage
+      const raw = payload.new as Record<string, unknown>
+      const row = {
+        ...(raw as unknown as ChatMessage),
+        reply_to_meta_message_id: (raw.reply_to_meta_message_id as string | null | undefined) ?? null,
+        reply_context_from: (raw.reply_context_from as string | null | undefined) ?? null,
+      } as ChatMessage
       if (!row?.id) return
       if (payload.eventType === 'INSERT') {
         setMessages((prev) => {
@@ -423,6 +501,35 @@ export default function ChatWithLeadsPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    setReplyToMessage(null)
+    setJumpHighlightId(null)
+    setThreadMsgSelectMode(false)
+    setSelectedThreadMsgIds([])
+    setOpenMessageMenuId(null)
+    setForwardDialogOpen(false)
+    setMessagesToForward([])
+    setForwardSearch('')
+    setForwardSelectedPhoneKeys([])
+  }, [selectedContact?.id, selectedContact?.phone, selectedConversationKey])
+
+  useEffect(() => {
+    if (!openMessageMenuId) return
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as Element | null
+      if (el?.closest?.('[data-message-menu-root]')) return
+      setOpenMessageMenuId(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [openMessageMenuId])
+
+  useEffect(() => {
+    const el = threadSelectAllRef.current
+    if (!el) return
+    el.indeterminate = selectedThreadMsgIds.length > 0 && selectedThreadMsgIds.length < messages.length
+  }, [selectedThreadMsgIds.length, messages.length])
 
   /** Manual "new chat" entries override same phone from leads/customers for display. */
   const mergedContacts = useMemo(() => {
@@ -506,7 +613,11 @@ export default function ChatWithLeadsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipients: [{ phone: selectedContact.phone, name: selectedContact.name }],
-          message: text || (attachment?.messageType === 'document' ? 'Document' : ''),
+          message:
+            text ||
+            (attachment?.messageType === 'document'
+              ? attachment.fileName?.replace(/\.[^.]+$/, '') || attachment.fileName || 'Document'
+              : ''),
           defaultCountryCode: '91',
           ...(selectedContact.type === 'lead' ? { leadId: selectedContact.id } : {}),
           messageType: attachment?.messageType ?? 'text',
@@ -518,6 +629,7 @@ export default function ChatWithLeadsPage() {
               sizeBytes: attachment.sizeBytes,
             },
           } : {}),
+          ...(replyToMessage?.metaMessageId ? { contextMessageId: replyToMessage.metaMessageId } : {}),
         }),
       })
       const data = await res.json()
@@ -538,6 +650,7 @@ export default function ChatWithLeadsPage() {
       setSendStatus(data.saveFailed ? 'save_failed' : 'success')
       setSaveError(data.saveFailed ? [data.saveErrorCode, data.saveErrorMessage].filter(Boolean).join(': ') || null : null)
       setAttachment(null)
+      setReplyToMessage(null)
       if (data.message) {
         setMessages((prev) => {
           if (prev.some((m) => m.id === data.message.id)) return prev
@@ -564,6 +677,7 @@ export default function ChatWithLeadsPage() {
     setSendingTemplate(true)
     setSendStatus('idle')
     setSendError(null)
+    setReplyToMessage(null)
     try {
       const selectedTemplate = templates.find((t) => t.id === selectedTemplateId)
       if (!selectedTemplate) throw new Error('Select a valid template')
@@ -736,6 +850,163 @@ export default function ChatWithLeadsPage() {
     for (const t of templates) byName.set(t.name.toLowerCase(), t)
     return byName
   }, [templates])
+
+  const exitThreadMsgSelectMode = useCallback(() => {
+    setThreadMsgSelectMode(false)
+    setSelectedThreadMsgIds([])
+  }, [])
+
+  const toggleThreadMsgSelection = useCallback((id: string) => {
+    setSelectedThreadMsgIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }, [])
+
+  const selectAllThreadMessages = useCallback(() => {
+    setSelectedThreadMsgIds(messages.map((m) => m.id))
+  }, [messages])
+
+  const buildForwardTextForMessage = useCallback(
+    (msg: ChatMessage): string => {
+      const raw = msg.body?.trim() ?? ''
+      if (templateNameFromBody(raw)) {
+        const parsed = parseTemplateBody(raw)
+        return [parsed.header, parsed.body, parsed.footer].filter(Boolean).join('\n') || raw
+      }
+      return raw
+    },
+    [templateNameFromBody, parseTemplateBody]
+  )
+
+  const handleDeleteThreadMessages = useCallback(async () => {
+    if (selectedThreadMsgIds.length === 0) return
+    if (
+      !window.confirm(
+        `Remove ${selectedThreadMsgIds.length} message(s) from CRM history only? This does not delete messages on anyone's WhatsApp app.`
+      )
+    ) {
+      return
+    }
+    setDeleteThreadMsgsBusy(true)
+    try {
+      const res = await fetch('/api/marketing/whatsapp/chat', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ messageIds: selectedThreadMsgIds }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) throw new Error(data?.error || 'Delete failed')
+      setMessages((prev) => prev.filter((m) => !selectedThreadMsgIds.includes(m.id)))
+      exitThreadMsgSelectMode()
+      conversationsEtagRef.current = null
+      invalidateApiCache('GET:/api/marketing/whatsapp/chat')
+      await syncConversationsFromServer()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setDeleteThreadMsgsBusy(false)
+    }
+  }, [selectedThreadMsgIds, exitThreadMsgSelectMode, syncConversationsFromServer])
+
+  const executeForward = useCallback(async () => {
+    if (forwardSelectedPhoneKeys.length === 0 || messagesToForward.length === 0) return
+    const sorted = [...messagesToForward].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
+    const needMedia = sorted.some((m) => (m.message_type ?? 'text') !== 'text')
+    if (needMedia && !ENABLE_ATTACHMENTS) {
+      alert(
+        'Forwarding images, video, or documents requires attachments. Set NEXT_PUBLIC_INBOX_ATTACHMENTS_ENABLED=true and server INBOX_ATTACHMENTS_ENABLED if applicable.'
+      )
+      return
+    }
+    setForwardBusy(true)
+    try {
+      for (const phoneKey of forwardSelectedPhoneKeys) {
+        const contact = mergedContacts.find((c) => normalizePhoneForStorage(c.phone) === phoneKey)
+        if (!contact) continue
+        const leadId =
+          contact.type === 'lead' && /^[0-9a-f-]{36}$/i.test(contact.id) ? contact.id : undefined
+        for (const msg of sorted) {
+          const mt = msg.message_type ?? 'text'
+          const textBody = buildForwardTextForMessage(msg)
+          if (mt === 'text') {
+            const res = await cachedFetch('/api/marketing/whatsapp/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipients: [{ phone: contact.phone, name: contact.name }],
+                message: textBody || '(Message)',
+                defaultCountryCode: '91',
+                ...(leadId ? { leadId } : {}),
+                messageType: 'text',
+              }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error((data as { error?: string })?.error || 'Forward failed')
+          } else {
+            const url = msg.attachment_url
+            if (!url) {
+              const res = await cachedFetch('/api/marketing/whatsapp/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  recipients: [{ phone: contact.phone, name: contact.name }],
+                  message: textBody || replyPreviewForMessage(msg) || '(Message)',
+                  defaultCountryCode: '91',
+                  ...(leadId ? { leadId } : {}),
+                  messageType: 'text',
+                }),
+              })
+              const data = await res.json().catch(() => ({}))
+              if (!res.ok) throw new Error((data as { error?: string })?.error || 'Forward failed')
+            } else {
+              const caption =
+                textBody.trim() ||
+                (mt === 'document' ? msg.attachment_file_name?.trim() || 'Document' : replyPreviewForMessage(msg))
+              const res = await cachedFetch('/api/marketing/whatsapp/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  recipients: [{ phone: contact.phone, name: contact.name }],
+                  message: caption,
+                  defaultCountryCode: '91',
+                  ...(leadId ? { leadId } : {}),
+                  messageType: mt,
+                  attachment: {
+                    url,
+                    mimeType: msg.attachment_mime_type ?? undefined,
+                    fileName: msg.attachment_file_name ?? undefined,
+                    sizeBytes: msg.attachment_size_bytes ?? undefined,
+                  },
+                }),
+              })
+              const data = await res.json().catch(() => ({}))
+              if (!res.ok) throw new Error((data as { error?: string })?.error || 'Forward failed')
+            }
+          }
+          await new Promise((r) => setTimeout(r, 120))
+        }
+      }
+      setForwardDialogOpen(false)
+      setForwardSearch('')
+      setForwardSelectedPhoneKeys([])
+      setMessagesToForward([])
+      exitThreadMsgSelectMode()
+      invalidateApiCache('GET:/api/marketing/whatsapp/chat')
+      await syncConversationsFromServer()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Forward failed')
+    } finally {
+      setForwardBusy(false)
+    }
+  }, [
+    forwardSelectedPhoneKeys,
+    messagesToForward,
+    mergedContacts,
+    buildForwardTextForMessage,
+    syncConversationsFromServer,
+    exitThreadMsgSelectMode,
+  ])
 
   const startNewConversation = useCallback(() => {
     setNewChatError(null)
@@ -981,6 +1252,63 @@ export default function ChatWithLeadsPage() {
                   )}
                 </div>
               </div>
+              {threadMsgSelectMode && (
+                <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-amber-200 bg-amber-50/95 text-xs sm:text-sm shrink-0">
+                  <label className="inline-flex items-center gap-2 cursor-pointer text-gray-800">
+                    <input
+                      ref={threadSelectAllRef}
+                      type="checkbox"
+                      className="rounded border-gray-300"
+                      checked={messages.length > 0 && selectedThreadMsgIds.length === messages.length}
+                      onChange={() => {
+                        if (messages.length === 0) return
+                        if (selectedThreadMsgIds.length === messages.length) {
+                          setSelectedThreadMsgIds([])
+                        } else {
+                          selectAllThreadMessages()
+                        }
+                      }}
+                    />
+                    Select all ({messages.length})
+                  </label>
+                  <button
+                    type="button"
+                    disabled={selectedThreadMsgIds.length === 0}
+                    onClick={() => {
+                      const picked = messages.filter((m) => selectedThreadMsgIds.includes(m.id))
+                      if (picked.length === 0) return
+                      setMessagesToForward(picked)
+                      setForwardSearch('')
+                      setForwardSelectedPhoneKeys([])
+                      setForwardDialogOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-1 font-semibold text-emerald-900 disabled:opacity-40"
+                  >
+                    <Forward className="h-3.5 w-3.5 shrink-0" />
+                    Forward ({selectedThreadMsgIds.length})
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedThreadMsgIds.length === 0 || deleteThreadMsgsBusy}
+                    onClick={handleDeleteThreadMessages}
+                    className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 font-semibold text-red-800 disabled:opacity-40"
+                  >
+                    {deleteThreadMsgsBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    Delete ({selectedThreadMsgIds.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exitThreadMsgSelectMode}
+                    className="ml-auto rounded-md px-2 py-1 font-medium text-gray-600 hover:bg-amber-100/80"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2 min-h-0">
                 {loadingMessages ? (
                   <div className="flex justify-center py-8">
@@ -995,15 +1323,150 @@ export default function ChatWithLeadsPage() {
                     {messages.map((msg) => (
                       <div
                         key={msg.id}
-                        className={`flex ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}
+                        id={`inbox-msg-${msg.id}`}
+                        className={`group flex w-full scroll-mt-4 transition-shadow duration-300 ${
+                          msg.direction === 'out' ? 'justify-end' : 'justify-start'
+                        } ${
+                          jumpHighlightId === msg.id
+                            ? 'ring-2 ring-[#25D366] ring-offset-2 shadow-md rounded-lg'
+                            : ''
+                        }`}
                       >
-                        <div
-                          className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${
-                            msg.direction === 'out'
-                              ? 'bg-[#D9FDD3] text-gray-900 rounded-br-md'
-                              : 'bg-white text-gray-900 rounded-bl-md border border-gray-200'
-                          }`}
-                        >
+                        {threadMsgSelectMode && (
+                          <label className="shrink-0 self-start pt-2 pr-1">
+                            <input
+                              type="checkbox"
+                              className="rounded border-gray-300"
+                              checked={selectedThreadMsgIds.includes(msg.id)}
+                              onChange={() => toggleThreadMsgSelection(msg.id)}
+                            />
+                          </label>
+                        )}
+                        <div className="flex min-w-0 max-w-[min(96%,100%)] flex-row items-start gap-0.5">
+                          <div className="relative shrink-0" data-message-menu-root>
+                            <button
+                              type="button"
+                              className="rounded-md p-1 text-gray-500 opacity-50 transition-opacity group-hover:opacity-100 hover:bg-black/5 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                              aria-label="Message actions"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setOpenMessageMenuId((id) => (id === msg.id ? null : msg.id))
+                              }}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            {openMessageMenuId === msg.id && (
+                              <ul
+                                className={`absolute top-full z-50 mt-0.5 min-w-[168px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg ${
+                                  msg.direction === 'out' ? 'right-0' : 'left-0'
+                                }`}
+                              >
+                                <li>
+                                  <button
+                                    type="button"
+                                    disabled={!msg.meta_message_id}
+                                    title={!msg.meta_message_id ? 'WhatsApp message id missing — cannot reply' : undefined}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-45"
+                                    onClick={() => {
+                                      if (!msg.meta_message_id) return
+                                      setReplyToMessage({
+                                        metaMessageId: msg.meta_message_id,
+                                        messageDbId: msg.id,
+                                        direction: msg.direction,
+                                        preview: replyPreviewForMessage(msg),
+                                      })
+                                      setOpenMessageMenuId(null)
+                                    }}
+                                  >
+                                    <CornerUpLeft className="h-4 w-4 shrink-0" />
+                                    Reply
+                                  </button>
+                                </li>
+                                <li>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50"
+                                    onClick={() => {
+                                      setThreadMsgSelectMode(true)
+                                      setSelectedThreadMsgIds((prev) => (prev.includes(msg.id) ? prev : [...prev, msg.id]))
+                                      setOpenMessageMenuId(null)
+                                    }}
+                                  >
+                                    <Forward className="h-4 w-4 shrink-0" />
+                                    Forward
+                                  </button>
+                                </li>
+                                <li>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+                                    onClick={() => {
+                                      setThreadMsgSelectMode(true)
+                                      setSelectedThreadMsgIds([msg.id])
+                                      setOpenMessageMenuId(null)
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4 shrink-0" />
+                                    Delete
+                                  </button>
+                                </li>
+                              </ul>
+                            )}
+                          </div>
+                          <div
+                            className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${
+                              replyToMessage?.messageDbId === msg.id ? 'ring-2 ring-emerald-500 ring-offset-1' : ''
+                            } ${
+                              msg.direction === 'out'
+                                ? 'bg-[#D9FDD3] text-gray-900 rounded-br-md'
+                                : 'bg-white text-gray-900 rounded-bl-md border border-gray-200'
+                            }`}
+                          >
+                          {(normalizeWamid(msg.reply_to_meta_message_id) || msg.reply_context_from?.trim()) && (() => {
+                            const replyId = normalizeWamid(msg.reply_to_meta_message_id)
+                            const quoted = replyId ? findQuotedMessage(messages, replyId) : undefined
+                            const inferredUs =
+                              quoted == null && selectedContact
+                                ? inferQuotedIsUsFromContext(selectedContact.phone, msg.reply_context_from)
+                                : null
+                            const quotedIsUs =
+                              quoted != null ? quoted.direction === 'out' : inferredUs === null ? true : inferredUs
+                            const label =
+                              quoted != null
+                                ? quoted.direction === 'out'
+                                  ? waProfile?.waba_name?.trim() || 'You'
+                                  : selectedContact?.name?.trim() || 'Customer'
+                                : quotedIsUs
+                                  ? waProfile?.waba_name?.trim() || 'You'
+                                  : selectedContact?.name?.trim() || 'Customer'
+                            const preview = quoted
+                              ? replyPreviewForMessage(quoted)
+                              : 'Earlier message'
+                            const canJump = !!quoted?.id
+                            // Same nested quote strip for customer and business messages (WhatsApp-style); only accent follows who wrote the quoted text.
+                            return (
+                              <button
+                                type="button"
+                                disabled={!canJump}
+                                onClick={() => quoted && scrollToQuotedMessage(quoted.id)}
+                                title={canJump ? 'Jump to quoted message' : 'Original message not in this thread'}
+                                className={`mb-2 w-full rounded-md text-left overflow-hidden border border-gray-200/90 border-l-[3px] shadow-sm bg-[#f0f2f5] hover:bg-[#e8eaed] ${
+                                  quotedIsUs ? 'border-l-[#25D366]' : 'border-l-red-600'
+                                } ${canJump ? 'cursor-pointer active:scale-[0.99]' : 'cursor-default opacity-95'} pl-2.5 pr-2 py-1.5`}
+                              >
+                                <p
+                                  className={`text-[13px] font-semibold leading-tight ${
+                                    quotedIsUs ? 'text-[#1f9d55]' : 'text-red-800'
+                                  }`}
+                                >
+                                  {label}
+                                </p>
+                                <p className="text-[13px] text-gray-600 line-clamp-4 leading-snug mt-0.5">
+                                  {preview}
+                                </p>
+                              </button>
+                            )
+                          })()}
                           {msg.message_type === 'image' && msg.attachment_url && (
                             <a href={msg.attachment_url} target="_blank" rel="noreferrer" className="block mb-2">
                               <img src={msg.attachment_url} alt="attachment" className="max-h-52 rounded-md object-cover" />
@@ -1082,12 +1545,32 @@ export default function ChatWithLeadsPage() {
                           </div>
                         </div>
                       </div>
+                    </div>
                     ))}
                     <div ref={messagesEndRef} />
                   </>
                 )}
               </div>
               <div className="p-3 bg-white border-t border-gray-200">
+                {replyToMessage && (
+                  <div className="mb-2 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/90 px-3 py-2 text-xs">
+                    <CornerUpLeft className="h-4 w-4 shrink-0 text-emerald-700 mt-0.5" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-emerald-900">
+                        {replyToMessage.direction === 'in' ? 'Replying to customer' : 'Replying to your message'}
+                      </p>
+                      <p className="text-emerald-900/80 line-clamp-2">{replyToMessage.preview}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyToMessage(null)}
+                      className="rounded-md p-1 text-emerald-800 hover:bg-emerald-100"
+                      aria-label="Cancel reply"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 {attachment && (
                   <div className="mb-2 text-xs rounded-md border border-gray-200 bg-gray-50 px-3 py-2 flex items-center justify-between gap-2">
                     <span className="truncate">
@@ -1188,6 +1671,36 @@ export default function ChatWithLeadsPage() {
         </div>
       </div>
       </div>
+      <ForwardMessageDialog
+        open={forwardDialogOpen}
+        onClose={() => {
+          if (forwardBusy) return
+          setForwardDialogOpen(false)
+          setForwardSearch('')
+          setForwardSelectedPhoneKeys([])
+          setMessagesToForward([])
+        }}
+        recipients={mergedContacts}
+        search={forwardSearch}
+        onSearchChange={setForwardSearch}
+        selectedPhoneKeys={forwardSelectedPhoneKeys}
+        onTogglePhone={(key) => {
+          setForwardSelectedPhoneKeys((prev) =>
+            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+          )
+        }}
+        onSelectAllVisible={(keys) => {
+          setForwardSelectedPhoneKeys((prev) => [...new Set([...prev, ...keys])])
+        }}
+        onDeselectVisible={(keys) => {
+          const drop = new Set(keys)
+          setForwardSelectedPhoneKeys((prev) => prev.filter((k) => !drop.has(k)))
+        }}
+        onClearSelection={() => setForwardSelectedPhoneKeys([])}
+        onForward={executeForward}
+        busy={forwardBusy}
+        messagesCount={messagesToForward.length}
+      />
       {showContactPanel && (
         <div className="fixed inset-0 z-50">
           <button

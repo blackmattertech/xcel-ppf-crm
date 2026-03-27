@@ -16,6 +16,131 @@ function normalizePhone(phone: string): string {
 type StatusValue = 'sent' | 'delivered' | 'read' | 'failed'
 
 /** Meta may send `played` for some media (e.g. voice) — treat as read for CRM display. */
+function readContext(msg: unknown): Record<string, unknown> | null {
+  if (!msg || typeof msg !== 'object') return null
+  const m = msg as Record<string, unknown>
+  const top = m.context
+  if (top && typeof top === 'object') return top as Record<string, unknown>
+  const inner = m.message
+  if (inner && typeof inner === 'object') {
+    const c = (inner as Record<string, unknown>).context
+    if (c && typeof c === 'object') return c as Record<string, unknown>
+  }
+  // Some payload variants carry `context` inside the type-specific object (text/image/video/document/interactive/etc).
+  for (const v of Object.values(m)) {
+    if (!v || typeof v !== 'object') continue
+    const c = (v as Record<string, unknown>).context
+    if (c && typeof c === 'object') return c as Record<string, unknown>
+  }
+  return null
+}
+
+function collectObjects(root: unknown, maxDepth = 4): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = []
+  const seen = new Set<unknown>()
+  const walk = (value: unknown, depth: number) => {
+    if (!value || typeof value !== 'object') return
+    if (seen.has(value) || depth > maxDepth) return
+    seen.add(value)
+    const obj = value as Record<string, unknown>
+    out.push(obj)
+    for (const child of Object.values(obj)) {
+      if (Array.isArray(child)) {
+        for (const item of child) walk(item, depth + 1)
+      } else {
+        walk(child, depth + 1)
+      }
+    }
+  }
+  walk(root, 0)
+  return out
+}
+
+function collectStrings(root: unknown, maxDepth = 5): string[] {
+  const out: string[] = []
+  const seen = new Set<unknown>()
+  const walk = (value: unknown, depth: number) => {
+    if (depth > maxDepth || value == null) return
+    if (typeof value === 'string') {
+      const s = value.trim()
+      if (s) out.push(s)
+      return
+    }
+    if (typeof value !== 'object') return
+    if (seen.has(value)) return
+    seen.add(value)
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1)
+      return
+    }
+    for (const v of Object.values(value as Record<string, unknown>)) walk(v, depth + 1)
+  }
+  walk(root, 0)
+  return out
+}
+
+/** Meta `context.id` (wamid of the quoted message). */
+function extractReplyToMetaId(msg: unknown): string | null {
+  const selfWamid =
+    msg && typeof msg === 'object' && typeof (msg as Record<string, unknown>).id === 'string'
+      ? String((msg as Record<string, unknown>).id).trim()
+      : ''
+  const ctx = readContext(msg)
+  if (ctx) {
+    const id = ctx.id
+    if (typeof id === 'string' && id.trim()) return id.trim()
+    const messageId = (ctx as Record<string, unknown>).message_id
+    if (typeof messageId === 'string' && messageId.trim()) return messageId.trim()
+  }
+
+  // Fallback for payload variants where reply reference is nested differently.
+  for (const obj of collectObjects(msg)) {
+    const keys: Array<keyof typeof obj> = ['message_id', 'quoted_message_id', 'reply_to', 'context_message_id', 'id']
+    for (const k of keys) {
+      const v = obj[k]
+      if (typeof v !== 'string') continue
+      const trimmed = v.trim()
+      if (!trimmed) continue
+      if (trimmed.startsWith('wamid.')) return trimmed
+    }
+  }
+
+  // Last-resort: find any wamid in the payload that is not this message's own id.
+  const wamids = collectStrings(msg).filter((s) => s.startsWith('wamid.'))
+  for (const candidate of wamids) {
+    if (selfWamid && candidate === selfWamid) continue
+    return candidate
+  }
+  return null
+}
+
+/** Meta `context.from` — who sent the quoted message (digits). Used for CRM quote labels. */
+function extractReplyContextFrom(msg: unknown): string | null {
+  const selfFrom =
+    msg && typeof msg === 'object' && typeof (msg as Record<string, unknown>).from === 'string'
+      ? String((msg as Record<string, unknown>).from).trim()
+      : ''
+  const ctx = readContext(msg)
+  if (ctx) {
+    const from = ctx.from
+    if (typeof from === 'string' && from.trim()) return from.trim()
+  }
+
+  for (const obj of collectObjects(msg)) {
+    const candidate = obj.from ?? obj.sender ?? obj.author
+    if (typeof candidate !== 'string') continue
+    const normalized = candidate.replace(/\D/g, '')
+    if (normalized.length >= 8) return candidate.trim()
+  }
+  for (const s of collectStrings(msg)) {
+    const digits = s.replace(/\D/g, '')
+    if (digits.length < 8) continue
+    if (selfFrom && digits === selfFrom.replace(/\D/g, '')) continue
+    return s
+  }
+  return null
+}
+
 function mapWebhookStatusToMessageStatus(raw: string): StatusValue | null {
   const s = String(raw ?? '').toLowerCase().trim()
   if (s === 'failed') return 'failed'
@@ -49,6 +174,7 @@ export async function POST(request: NextRequest) {
               id: string
               timestamp: string
               type: string
+              context?: { from?: string; id?: string }
               text?: { body: string }
               image?: { id?: string; mime_type?: string; caption?: string; sha256?: string }
               video?: { id?: string; mime_type?: string; caption?: string; sha256?: string }
@@ -180,6 +306,8 @@ export async function POST(request: NextRequest) {
             attachmentUrl,
             attachmentMimeType,
             attachmentFileName,
+            replyToMetaMessageId: extractReplyToMetaId(msg),
+            replyContextFrom: extractReplyContextFrom(msg),
           })
           markMessageAsRead(msg.id, config).catch((err) => console.warn('[webhooks/whatsapp] mark read failed:', err))
         }
