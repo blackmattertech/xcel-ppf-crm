@@ -453,11 +453,6 @@ export default function ChatWithLeadsPage() {
     )
   }, [conversations, search])
 
-  const lastIncomingMetaId = useMemo(() => {
-    const last = [...messages].reverse().find((m) => m.direction === 'in' && m.meta_message_id)
-    return last?.meta_message_id ?? undefined
-  }, [messages])
-
   const uploadAttachment = async (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -505,7 +500,6 @@ export default function ChatWithLeadsPage() {
     setSendStatus('idle')
     setSendError(null)
     setMessage('')
-    const contextMessageId = lastIncomingMetaId
     try {
       const res = await cachedFetch('/api/marketing/whatsapp/send', {
         method: 'POST',
@@ -524,7 +518,6 @@ export default function ChatWithLeadsPage() {
               sizeBytes: attachment.sizeBytes,
             },
           } : {}),
-          ...(contextMessageId && { contextMessageId }),
         }),
       })
       const data = await res.json()
