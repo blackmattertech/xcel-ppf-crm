@@ -52,25 +52,29 @@ export function mapDialStatusToOutcome(dialstatus: string | undefined | null): C
   return 'not_reachable'
 }
 
-export async function findLeadIdByCustomerPhone(
-  supabase: SupabaseClient,
-  rawPhone: string | undefined | null
-): Promise<string | null> {
-  if (!rawPhone?.trim()) return null
+function buildPhoneLookupVariants(rawPhone: string): string[] {
   const trimmed = rawPhone.trim()
+  const digits = trimmed.replace(/\D/g, '')
+  const last10 = digits.length >= 10 ? digits.slice(-10) : digits
   const normalized = normalizePhoneForStorage(trimmed)
-  const last10 = normalized.slice(-10)
-  const variants = [...new Set([normalized, last10, trimmed])]
-  const { data } = await supabase
-    .from('leads')
-    .select('id, phone, created_at, updated_at')
-    .in('phone', variants)
-  const rows = data as
-    | Array<{ id: string; phone: string; created_at: string; updated_at: string }>
-    | null
-  if (!rows?.length) return null
+  const set = new Set<string>()
+  for (const v of [trimmed, normalized, digits, last10]) {
+    if (v) set.add(v)
+  }
+  if (last10.length === 10) {
+    set.add(last10)
+    set.add(`91${last10}`)
+    set.add(`+91${last10}`)
+    set.add(`0${last10}`)
+    set.add(`+${last10}`)
+  }
+  return [...set].filter(Boolean)
+}
 
-  // Prefer the most recently created lead when duplicate phone variants exist.
+function pickNewestLead(
+  rows: Array<{ id: string; phone: string; created_at: string; updated_at: string }>
+): string | null {
+  if (!rows.length) return null
   const sorted = rows
     .slice()
     .sort(
@@ -78,6 +82,38 @@ export async function findLeadIdByCustomerPhone(
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
   return sorted[0]?.id ?? null
+}
+
+/**
+ * Match `leads.phone` to MCube customer numbers (often 10 digits; CRM may store 91… or formatted strings).
+ */
+export async function findLeadIdByCustomerPhone(
+  supabase: SupabaseClient,
+  rawPhone: string | undefined | null
+): Promise<string | null> {
+  if (!rawPhone?.trim()) return null
+  const variants = buildPhoneLookupVariants(rawPhone)
+  const last10 = rawPhone.replace(/\D/g, '').slice(-10)
+
+  const { data } = await supabase
+    .from('leads')
+    .select('id, phone, created_at, updated_at')
+    .in('phone', variants)
+  let rows = data as
+    | Array<{ id: string; phone: string; created_at: string; updated_at: string }>
+    | null
+
+  if (!rows?.length && last10.length === 10) {
+    const { data: fuzzy } = await supabase
+      .from('leads')
+      .select('id, phone, created_at, updated_at')
+      .ilike('phone', `%${last10}`)
+      .limit(25)
+    rows = fuzzy as typeof rows
+  }
+
+  if (!rows?.length) return null
+  return pickNewestLead(rows)
 }
 
 export async function findUserIdByAgentPhone(
