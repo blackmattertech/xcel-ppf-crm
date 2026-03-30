@@ -4,6 +4,8 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/service'
+import type { WhatsAppConfig } from '@/backend/services/whatsapp.service'
+import { markMessageAsRead } from '@/backend/services/whatsapp.service'
 
 export type MessageDirection = 'out' | 'in'
 
@@ -26,8 +28,59 @@ export interface WhatsAppMessageRow {
   is_read?: boolean
   read_at?: string | null
   meta_message_id: string | null
+  /** Parent message wamid when this is a contextual reply (WhatsApp `context.message_id`). */
+  reply_to_meta_message_id?: string | null
+  /** Meta `context.from` — sender of the quoted message (helps label when parent row not found). */
+  reply_context_from?: string | null
   status: MessageStatus | null
   created_at: string
+  updated_at?: string | null
+}
+
+/** Fingerprint for inbox list conditional GET (ETag). Null if RPC missing (migration not applied). */
+export async function getWhatsappInboxRevision(): Promise<string | null> {
+  try {
+    const supabase = createServiceClient()
+    const { data, error } = await supabase.rpc('whatsapp_inbox_revision')
+    if (error || data == null) return null
+    return String(data)
+  } catch {
+    return null
+  }
+}
+
+/** Fingerprint for a single thread (messages list) — includes delivery status / read updates via updated_at. */
+export async function getWhatsappThreadRevision(params: {
+  conversationKey?: string | null
+  leadId?: string | null
+  phone?: string | null
+}): Promise<string | null> {
+  try {
+    const supabase = createServiceClient()
+    if (params.conversationKey) {
+      const key = toConversationKey(params.conversationKey)
+      // DB migration 043 — RPC not in generated Database types yet
+      const { data, error } = await supabase.rpc('whatsapp_thread_revision' as never, {
+        p_conversation_key: key,
+        p_lead_id: null,
+        p_phone: null,
+      } as never)
+      if (error || data == null) return null
+      return String(data)
+    }
+    const normalizedPhone = params.phone ? normalizePhoneForStorage(params.phone) : null
+    const leadUuid =
+      params.leadId && /^[0-9a-f-]{36}$/i.test(params.leadId) ? params.leadId : null
+    const { data, error } = await supabase.rpc('whatsapp_thread_revision' as never, {
+      p_conversation_key: null,
+      p_lead_id: leadUuid,
+      p_phone: normalizedPhone,
+    } as never)
+    if (error || data == null) return null
+    return String(data)
+  } catch {
+    return null
+  }
 }
 
 export interface InboxMessageDTO {
@@ -47,6 +100,8 @@ export interface InboxMessageDTO {
   is_read: boolean
   read_at: string | null
   meta_message_id: string | null
+  reply_to_meta_message_id: string | null
+  reply_context_from: string | null
   status: MessageStatus | null
   created_at: string
 }
@@ -61,6 +116,25 @@ export interface ConversationSummary {
   last_message: InboxMessageDTO
 }
 
+const LEGACY_REPLY_META_PREFIX = /^\[\[wa_reply:([^\]|]+)?(?:\|([^\]]*))?\]\]\s*/i
+
+function encodeLegacyReplyMeta(body: string, replyToMeta?: string | null, replyFrom?: string | null): string {
+  const replyTo = (replyToMeta ?? '').trim()
+  const from = (replyFrom ?? '').trim()
+  if (!replyTo && !from) return body
+  if (LEGACY_REPLY_META_PREFIX.test(body)) return body
+  return `[[wa_reply:${replyTo}|${from}]] ${body}`
+}
+
+function decodeLegacyReplyMeta(body: string): { cleanBody: string; replyToMeta: string | null; replyFrom: string | null } {
+  const m = body.match(LEGACY_REPLY_META_PREFIX)
+  if (!m) return { cleanBody: body, replyToMeta: null, replyFrom: null }
+  const replyToMeta = (m[1] ?? '').trim() || null
+  const replyFrom = (m[2] ?? '').trim() || null
+  const cleanBody = body.replace(LEGACY_REPLY_META_PREFIX, '').trimStart()
+  return { cleanBody, replyToMeta, replyFrom }
+}
+
 /** Normalize phone to digits (E.164-ish) for matching. */
 export function normalizePhoneForStorage(phone: string, defaultCountryCode = '91'): string {
   const digits = phone.replace(/\D/g, '')
@@ -73,13 +147,16 @@ function toConversationKey(phone: string): string {
 }
 
 export function toInboxMessageDTO(row: WhatsAppMessageRow): InboxMessageDTO {
+  const legacy = decodeLegacyReplyMeta(row.body ?? '')
+  const effectiveReplyTo = row.reply_to_meta_message_id ?? legacy.replyToMeta
+  const effectiveReplyFrom = row.reply_context_from ?? legacy.replyFrom
   return {
     id: row.id,
     lead_id: row.lead_id,
     phone: row.phone,
     conversation_key: row.conversation_key ?? toConversationKey(row.phone),
     direction: row.direction,
-    body: row.body,
+    body: legacy.cleanBody,
     message_type: row.message_type ?? 'text',
     attachment_url: row.attachment_url ?? null,
     attachment_mime_type: row.attachment_mime_type ?? null,
@@ -90,6 +167,8 @@ export function toInboxMessageDTO(row: WhatsAppMessageRow): InboxMessageDTO {
     is_read: row.is_read ?? row.direction === 'out',
     read_at: row.read_at ?? null,
     meta_message_id: row.meta_message_id,
+    reply_to_meta_message_id: effectiveReplyTo ?? null,
+    reply_context_from: effectiveReplyFrom ?? null,
     status: row.status,
     created_at: row.created_at,
   }
@@ -112,6 +191,8 @@ export async function saveOutgoingMessage(params: {
   attachmentSizeBytes?: number | null
   thumbnailUrl?: string | null
   assignedTo?: string | null
+  /** When sending a contextual reply, store parent wamid for inbox quote UI. */
+  replyToMetaMessageId?: string | null
 }): Promise<SaveOutgoingResult> {
   const supabase = createServiceClient()
   const phone = normalizePhoneForStorage(params.phone)
@@ -144,7 +225,8 @@ export async function saveOutgoingMessage(params: {
         assigned_to: params.assignedTo ?? null,
         is_read: true,
         read_at: new Date().toISOString(),
-        meta_message_id: params.metaMessageId || null,
+        meta_message_id: params.metaMessageId?.trim() || null,
+        reply_to_meta_message_id: params.replyToMetaMessageId?.trim() || null,
       } as never)
       .select()
       .single()
@@ -182,7 +264,7 @@ export async function saveOutgoingMessagesBatch(
     phone: normalizePhoneForStorage(r.phone),
     direction: 'out' as const,
     body: r.body,
-    meta_message_id: r.metaMessageId || null,
+    meta_message_id: r.metaMessageId?.trim() || null,
   }))
   const { error } = await supabase.from('whatsapp_messages').insert(payload as never)
   if (error) {
@@ -202,33 +284,54 @@ export async function saveIncomingMessage(params: {
   attachmentFileName?: string | null
   attachmentSizeBytes?: number | null
   thumbnailUrl?: string | null
+  replyToMetaMessageId?: string | null
+  replyContextFrom?: string | null
 }): Promise<WhatsAppMessageRow | null> {
   const supabase = createServiceClient()
   const phone = normalizePhoneForStorage(params.phone)
-  const { data, error } = await supabase
-    .from('whatsapp_messages')
-    .insert({
-      lead_id: params.leadId || null,
-      phone,
-      conversation_key: toConversationKey(phone),
-      direction: 'in',
-      body: params.body,
-      message_type: params.messageType ?? 'text',
-      attachment_url: params.attachmentUrl ?? null,
-      attachment_mime_type: params.attachmentMimeType ?? null,
-      attachment_file_name: params.attachmentFileName ?? null,
-      attachment_size_bytes: params.attachmentSizeBytes ?? null,
-      thumbnail_url: params.thumbnailUrl ?? null,
-      is_read: false,
-      meta_message_id: params.metaMessageId || null,
-    } as never)
-    .select()
-    .single()
+  const insertPayload = {
+    lead_id: params.leadId || null,
+    phone,
+    conversation_key: toConversationKey(phone),
+    direction: 'in' as const,
+    body: params.body,
+    message_type: params.messageType ?? 'text',
+    attachment_url: params.attachmentUrl ?? null,
+    attachment_mime_type: params.attachmentMimeType ?? null,
+    attachment_file_name: params.attachmentFileName ?? null,
+    attachment_size_bytes: params.attachmentSizeBytes ?? null,
+    thumbnail_url: params.thumbnailUrl ?? null,
+    is_read: false,
+    meta_message_id: params.metaMessageId || null,
+    reply_to_meta_message_id: params.replyToMetaMessageId?.trim() || null,
+    reply_context_from: params.replyContextFrom?.trim() || null,
+  }
+  let { data, error } = await supabase.from('whatsapp_messages').insert(insertPayload as never).select().single()
+  // If reply columns are missing (migrations 044/045 not applied), save the message without them.
+  const missingReplyCols =
+    error &&
+    (error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      /reply_to_meta_message_id|reply_context_from|column.*does not exist/i.test(String((error as { message?: string }).message ?? '')))
+  if (missingReplyCols) {
+    const { reply_to_meta_message_id: _r, reply_context_from: _c, ...rest } = insertPayload
+    const retryPayload = {
+      ...rest,
+      body:
+        typeof rest.body === 'string'
+          ? encodeLegacyReplyMeta(rest.body, params.replyToMetaMessageId, params.replyContextFrom)
+          : rest.body,
+    }
+    const retry = await supabase.from('whatsapp_messages').insert(retryPayload as never).select().single()
+    data = retry.data
+    error = retry.error
+  }
   if (error) {
     if (error.code === '42P01') return null
     console.error('[whatsapp-chat] saveIncomingMessage:', error)
     return null
   }
+  if (!data) return null
   return data as WhatsAppMessageRow
 }
 
@@ -282,6 +385,66 @@ export async function listMessagesByConversationKey(conversationKey: string): Pr
     return []
   }
   return ((data ?? []) as WhatsAppMessageRow[]).map(toInboxMessageDTO)
+}
+
+/**
+ * Remove all stored messages for the given conversation keys (CRM history only; does not affect WhatsApp on the client).
+ * Deletes by conversation_key, then legacy rows with only phone set.
+ */
+export async function deleteConversationsByKeys(rawKeys: string[]): Promise<{ deletedMessageCount: number }> {
+  const supabase = createServiceClient()
+  const normalized = [...new Set(rawKeys.map((k) => toConversationKey(k)))].filter((k) => k.length >= 10)
+  let deletedMessageCount = 0
+  for (const key of normalized) {
+    const { data: byKey, error: err1 } = await supabase
+      .from('whatsapp_messages')
+      .delete()
+      .eq('conversation_key', key)
+      .select('id')
+    if (err1 && err1.code !== '42P01' && err1.code !== '42703') {
+      console.error('[whatsapp-chat] deleteConversationsByKeys (conversation_key):', err1)
+      throw err1
+    }
+    deletedMessageCount += byKey?.length ?? 0
+
+    const { data: byPhone, error: err2 } = await supabase
+      .from('whatsapp_messages')
+      .delete()
+      .eq('phone', key)
+      .is('conversation_key', null)
+      .select('id')
+    if (err2 && err2.code !== '42P01' && err2.code !== '42703') {
+      console.error('[whatsapp-chat] deleteConversationsByKeys (legacy phone):', err2)
+      throw err2
+    }
+    deletedMessageCount += byPhone?.length ?? 0
+  }
+  return { deletedMessageCount }
+}
+
+const MAX_MESSAGE_IDS_DELETE = 100
+
+/** Remove specific CRM message rows by primary key (does not affect WhatsApp on devices). */
+export async function deleteMessagesByIds(messageIds: string[]): Promise<{ deletedMessageCount: number }> {
+  const supabase = createServiceClient()
+  const ids = [
+    ...new Set(
+      messageIds
+        .map((id) => id.trim())
+        .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+    ),
+  ]
+  if (ids.length === 0) return { deletedMessageCount: 0 }
+  if (ids.length > MAX_MESSAGE_IDS_DELETE) {
+    throw new Error(`At most ${MAX_MESSAGE_IDS_DELETE} messages per request`)
+  }
+  const { data, error } = await supabase.from('whatsapp_messages').delete().in('id', ids).select('id')
+  if (error) {
+    if (error.code === '42P01') return { deletedMessageCount: 0 }
+    console.error('[whatsapp-chat] deleteMessagesByIds:', error)
+    throw error
+  }
+  return { deletedMessageCount: data?.length ?? 0 }
 }
 
 export async function listConversations(params?: {
@@ -342,7 +505,16 @@ export async function listConversations(params?: {
   return filtered.slice(0, limit)
 }
 
-export async function markConversationRead(conversationKey: string): Promise<void> {
+/**
+ * Mark inbound rows read in the DB; optionally notify Meta so the customer's WhatsApp shows read (blue ticks).
+ * Meta: POST /{phone_number_id}/messages with { messaging_product, status: "read", message_id } — marks that
+ * message and earlier ones in the thread as read on the user's device.
+ * @see https://developers.facebook.com/docs/whatsapp/cloud-api/guides/mark-messages-as-read
+ */
+export async function markConversationRead(
+  conversationKey: string,
+  whatsappConfig?: WhatsAppConfig | null
+): Promise<void> {
   const normalized = toConversationKey(conversationKey)
   const supabase = createServiceClient()
   const { error } = await supabase
@@ -353,6 +525,26 @@ export async function markConversationRead(conversationKey: string): Promise<voi
     .eq('is_read', false)
   if (error && error.code !== '42P01' && error.code !== '42703') {
     console.error('[whatsapp-chat] markConversationRead:', error)
+  }
+
+  if (!whatsappConfig?.phoneNumberId || !whatsappConfig?.accessToken) return
+
+  const { data: latestInbound } = await supabase
+    .from('whatsapp_messages')
+    .select('meta_message_id')
+    .eq('conversation_key', normalized)
+    .eq('direction', 'in')
+    .not('meta_message_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const wamid = (latestInbound as { meta_message_id?: string | null } | null)?.meta_message_id?.trim()
+  if (!wamid) return
+
+  const result = await markMessageAsRead(wamid, whatsappConfig)
+  if (!result.success && result.error) {
+    console.warn('[whatsapp-chat] Meta mark-as-read failed (CRM DB still updated):', result.error)
   }
 }
 
@@ -375,17 +567,27 @@ export async function updateMessageStatus(
   metaMessageId: string,
   newStatus: MessageStatus
 ): Promise<void> {
+  const wamid = metaMessageId?.trim()
+  if (!wamid) return
   try {
     const supabase = createServiceClient()
-    const { data: raw } = await supabase
+    const { data: raw, error: fetchErr } = await supabase
       .from('whatsapp_messages')
       .select('id, status')
-      .eq('meta_message_id', metaMessageId)
+      .eq('meta_message_id', wamid)
       .eq('direction', 'out')
       .limit(1)
-      .single()
+      .maybeSingle()
+    if (fetchErr) throw fetchErr
     const existing = raw as { id: string; status?: string | null } | null
-    if (!existing || !existing.id) return
+    if (!existing?.id) {
+      if (newStatus === 'read') {
+        console.warn('[whatsapp-chat] updateMessageStatus: no outgoing row for wamid (read event ignored)', {
+          wamidPreview: wamid.slice(0, 24),
+        })
+      }
+      return
+    }
     if (newStatus === 'failed') {
       const { error } = await supabase
         .from('whatsapp_messages')
@@ -394,8 +596,11 @@ export async function updateMessageStatus(
       if (error) throw error
       return
     }
-    const current = (existing.status as MessageStatus | null) ?? 'sent'
-    if (STATUS_ORDER[newStatus as keyof typeof STATUS_ORDER] <= STATUS_ORDER[current as keyof typeof STATUS_ORDER]) return
+    const currentRaw = (existing.status as string | null) ?? 'sent'
+    const current = (currentRaw.toLowerCase() as MessageStatus) || 'sent'
+    const curOrder = STATUS_ORDER[current as keyof typeof STATUS_ORDER]
+    const nextOrder = STATUS_ORDER[newStatus as keyof typeof STATUS_ORDER]
+    if (curOrder != null && nextOrder != null && nextOrder <= curOrder) return
     const { error } = await supabase
       .from('whatsapp_messages')
       .update({ status: newStatus } as never)

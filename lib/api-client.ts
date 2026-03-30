@@ -120,7 +120,7 @@ export async function cachedFetch(
 export function invalidateApiCache(urlOrPrefix: string): void {
   const prefix = urlOrPrefix.startsWith('GET:') || urlOrPrefix.startsWith('POST:') ? urlOrPrefix : `GET:${urlOrPrefix}`
   for (const key of cache.keys()) {
-    if (key === prefix || key.startsWith(prefix + ':')) {
+    if (key === prefix || key.startsWith(prefix + ':') || key.startsWith(`${prefix}?`)) {
       cache.delete(key)
     }
   }

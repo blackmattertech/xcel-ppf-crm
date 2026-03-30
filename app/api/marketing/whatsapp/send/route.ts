@@ -83,21 +83,30 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (recipients.length === 1 && leadId) {
+  /** Single-thread inbox send: text/media with optional reply context; works with or without leadId. */
+  if (recipients.length === 1) {
     const r = recipients[0]
+    const mediaCaption =
+      message.trim() || (attachment?.fileName?.trim() ?? '') || (messageType !== 'text' ? 'Document' : '')
+    const bodyForHistory = message.trim() || (messageType !== 'text' ? mediaCaption : '')
     const result = messageType === 'text'
       ? await sendWhatsAppText(r.phone, message, config, contextMessageId ?? null)
-      : await sendWhatsAppMedia(r.phone, {
-          mediaType: messageType,
-          mediaUrl: attachment?.url ?? '',
-          fileName: attachment?.fileName,
-          caption: message || undefined,
-        }, config)
+      : await sendWhatsAppMedia(
+          r.phone,
+          {
+            mediaType: messageType,
+            mediaUrl: attachment?.url ?? '',
+            fileName: attachment?.fileName,
+            caption: mediaCaption,
+            contextMessageId: contextMessageId ?? null,
+          },
+          config
+        )
     if (result.success) {
       const saveResult = await saveOutgoingMessage({
-        leadId,
+        leadId: leadId ?? null,
         phone: r.phone,
-        body: message,
+        body: bodyForHistory,
         metaMessageId: result.messageId ?? undefined,
         messageType,
         attachmentUrl: attachment?.url,
@@ -105,6 +114,7 @@ export async function POST(request: NextRequest) {
         attachmentFileName: attachment?.fileName,
         attachmentSizeBytes: attachment?.sizeBytes,
         thumbnailUrl: attachment?.thumbnailUrl,
+        replyToMetaMessageId: contextMessageId ?? null,
       })
       if (!saveResult.success) {
         console.warn('[whatsapp/send] Save failed:', saveResult.errorCode, saveResult.errorMessage)
