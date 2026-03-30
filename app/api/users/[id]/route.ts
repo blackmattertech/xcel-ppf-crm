@@ -107,6 +107,13 @@ export async function PUT(
       roleId = (currentUserData as any).role?.id || roleId
     }
 
+    if (!roleId) {
+      return NextResponse.json(
+        { error: 'Missing required fields: name and roleId' },
+        { status: 400 }
+      )
+    }
+
     const user = await updateUser(
       id,
       name,
