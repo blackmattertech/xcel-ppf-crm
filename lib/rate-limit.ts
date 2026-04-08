@@ -62,6 +62,11 @@ export const RATE_LIMITS = {
     maxRequests: 3,
     windowSeconds: 60, // 3 imports per minute
   },
+  /** Public landing page lead capture (per IP) */
+  LANDING_LEAD: {
+    maxRequests: 10,
+    windowSeconds: 60,
+  },
 } as const
 
 /**

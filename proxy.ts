@@ -13,8 +13,12 @@ export async function proxy(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    // If env vars are missing, allow access to login page only
-    if (request.nextUrl.pathname !== '/login' && request.nextUrl.pathname !== '/') {
+    // If env vars are missing, allow access to login and public landing only
+    const allowed =
+      request.nextUrl.pathname === '/login' ||
+      request.nextUrl.pathname === '/' ||
+      request.nextUrl.pathname.startsWith('/landing')
+    if (!allowed) {
       const url = request.nextUrl.clone()
       url.pathname = '/login'
       return NextResponse.redirect(url)
@@ -50,9 +54,10 @@ export async function proxy(request: NextRequest) {
   // Protect routes that require authentication
   // Don't redirect API routes - let them handle their own auth errors
   const isApiRoute = request.nextUrl.pathname.startsWith('/api')
-  const isPublicRoute = 
-    request.nextUrl.pathname.startsWith('/login') || 
+  const isPublicRoute =
+    request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname === '/' ||
+    request.nextUrl.pathname.startsWith('/landing') ||
     request.nextUrl.pathname.startsWith('/forgot-password') ||
     request.nextUrl.pathname.startsWith('/reset-password') ||
     request.nextUrl.pathname === '/data-deletion'
@@ -76,13 +81,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

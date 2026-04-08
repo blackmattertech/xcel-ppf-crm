@@ -11,7 +11,7 @@ const uploadedLeadSchema = z.object({
   name: z.string().min(1),
   phone: z.string().min(1),
   email: z.string().email().nullable().optional().or(z.literal('')),
-  source: z.enum(['meta', 'manual', 'form', 'whatsapp', 'ivr']).default('manual'),
+  source: z.enum(['meta', 'manual', 'form', 'whatsapp', 'ivr', 'landing']).default('manual'),
   campaign_id: z.string().nullable().optional().or(z.literal('')),
   ad_id: z.string().nullable().optional().or(z.literal('')),
   adset_id: z.string().nullable().optional().or(z.literal('')),

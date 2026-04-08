@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { formatLeadSourceLabel } from '@/shared/constants/lead-sources'
 import {
   PieChart,
   Pie,
@@ -22,7 +23,7 @@ interface LeadsBySourcePieProps {
 
 export default function LeadsBySourcePie({ data, hideTitle }: LeadsBySourcePieProps) {
   const chartData = Object.entries(data).map(([name, value]) => ({
-    name: name === 'undefined' || !name ? 'Unknown' : name.replace(/_/g, ' '),
+    name: name === 'undefined' || !name ? 'Unknown' : formatLeadSourceLabel(name),
     value,
   }))
 

@@ -7,6 +7,7 @@ import Link from 'next/link'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
 import { getInterestedProductFromMeta, getCarModelFromMeta } from '@/shared/utils/lead-meta'
+import { formatLeadSourceLabel } from '@/shared/constants/lead-sources'
 import { 
   LEAD_STATUS, 
   LEAD_STATUS_LABELS, 
@@ -1964,7 +1965,9 @@ export default function LeadDetailPage() {
                 <div className="bg-[#fafafa] rounded-[5px] p-4 min-h-[100px]">
                   <div className="mb-3">
                     <p className="text-[10px] text-[#717d8a] leading-[1.3]">Source</p>
-                    <p className="text-[12px] font-semibold text-black leading-[1.3] capitalize">{lead?.source || 'N/A'}</p>
+                    <p className="text-[12px] font-semibold text-black leading-[1.3]">
+                      {lead?.source ? formatLeadSourceLabel(lead.source) : 'N/A'}
+                    </p>
                   </div>
                   <div className="border-t border-[#e0e0e0] my-2" />
                   <div className="mb-3">

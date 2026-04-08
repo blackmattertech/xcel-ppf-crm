@@ -52,6 +52,10 @@ export const PERMISSIONS = {
   PRODUCTS_DELETE: 'products.delete',
   PRODUCTS_MANAGE: 'products.manage',
   
+  // Public landing page (Marketing)
+  MARKETING_LANDING_READ: 'marketing_landing.read',
+  MARKETING_LANDING_MANAGE: 'marketing_landing.manage',
+
   // Follow-ups
   FOLLOWUPS_CREATE: 'followups.create',
   FOLLOWUPS_READ: 'followups.read',

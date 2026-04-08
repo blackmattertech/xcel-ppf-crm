@@ -29,7 +29,7 @@ interface FormData {
   name: string
   phone: string
   email: string
-  source: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr' | ''
+  source: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr' | 'landing' | ''
   interest_level: 'hot' | 'warm' | 'cold' | ''
   budget_range: string
   requirement: string
@@ -179,7 +179,7 @@ export default function NewLeadForm({ onClose, onSuccess }: NewLeadFormProps) {
         if (formData.ad_id) metaData.ad_id = formData.ad_id
         if (formData.ad_name) metaData.ad_name = formData.ad_name
       }
-      if (formData.source === 'form') {
+      if (formData.source === 'form' || formData.source === 'landing') {
         if (formData.form_id) metaData.form_id = formData.form_id
         if (formData.form_name) metaData.form_name = formData.form_name
       }
@@ -187,7 +187,7 @@ export default function NewLeadForm({ onClose, onSuccess }: NewLeadFormProps) {
       const leadData: any = {
         name: formData.name.trim(),
         phone: formData.phone.trim(),
-        source: formData.source as 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr',
+        source: formData.source as 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr' | 'landing',
         interest_level: formData.interest_level || null,
         budget_range: formData.budget_range.trim() || null,
         requirement: formData.requirement.trim() || null,
@@ -392,6 +392,7 @@ export default function NewLeadForm({ onClose, onSuccess }: NewLeadFormProps) {
                         <option value="form">📋 Web Form</option>
                         <option value="whatsapp">💬 WhatsApp</option>
                         <option value="ivr">📞 IVR Call</option>
+                        <option value="landing">🌐 Landing page</option>
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#717d8a] pointer-events-none" size={20} />
                     </div>
@@ -545,7 +546,7 @@ export default function NewLeadForm({ onClose, onSuccess }: NewLeadFormProps) {
                     )}
 
                     {/* Form Fields */}
-                    {formData.source === 'form' && (
+                    {(formData.source === 'form' || formData.source === 'landing') && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-[#eaecee]">
                         <div>
                           <label className="block text-sm font-medium text-[#242d35] mb-2">Form ID</label>

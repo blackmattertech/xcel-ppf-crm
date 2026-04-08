@@ -74,6 +74,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     requiresPermissions: true,
     children: [
       { name: 'Dashboard', href: '/marketing/dashboard', icon: '📊', resource: 'marketing_dashboard', requiresPermissions: true },
+      { name: 'Landing page', href: '/marketing/landing', icon: '🌐', resource: 'marketing_landing', requiresPermissions: true },
       { name: 'WhatsApp', href: '/marketing/whatsapp', icon: '💬', resource: 'marketing_whatsapp', requiresPermissions: true },
     ],
   },

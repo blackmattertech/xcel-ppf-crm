@@ -1,13 +1,15 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { formatLeadSourceLabel } from '@/shared/constants/lead-sources'
 
 interface LeadsBySourceTableProps {
   data: Record<string, number>
 }
 
 function formatSource(source: string): string {
-  return source === 'undefined' || !source ? 'Unknown' : source.replace(/_/g, ' ')
+  if (source === 'undefined' || !source) return 'Unknown'
+  return formatLeadSourceLabel(source)
 }
 
 export default function LeadsBySourceTable({ data }: LeadsBySourceTableProps) {
@@ -39,7 +41,7 @@ export default function LeadsBySourceTable({ data }: LeadsBySourceTableProps) {
               transition={{ delay: i * 0.03 }}
               className="border-b border-gray-100 hover:bg-gray-50/80"
             >
-              <td className="py-3 capitalize text-gray-900">{formatSource(source)}</td>
+              <td className="py-3 text-gray-900">{formatSource(source)}</td>
               <td className="py-3 text-right tabular-nums font-medium text-gray-700">{count}</td>
             </motion.tr>
           ))}

@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { LEAD_STATUS } from '@/shared/constants/lead-status'
 import { ASSIGNABLE_LEAD_ROLES } from '@/shared/constants/roles'
 
-const LEAD_SOURCES = ['meta', 'manual', 'form'] as const
+const LEAD_SOURCES = ['meta', 'manual', 'form', 'landing'] as const
 type LeadSource = (typeof LEAD_SOURCES)[number]
 
 const EPOCH_DATE = new Date(1970, 0, 1).toISOString()

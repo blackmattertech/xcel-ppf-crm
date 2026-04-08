@@ -16,6 +16,7 @@ import MobileHeader from '@/components/MobileHeader'
 import MobileBottomNav from '@/components/MobileBottomNav'
 import { cachedFetch } from '@/lib/api-client'
 import { VirtualizedScrollList } from '@/components/leads/VirtualizedScrollList'
+import { formatLeadSourceLabel } from '@/shared/constants/lead-sources'
 
 // New lead modal is quite heavy; load it only when the user actually opens it
 // so the main Leads list and filters become interactive faster.
@@ -26,7 +27,15 @@ const NewLeadForm = dynamic(() => import('@/components/NewLeadForm'), {
 // Source Icon Component with fallback
 function SourceIcon({ platform, source }: { platform?: string | null; source: string }) {
   const [imgError, setImgError] = useState(false)
-  
+
+  if (source === 'landing') {
+    return (
+      <span className="text-xl shrink-0" title="Landing page">
+        🌐
+      </span>
+    )
+  }
+
   const getIconPath = (): string | null => {
     if (platform) {
       const platformLower = String(platform).toLowerCase().trim()
@@ -3661,11 +3670,15 @@ function LeadsPageContent() {
                         return (
                           <div className="flex items-center gap-2 truncate min-w-0">
                             <SourceIcon platform={lead.meta_data?.platform || lead.meta_data?.Platform} source={lead.source} />
-                            {(lead.meta_data?.platform || lead.meta_data?.Platform) && (
-                              <span className="text-base text-gray-900 capitalize truncate">
-                                {String(lead.meta_data?.platform || lead.meta_data?.Platform).toUpperCase()}
-                              </span>
-                            )}
+                            <span className="text-base text-gray-900 truncate">
+                              {lead.source === 'meta' && (lead.meta_data?.platform || lead.meta_data?.Platform) ? (
+                                <span className="capitalize">
+                                  {String(lead.meta_data?.platform || lead.meta_data?.Platform).toUpperCase()}
+                                </span>
+                              ) : (
+                                formatLeadSourceLabel(lead.source)
+                              )}
+                            </span>
                           </div>
                         )
                       case 'assigned_to':

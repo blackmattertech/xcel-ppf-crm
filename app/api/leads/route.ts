@@ -10,7 +10,7 @@ const createLeadSchema = z.object({
   name: z.string().min(1),
   phone: z.string().min(1),
   email: z.string().email().nullable().optional(),
-  source: z.enum(['meta', 'manual', 'form', 'whatsapp', 'ivr']),
+  source: z.enum(['meta', 'manual', 'form', 'whatsapp', 'ivr', 'landing']),
   campaign_id: z.string().nullable().optional(),
   ad_id: z.string().nullable().optional(),
   adset_id: z.string().nullable().optional(),

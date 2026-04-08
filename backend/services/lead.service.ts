@@ -325,7 +325,9 @@ export async function createLead(leadData: LeadInsert, autoAssign: boolean = tru
 
   // Auto-assign if enabled
   if (autoAssign && leadData.source && !leadData.assigned_to) {
-    const assignedUserId = await assignLeadRoundRobin(leadData.source as 'meta' | 'manual' | 'form')
+    const assignedUserId = await assignLeadRoundRobin(
+      leadData.source as 'meta' | 'manual' | 'form' | 'landing'
+    )
     if (assignedUserId) {
       leadData.assigned_to = assignedUserId
     }
@@ -432,7 +434,7 @@ export async function createLeadsBatch(
       const count = sourceCounts.get(source) || 0
       const assignments: string[] = []
       for (let i = 0; i < count; i++) {
-        const userId = await assignLeadRoundRobin(source as 'meta' | 'manual' | 'form')
+        const userId = await assignLeadRoundRobin(source as 'meta' | 'manual' | 'form' | 'landing')
         if (userId) assignments.push(userId)
       }
       return { source, assignments }

@@ -126,7 +126,7 @@ export interface Database {
           name: string
           phone: string
           email: string | null
-          source: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr'
+          source: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr' | 'landing'
           campaign_id: string | null
           ad_id: string | null
           adset_id: string | null
@@ -153,7 +153,7 @@ export interface Database {
           name: string
           phone: string
           email?: string | null
-          source: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr'
+          source: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr' | 'landing'
           campaign_id?: string | null
           ad_id?: string | null
           adset_id?: string | null
@@ -180,7 +180,7 @@ export interface Database {
           name?: string
           phone?: string
           email?: string | null
-          source?: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr'
+          source?: 'meta' | 'manual' | 'form' | 'whatsapp' | 'ivr' | 'landing'
           campaign_id?: string | null
           ad_id?: string | null
           adset_id?: string | null
@@ -254,6 +254,59 @@ export interface Database {
           note?: string
           created_by?: string | null
           created_at?: string
+          updated_at?: string
+        }
+      }
+      landing_page_settings: {
+        Row: {
+          id: string
+          hero_title: string
+          hero_subtitle: string
+          hero_image_url: string | null
+          hero_video_url: string | null
+          hero_background: 'image' | 'video' | 'none'
+          hero_background_opacity: number
+          form_section_title: string
+          form_button_label: string
+          form_success_message: string
+          form_fields: Json
+          video_section_title: string
+          video_url: string
+          video_description: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          hero_title?: string
+          hero_subtitle?: string
+          hero_image_url?: string | null
+          hero_video_url?: string | null
+          hero_background?: 'image' | 'video' | 'none'
+          hero_background_opacity?: number
+          form_section_title?: string
+          form_button_label?: string
+          form_success_message?: string
+          form_fields?: Json
+          video_section_title?: string
+          video_url?: string
+          video_description?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          hero_title?: string
+          hero_subtitle?: string
+          hero_image_url?: string | null
+          hero_video_url?: string | null
+          hero_background?: 'image' | 'video' | 'none'
+          hero_background_opacity?: number
+          form_section_title?: string
+          form_button_label?: string
+          form_success_message?: string
+          form_fields?: Json
+          video_section_title?: string
+          video_url?: string
+          video_description?: string | null
           updated_at?: string
         }
       }
@@ -605,21 +658,21 @@ export interface Database {
         Row: {
           id: string
           user_id: string
-          lead_source: 'meta' | 'manual' | 'form'
+          lead_source: 'meta' | 'manual' | 'form' | 'landing'
           last_assigned_at: string
           assignment_count: number
         }
         Insert: {
           id?: string
           user_id: string
-          lead_source: 'meta' | 'manual' | 'form'
+          lead_source: 'meta' | 'manual' | 'form' | 'landing'
           last_assigned_at?: string
           assignment_count?: number
         }
         Update: {
           id?: string
           user_id?: string
-          lead_source?: 'meta' | 'manual' | 'form'
+          lead_source?: 'meta' | 'manual' | 'form' | 'landing'
           last_assigned_at?: string
           assignment_count?: number
         }
