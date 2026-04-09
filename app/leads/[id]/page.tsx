@@ -3263,11 +3263,11 @@ export default function LeadDetailPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-gray-600">Company Name:</span>
-                    <span className="ml-2 font-medium text-gray-900">Xcel PPF</span>
+                    <span className="ml-2 font-medium text-gray-900">Ultrakool</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Email:</span>
-                    <span className="ml-2 font-medium text-gray-900">info@xcelppf.com</span>
+                    <span className="ml-2 font-medium text-gray-900">info@ultrakool.com</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Phone:</span>

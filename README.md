@@ -1,4 +1,4 @@
-# Xcel CRM System
+# Ultrakool CRM System
 
 A comprehensive Customer Relationship Management system with role-based access control, lead management, and analytics.
 
@@ -63,7 +63,7 @@ npm run dev
 ## Project Structure
 
 ```
-xcel/
+ultrakool-crm/
 ├── app/                    # Next.js app router pages
 │   ├── api/               # API routes
 │   ├── dashboard/         # Dashboard page

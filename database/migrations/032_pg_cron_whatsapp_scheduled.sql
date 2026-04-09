@@ -1,4 +1,8 @@
 -- Schedule Supabase Edge Function process-whatsapp-scheduled every minute via pg_cron + pg_net.
+--
+-- Greenfield / new project: prefer database/post_migration_supabase_setup.sql after vault secrets exist
+-- (avoids registering cron before vault.decrypted_secrets has project_url + anon_key).
+--
 -- Prerequisites:
 --   1. Deploy Edge Function: supabase functions deploy process-whatsapp-scheduled
 --   2. Add vault secrets (Supabase Dashboard → SQL or run below with your values):

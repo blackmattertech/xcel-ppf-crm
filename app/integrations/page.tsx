@@ -6,7 +6,7 @@ import { cachedFetch } from '@/lib/api-client'
 
 type MailjetStatus = 'disconnected' | 'connected'
 
-const MAILJET_STORAGE_KEY = 'xcelppf_mailjet_config_v1'
+const MAILJET_STORAGE_KEY = 'ultrakool_mailjet_config_v1'
 
 type MailjetConfig = {
   apiKey: string
@@ -41,8 +41,8 @@ function MailjetIntegrationCard() {
   const [apiSecret, setApiSecret] = useState('')
   const [senderEmail, setSenderEmail] = useState('')
   const [testRecipient, setTestRecipient] = useState('')
-  const [testSubject, setTestSubject] = useState('Test email from Xcel PPF CRM')
-  const [testMessage, setTestMessage] = useState('This is a test email sent via Mailjet from Xcel PPF CRM.')
+  const [testSubject, setTestSubject] = useState('Test email from Ultrakool CRM')
+  const [testMessage, setTestMessage] = useState('This is a test email sent via Mailjet from Ultrakool CRM.')
 
   const [status, setStatus] = useState<MailjetStatus>('disconnected')
   const [saving, setSaving] = useState(false)

@@ -64,8 +64,8 @@ export default function ForgotPasswordPage() {
             {/* Logo - Positioned on the left inside the dialog */}
             <div className="mb-6 md:mb-8 lg:mb-[40px] self-start">
               <Image
-                src="/xcel-logo.png"
-                alt="XCEL Logo"
+                src="/ultrakool-logo.png"
+                alt="Ultrakool"
                 width={136}
                 height={65}
                 className="scale-y-[-1] w-24 h-auto md:w-32 lg:w-[136px]"

@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     // resetPasswordForEmail requires the anon key, not the service key
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
                    process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '') || 
-                   'https://xcel-ppf-crm-delta.vercel.app'
+                   'http://localhost:3000'
     const redirectTo = `${siteUrl}/reset-password`
     
     // Create a client with anon key to use resetPasswordForEmail

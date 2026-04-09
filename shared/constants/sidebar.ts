@@ -72,10 +72,11 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     iconPath: '/assets/sidebar/marketing.svg',
     resource: 'marketing',
     requiresPermissions: true,
-    children: [
-      { name: 'Dashboard', href: '/marketing/dashboard', icon: '📊', resource: 'marketing_dashboard', requiresPermissions: true },
-      { name: 'WhatsApp', href: '/marketing/whatsapp', icon: '💬', resource: 'marketing_whatsapp', requiresPermissions: true },
-    ],
+    // Nav dropdown removed (WhatsApp hub hidden + URLs 404 via segment layouts). Preserve for RBAC / docs:
+    // children: [
+    //   { name: 'Dashboard', href: '/marketing/dashboard', icon: '📊', resource: 'marketing_dashboard', requiresPermissions: true },
+    //   { name: 'WhatsApp', href: '/marketing/whatsapp', icon: '💬', resource: 'marketing_whatsapp', requiresPermissions: true },
+    // ],
   },
   {
     name: 'Teams',
@@ -132,6 +133,11 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
 ]
 
 /**
+ * Resources still used for Roles & Permissions when Marketing submenu is hidden from the nav.
+ */
+export const SIDEBAR_ARCHIVED_MENU_RESOURCES: string[] = ['marketing_dashboard', 'marketing_whatsapp']
+
+/**
  * Generate permissions for a resource
  * Returns standard CRUD permissions + manage permission
  */
@@ -167,7 +173,7 @@ export function getResourcesRequiringPermissions(): string[] {
 
 /** All resources from sidebar (including children) for permission sync */
 export function getAllSidebarResources(): string[] {
-  const resources: string[] = []
+  const resources: string[] = [...SIDEBAR_ARCHIVED_MENU_RESOURCES]
   for (const item of SIDEBAR_MENU_ITEMS) {
     resources.push(item.resource)
     for (const child of item.children ?? []) {
