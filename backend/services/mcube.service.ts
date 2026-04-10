@@ -123,7 +123,7 @@ export async function findUserIdByAgentPhone(
   rawPhone: string | undefined | null
 ): Promise<string | null> {
   if (!rawPhone?.trim()) return null
-  const variants = phoneLookupVariants(rawPhone)
+  const variants = buildLeadPhoneLookupVariants(rawPhone)
   const { data } = await supabase.from('users').select('id').in('phone', variants).limit(1)
   const rows = data as { id: string }[] | null
   return rows?.[0]?.id ?? null

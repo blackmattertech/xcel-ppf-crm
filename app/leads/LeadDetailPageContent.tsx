@@ -1942,8 +1942,8 @@ export default function LeadDetailPageContent({
           </div>
         </div>
 
-        {/* Scrollable body – footer stays pinned below */}
-        <div className="px-6 pt-6 pb-2 overflow-y-auto flex-1 min-h-0">
+        {/* Scrollable body – footer stays pinned below; extra bottom padding so audio controls aren’t clipped */}
+        <div className="px-6 pt-6 pb-8 overflow-y-auto overflow-x-hidden flex-1 min-h-0 overscroll-contain">
           <div className="grid gap-6 grid-cols-1 md:grid-cols-[360px_170px_170px] max-w-[800px] mx-auto">
             {/* Column 1 (360px) - Contact, Lead Details, Interests, Buttons */}
             <div className="flex flex-col gap-6">
@@ -2157,15 +2157,15 @@ export default function LeadDetailPageContent({
           </div>
 
           {/* Full width: native audio needs ~300px+; 170px column clipped all controls */}
-          <div className="max-w-[800px] mx-auto mt-8 w-full border-t border-[#eaecee] pt-6 pl-1 border-l-[3px] border-l-[#dd3f3c]">
-            <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none pl-3">
+          <div className="max-w-[800px] mx-auto mt-8 w-full border-t border-[#eaecee] pt-6 pb-2 border-l-4 border-[#dd3f3c] pl-4">
+            <h2 className="text-[15px] font-medium text-black mb-3 flex items-center gap-2 leading-none">
               <span className="w-6 h-6 rounded-[3px] bg-[rgba(248,229,231,0.4)] flex items-center justify-center shrink-0">
                 <TrendingUp size={12} className="text-[#dd3f3c]" />
               </span>
               Recent Activity
             </h2>
-            <div className="space-y-3 text-[11px] pl-3 pr-1">
-              {lead?.status_history && lead.status_history.length > 0 && lead.status_history.slice(0, 2).map((history) => {
+            <div className="space-y-3 text-[11px] pr-1">
+              {lead?.status_history && lead.status_history.length > 0 && lead.status_history.slice(0, 8).map((history) => {
                 const date = new Date(history.created_at)
                 const timeStr = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)) === 0
                   ? `Today, ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
@@ -2177,7 +2177,7 @@ export default function LeadDetailPageContent({
                   </div>
                 )
               })}
-              {lead?.calls && lead.calls.length > 0 && lead.calls.slice(0, 2).map((call) => {
+              {lead?.calls && lead.calls.length > 0 && lead.calls.slice(0, 15).map((call) => {
                 const timeStr = `${Math.floor((Date.now() - new Date(call.created_at).getTime()) / (1000 * 60 * 60))} hours ago`
                 const dur =
                   call.call_duration != null
@@ -2217,18 +2217,18 @@ export default function LeadDetailPageContent({
                       </p>
                     ) : null}
                     {call.recording_url ? (
-                      <div className="mt-3 rounded-md border border-[#e5e7eb] bg-[#f8fafc] p-3 w-full min-w-0">
-                        <p className="text-[10px] font-medium text-[#4b5563] mb-2">Call recording</p>
-                        <div className="w-full min-h-[56px] flex items-center overflow-x-auto overflow-y-visible">
+                      <div className="mt-3 w-full min-w-0 rounded-lg border border-[#e5e7eb] bg-[#f1f5f9] p-4">
+                        <p className="text-[10px] font-medium text-[#4b5563] mb-3">Call recording</p>
+                        <div className="w-full min-h-[64px] rounded-md bg-white p-2 shadow-sm ring-1 ring-black/5 [&_audio]:min-h-[52px]">
                           <audio
                             controls
                             preload="metadata"
-                            className="w-full min-w-[280px]"
-                            style={{ width: '100%', minHeight: 54 }}
+                            className="block w-full min-w-0 max-w-full align-top"
                           >
                             <source src={call.recording_url} type="audio/wav" />
                             <source src={call.recording_url} type="audio/mpeg" />
                             <source src={call.recording_url} type="audio/mp4" />
+                            <source src={call.recording_url} type="audio/webm" />
                             Your browser does not support audio preview.
                           </audio>
                         </div>
