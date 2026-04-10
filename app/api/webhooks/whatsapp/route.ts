@@ -149,6 +149,118 @@ function mapWebhookStatusToMessageStatus(raw: string): StatusValue | null {
   return null
 }
 
+type ParsedIncoming = {
+  messageType: 'text' | 'image' | 'video' | 'document'
+  bodyText: string
+  attachmentUrl: string | null
+  attachmentMimeType: string | null
+  attachmentFileName: string | null
+}
+
+/**
+ * Map Cloud API webhook message to DB row fields.
+ * Previously only text/image/video/document were handled; everything else hit `continue` and never appeared in the inbox.
+ */
+function parseIncomingMessagePayload(msg: {
+  type: string
+  text?: { body?: string }
+  image?: { id?: string; mime_type?: string; caption?: string }
+  video?: { id?: string; mime_type?: string; caption?: string }
+  document?: { id?: string; mime_type?: string; filename?: string; caption?: string }
+  interactive?: {
+    type?: string
+    button_reply?: { id?: string; title?: string }
+    list_reply?: { id?: string; title?: string; description?: string }
+  }
+  button?: { text?: string; payload?: string }
+  audio?: { id?: string; mime_type?: string }
+  voice?: { id?: string; mime_type?: string }
+  sticker?: { id?: string; mime_type?: string }
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string }
+}): ParsedIncoming | null {
+  const t = String(msg.type ?? '').toLowerCase()
+  let messageType: ParsedIncoming['messageType'] = 'text'
+  let bodyText = ''
+  let attachmentUrl: string | null = null
+  let attachmentMimeType: string | null = null
+  let attachmentFileName: string | null = null
+
+  if (t === 'text') {
+    bodyText = msg.text?.body ?? ''
+  } else if (t === 'image') {
+    messageType = 'image'
+    bodyText = msg.image?.caption ?? '[Image]'
+    attachmentUrl = msg.image?.id ? `meta-media://${msg.image.id}` : null
+    attachmentMimeType = msg.image?.mime_type ?? null
+  } else if (t === 'video') {
+    messageType = 'video'
+    bodyText = msg.video?.caption ?? '[Video]'
+    attachmentUrl = msg.video?.id ? `meta-media://${msg.video.id}` : null
+    attachmentMimeType = msg.video?.mime_type ?? null
+  } else if (t === 'document') {
+    messageType = 'document'
+    bodyText = msg.document?.caption ?? `[Document] ${msg.document?.filename ?? ''}`.trim()
+    attachmentUrl = msg.document?.id ? `meta-media://${msg.document.id}` : null
+    attachmentMimeType = msg.document?.mime_type ?? null
+    attachmentFileName = msg.document?.filename ?? null
+  } else if (t === 'interactive') {
+    const inter = msg.interactive
+    const interType = String(inter?.type ?? '').toLowerCase()
+    if (interType === 'button_reply') {
+      const br = inter?.button_reply
+      bodyText = (br?.title ?? br?.id ?? '').trim() || '[Button reply]'
+    } else if (interType === 'list_reply') {
+      const lr = inter?.list_reply
+      const title = (lr?.title ?? '').trim()
+      const desc = (lr?.description ?? '').trim()
+      bodyText = [title, desc].filter(Boolean).join(' — ') || '[List reply]'
+    } else {
+      bodyText = interType ? `[Interactive: ${interType}]` : '[Interactive]'
+    }
+  } else if (t === 'button') {
+    const btn = msg.button
+    bodyText = (btn?.text ?? btn?.payload ?? '').trim() || '[Button]'
+  } else if (t === 'audio' || t === 'voice') {
+    const aud = t === 'voice' ? msg.voice : msg.audio
+    const id = aud?.id
+    bodyText = t === 'voice' ? '[Voice message]' : '[Audio]'
+    if (id) {
+      attachmentUrl = `meta-media://${id}`
+      attachmentMimeType = aud?.mime_type ?? (t === 'voice' ? 'audio/ogg' : 'audio/mpeg')
+    }
+  } else if (t === 'sticker') {
+    messageType = 'image'
+    bodyText = '[Sticker]'
+    attachmentUrl = msg.sticker?.id ? `meta-media://${msg.sticker.id}` : null
+    attachmentMimeType = msg.sticker?.mime_type ?? 'image/webp'
+  } else if (t === 'location') {
+    const loc = msg.location
+    if (loc) {
+      const parts = [loc.name, loc.address].filter(Boolean)
+      bodyText =
+        parts.length > 0
+          ? parts.join(' — ')
+          : typeof loc.latitude === 'number' && typeof loc.longitude === 'number'
+            ? `📍 ${loc.latitude}, ${loc.longitude}`
+            : '[Location]'
+    } else {
+      bodyText = '[Location]'
+    }
+  } else if (t === 'contacts') {
+    bodyText = '[Contact card]'
+  } else if (t === 'reaction') {
+    // Emoji reaction to another message — not a thread bubble; skip insert.
+    return null
+  } else if (t === 'system' || t === 'order' || t === 'unknown') {
+    bodyText = `[${t}]`
+  } else {
+    bodyText = t ? `[${t}]` : '[Message]'
+  }
+
+  if (!bodyText.trim()) bodyText = `[${messageType}]`
+  return { messageType, bodyText, attachmentUrl, attachmentMimeType, attachmentFileName }
+}
+
 export async function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get('hub.mode')
   const token = request.nextUrl.searchParams.get('hub.verify_token')
@@ -251,35 +363,10 @@ export async function POST(request: NextRequest) {
           const from = String(msg.from ?? '')
           if (!from) continue
 
-          let messageType: 'text' | 'image' | 'video' | 'document' = 'text'
-          let bodyText = ''
-          let attachmentUrl: string | null = null
-          let attachmentMimeType: string | null = null
-          let attachmentFileName: string | null = null
+          const parsed = parseIncomingMessagePayload(msg)
+          if (!parsed) continue
 
-          if (msg.type === 'text') {
-            bodyText = msg.text?.body ?? ''
-          } else if (msg.type === 'image') {
-            messageType = 'image'
-            bodyText = msg.image?.caption ?? '[Image]'
-            attachmentUrl = msg.image?.id ? `meta-media://${msg.image.id}` : null
-            attachmentMimeType = msg.image?.mime_type ?? null
-          } else if (msg.type === 'video') {
-            messageType = 'video'
-            bodyText = msg.video?.caption ?? '[Video]'
-            attachmentUrl = msg.video?.id ? `meta-media://${msg.video.id}` : null
-            attachmentMimeType = msg.video?.mime_type ?? null
-          } else if (msg.type === 'document') {
-            messageType = 'document'
-            bodyText = msg.document?.caption ?? `[Document] ${msg.document?.filename ?? ''}`.trim()
-            attachmentUrl = msg.document?.id ? `meta-media://${msg.document.id}` : null
-            attachmentMimeType = msg.document?.mime_type ?? null
-            attachmentFileName = msg.document?.filename ?? null
-          } else {
-            continue
-          }
-
-          if (!bodyText.trim()) bodyText = `[${messageType}]`
+          const { messageType, bodyText, attachmentUrl, attachmentMimeType, attachmentFileName } = parsed
 
           let leadId: string | null = null
           try {

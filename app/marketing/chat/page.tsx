@@ -115,7 +115,8 @@ function buildThreadMessagesUrl(phone: string, conversationKey: string | undefin
     return `/api/marketing/whatsapp/chat?conversationKey=${encodeURIComponent(conversationKey)}`
   }
   const qs = new URLSearchParams()
-  qs.set('phone', normalizePhoneForChat(phone))
+  // Full normalized digits (not last-10-only) so thread query matches webhook-stored `phone` / `conversation_key`.
+  qs.set('phone', normalizePhoneForStorage(phone))
   if (leadIdForApi && /^[0-9a-f-]{36}$/i.test(leadIdForApi)) {
     qs.set('leadId', leadIdForApi)
   }
