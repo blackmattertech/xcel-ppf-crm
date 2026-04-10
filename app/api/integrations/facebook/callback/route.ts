@@ -7,6 +7,26 @@ import {
   resolveFacebookOAuthRedirectUri,
 } from '@/lib/facebook-oauth-redirect'
 
+type FbOAuthErrorBody = {
+  access_token?: string
+  expires_in?: number
+  error?: { message?: string; type?: string; code?: number; error_subcode?: number }
+}
+
+function redirectFacebookSettingsError(
+  request: NextRequest,
+  code: string,
+  detail?: string
+): NextResponse {
+  const u = new URL('/settings', request.url)
+  u.searchParams.set('error', code)
+  u.searchParams.set('integration', 'facebook')
+  if (detail) {
+    u.searchParams.set('detail', detail.slice(0, 400))
+  }
+  return NextResponse.redirect(u)
+}
+
 /**
  * GET /api/integrations/facebook/callback
  * Handles Facebook OAuth callback and stores access token
@@ -60,56 +80,60 @@ export async function GET(request: NextRequest) {
         ? stateData.redirectUri
         : fallbackRedirect
 
-    const appId = process.env.FACEBOOK_APP_ID
-    const appSecret = process.env.FACEBOOK_APP_SECRET
+    const appId = process.env.FACEBOOK_APP_ID?.trim()
+    const appSecret = process.env.FACEBOOK_APP_SECRET?.trim()
 
     if (!appId || !appSecret) {
-      return NextResponse.redirect(
-        new URL('/settings?error=facebook_not_configured&integration=facebook', request.url)
-      )
+      return redirectFacebookSettingsError(request, 'facebook_not_configured')
     }
 
-    // Exchange code for access token
-    const tokenResponse = await fetch(
-      `https://graph.facebook.com/v25.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`,
-      { method: 'GET' }
-    )
+    // POST keeps client_secret out of access logs and avoids broken GET URLs for long codes / special chars.
+    const tokenResponse = await fetch('https://graph.facebook.com/v25.0/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        redirect_uri: redirectUri,
+        code,
+      }).toString(),
+    })
 
-    const tokenParsed = await safeParseJsonResponse<{
-      access_token?: string
-      expires_in?: number
-      error?: { message?: string; type?: string; code?: number }
-    }>(tokenResponse)
+    const tokenParsed = await safeParseJsonResponse<FbOAuthErrorBody>(tokenResponse)
 
-    if (!tokenResponse.ok) {
-      const fbError = tokenParsed.ok ? tokenParsed.data?.error : null
-      console.error(
-        'Facebook token exchange HTTP error:',
-        tokenResponse.status,
-        fbError ?? (tokenParsed.ok ? tokenParsed.data : tokenParsed.error)
-      )
-      return NextResponse.redirect(
-        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
-      )
+    const metaErrMsg = (e: FbOAuthErrorBody['error']): string | undefined => {
+      if (!e) return undefined
+      if (typeof e === 'object' && e.message) return e.message
+      return String(e)
     }
+
     if (!tokenParsed.ok) {
       console.error('Facebook token exchange parse error:', tokenParsed.error)
-      return NextResponse.redirect(
-        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
-      )
+      return redirectFacebookSettingsError(request, 'token_exchange_failed', tokenParsed.error)
     }
 
     const tokenBody = tokenParsed.data
     if (tokenBody.error) {
-      console.error('Facebook token exchange API error:', tokenBody.error.message ?? tokenBody.error)
-      return NextResponse.redirect(
-        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
+      const msg = metaErrMsg(tokenBody.error)
+      console.error('Facebook token exchange API error:', tokenBody.error)
+      return redirectFacebookSettingsError(request, 'token_exchange_failed', msg)
+    }
+
+    if (!tokenResponse.ok) {
+      console.error(
+        'Facebook token exchange HTTP error:',
+        tokenResponse.status,
+        tokenBody.error ?? tokenBody
+      )
+      return redirectFacebookSettingsError(
+        request,
+        'token_exchange_failed',
+        metaErrMsg(tokenBody.error) ?? `HTTP ${tokenResponse.status}`
       )
     }
+
     if (!tokenBody.access_token) {
-      return NextResponse.redirect(
-        new URL('/settings?error=no_access_token&integration=facebook', request.url)
-      )
+      return redirectFacebookSettingsError(request, 'no_access_token')
     }
 
     const tokenData = tokenBody

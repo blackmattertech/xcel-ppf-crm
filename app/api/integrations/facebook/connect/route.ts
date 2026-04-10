@@ -19,11 +19,11 @@ export async function GET(request: NextRequest) {
     const redirectUri =
       searchParams.get('redirect_uri') || resolveFacebookOAuthRedirectUri(request)
 
-    // Facebook OAuth configuration
-    const appId = process.env.FACEBOOK_APP_ID
-    const appSecret = process.env.FACEBOOK_APP_SECRET
+    // Facebook OAuth configuration (trim — Vercel/env copy-paste often adds trailing newlines)
+    const appId = process.env.FACEBOOK_APP_ID?.trim()
+    const appSecret = process.env.FACEBOOK_APP_SECRET?.trim()
 
-    if (!appId?.trim() || !appSecret?.trim()) {
+    if (!appId || !appSecret) {
       return NextResponse.json(
         {
           error: 'Facebook integration is not configured',
