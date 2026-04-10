@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FileText, MessageCircle, BarChart2, CalendarClock, ChevronRight, Sparkles } from 'lucide-react'
+import { FileText, MessageCircle, BarChart2, CalendarClock, ChevronRight, Sparkles, Inbox } from 'lucide-react'
 
 const featureCards = [
   {
@@ -36,6 +36,14 @@ const featureCards = [
     iconWrap: 'from-sky-500/15 to-blue-600/10 text-sky-700 ring-sky-500/20',
     hoverBorder: 'hover:border-sky-300/50 hover:shadow-sky-500/10',
   },
+  {
+    href: '/marketing/chat',
+    title: 'Inbox',
+    description: 'Open WhatsApp-style inbox to view conversations, send templates, and share attachments.',
+    icon: Inbox,
+    iconWrap: 'from-amber-500/15 to-orange-600/10 text-amber-700 ring-amber-500/20',
+    hoverBorder: 'hover:border-amber-300/50 hover:shadow-amber-500/10',
+  },
 ] as const
 
 export default function MarketingWhatsAppPage() {
@@ -60,7 +68,7 @@ export default function MarketingWhatsAppPage() {
       </div>
 
       {/* Feature grid — primary navigation */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {featureCards.map(({ href, title, description, icon: Icon, iconWrap, hoverBorder }) => (
           <Link
             key={href}

@@ -3,27 +3,19 @@ import { requireAuth } from '@/backend/middleware/auth'
 import { uploadMediaBufferToMeta } from '@/backend/services/whatsapp.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { createServiceClient } from '@/lib/supabase/service'
+import {
+  normalizeMime,
+  resolveUploadMime,
+  getExtensionForSignedUrl,
+} from '@/app/marketing/_lib/whatsapp-upload-mime'
 
 /** Create in Supabase Dashboard → Storage → New bucket → name "template-media" → Public bucket. */
 const BUCKET_TEMPLATE_MEDIA = 'template-media'
-const MAX_FILE_SIZE = 16 * 1024 * 1024 // 16 MB (Meta limit for template media)
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/x-m4v']
-const ALLOWED_DOCUMENT_TYPES = ['application/pdf']
-const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, ...ALLOWED_DOCUMENT_TYPES]
+/** WhatsApp Cloud API document limit is 100 MB; keep same cap for inbox uploads. */
+const MAX_FILE_SIZE = 100 * 1024 * 1024
 
 function getExtension(mime: string, fileName?: string): string {
-  const ext = fileName?.match(/\.(jpe?g|png|gif|webp|mp4|m4v|pdf)$/i)?.[1]?.toLowerCase()
-  if (ext) return ext
-  const map: Record<string, string> = {
-    'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
-    'video/mp4': 'mp4', 'video/x-m4v': 'm4v', 'application/pdf': 'pdf',
-  }
-  return map[mime] ?? 'bin'
-}
-
-function normalizeMime(mime: string): string {
-  return (mime || '').split(';')[0].trim().toLowerCase()
+  return getExtensionForSignedUrl(mime, fileName)
 }
 
 function parseStoragePath(raw: string, userId: string): string | null {
@@ -77,13 +69,13 @@ export async function POST(request: NextRequest) {
       fileName?: string
     } | null
     const safePath = body?.storagePath ? parseStoragePath(body.storagePath, user.id) : null
-    mime = normalizeMime(body?.mimeType || '')
     fileName = (body?.fileName || '').trim() || undefined
-    if (!safePath || !mime || !ALLOWED_TYPES.includes(mime)) {
+    const rawMime = normalizeMime(body?.mimeType || '')
+    mime = resolveUploadMime(rawMime, fileName) ?? ''
+    if (!safePath || !mime) {
       return NextResponse.json(
         {
-          error: 'Invalid JSON payload. Expected { storagePath, mimeType, fileName? } with supported mime type.',
-          allowed: ALLOWED_TYPES,
+          error: 'Unsupported or unknown file type. Use a common office, image, video, or archive format, or set a correct fileName extension.',
         },
         { status: 400 }
       )
@@ -124,17 +116,18 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    mime = normalizeMime(file.type)
-    if (!mime || !ALLOWED_TYPES.includes(mime)) {
+    fileName = (file.name || '').trim() || undefined
+    const resolved = resolveUploadMime(normalizeMime(file.type), fileName)
+    if (!resolved) {
       return NextResponse.json(
         {
-          error: 'Unsupported file type. Use image (JPEG/PNG/GIF/WebP), video (MP4), or PDF.',
-          allowed: ALLOWED_TYPES,
+          error:
+            'Unsupported file type. Try office documents (PDF, Word, Excel…), images, or video (MP4). If the browser reports an unknown type, ensure the file has a standard extension.',
         },
         { status: 400 }
       )
     }
-    fileName = (file.name || '').trim() || undefined
+    mime = resolved
     try {
       buffer = await file.arrayBuffer()
     } catch {
@@ -147,7 +140,7 @@ export async function POST(request: NextRequest) {
 
   if (buffer.byteLength > MAX_FILE_SIZE) {
     return NextResponse.json(
-      { error: `File too large for WhatsApp template upload. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB.` },
+      { error: `File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024} MB (WhatsApp Cloud API limit for documents).` },
       { status: 400 }
     )
   }

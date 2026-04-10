@@ -243,9 +243,27 @@ export async function getLeadById(
       : `${LEAD_DETAIL_MINIMAL_SELECT},
     ${LEAD_DETAIL_NESTED_SELECT}`
 
-  const query = supabase.from('leads').select(select).eq('id', id)
+  let { data, error } = await supabase.from('leads').select(select).eq('id', id).single()
 
-  const { data, error } = await query.single()
+  // Some deployments may miss/lag relationship metadata in PostgREST schema cache
+  // (e.g. leads -> lead_notes). Fall back to minimal detail instead of failing hard.
+  const relationshipCacheIssue =
+    !!error &&
+    typeof error.message === 'string' &&
+    (
+      error.message.includes('schema cache') ||
+      error.message.includes('Could not find a relationship between')
+    )
+
+  if (relationshipCacheIssue && include === 'all') {
+    const fallback = await supabase
+      .from('leads')
+      .select(LEAD_DETAIL_MINIMAL_SELECT)
+      .eq('id', id)
+      .single()
+    data = fallback.data
+    error = fallback.error
+  }
 
   if (error) {
     if (error.code === 'PGRST116') {

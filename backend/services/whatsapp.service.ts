@@ -263,8 +263,10 @@ export function toMetaSendTo(digits: string): string {
 }
 
 /**
- * Mark a message as read. Use the message.id from an incoming messages webhook.
- * Good practice to call within 30 days of receipt; also marks earlier messages in the thread as read.
+ * Mark an **incoming** customer message as read on WhatsApp (uses `messages.id` from the messages webhook).
+ * Meta marks that message and earlier ones in the thread as read on the user's phone.
+ * Good practice within 30 days of receipt. Response is `{ success: true }` — this does not return delivery status of
+ * **outgoing** messages; those come from webhook `statuses` (sent/delivered/read).
  * @see https://developers.facebook.com/docs/whatsapp/cloud-api/guides/mark-messages-as-read
  */
 export async function markMessageAsRead(
@@ -299,6 +301,8 @@ export interface SendTextResult {
   error?: string
   errorCode?: number
 }
+
+export type SendMediaResult = SendTextResult
 
 /**
  * Send a single text message via WhatsApp Cloud API.
@@ -377,6 +381,67 @@ export async function sendWhatsAppText(
   return { success: true, messageId }
 }
 
+export async function sendWhatsAppMedia(
+  to: string,
+  options: {
+    mediaType: 'image' | 'video' | 'document'
+    mediaUrl: string
+    fileName?: string
+    caption?: string
+    /** WhatsApp message ID (wamid) — send as contextual reply to that message. */
+    contextMessageId?: string | null
+  },
+  config?: WhatsAppConfig | null
+): Promise<SendMediaResult> {
+  const cfg = config ?? getWhatsAppConfig()
+  if (!cfg) return { success: false, error: 'WhatsApp API not configured (missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN)' }
+
+  const digits = toE164Digits(to)
+  if (digits.length < 10) return { success: false, error: 'Invalid phone number' }
+  if (!options.mediaUrl?.trim()) return { success: false, error: 'mediaUrl is required' }
+
+  const type = options.mediaType
+  const mediaPayload: Record<string, unknown> = { link: options.mediaUrl.trim() }
+  if (type === 'document' && options.fileName?.trim()) mediaPayload.filename = options.fileName.trim()
+  // Image, video, and document all support caption in Cloud API; document caption was missing and showed as attachment-only on the customer phone.
+  const cap = options.caption?.trim()
+  if (cap && (type === 'image' || type === 'video' || type === 'document')) {
+    mediaPayload.caption = cap.slice(0, 1024)
+  }
+
+  const payload: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: toMetaSendTo(digits),
+    type,
+    [type]: mediaPayload,
+  }
+  if (options.contextMessageId?.trim()) {
+    payload.context = { message_id: options.contextMessageId.trim() }
+  }
+
+  const res = await fetch(`${META_GRAPH_BASE}/${cfg.phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cfg.accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => ({})) as {
+    messages?: Array<{ id: string }>
+    error?: { message?: string; code?: number }
+  }
+  if (!res.ok) {
+    return {
+      success: false,
+      error: data?.error?.message ?? `HTTP ${res.status}`,
+      errorCode: data?.error?.code,
+    }
+  }
+  return { success: true, messageId: data?.messages?.[0]?.id }
+}
+
 /**
  * Get the current throughput level for the business phone number (messages per second).
  * @see https://developers.facebook.com/docs/whatsapp/cloud-api/guides/throughput
@@ -448,7 +513,23 @@ const MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'video/mp4': 'mp4',
   'video/x-m4v': 'm4v',
+  'video/3gpp': '3gp',
   'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'application/zip': 'zip',
+  'application/x-zip-compressed': 'zip',
+  'audio/aac': 'aac',
+  'audio/mp4': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/amr': 'amr',
+  'audio/ogg': 'ogg',
 }
 
 /**
@@ -1144,7 +1225,7 @@ export async function sendTemplateMessage(
   } else if ((headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT') && headerParams.length > 0) {
     // Resumable Upload handle is only valid for template creation, not for sending. When sending we must use link (URL).
     // So: if value is a URL use it; else try to resolve handle/id to a temporary URL via Meta GET /{id}; else fail.
-    let value = headerParams[0].trim()
+    const value = headerParams[0].trim()
     let linkUrl: string | null = null
     if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('www.')) {
       linkUrl = value.startsWith('www.') ? 'https://' + value : value

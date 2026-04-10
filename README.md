@@ -31,6 +31,12 @@ npm install
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+INBOX_ATTACHMENTS_ENABLED=false
+INBOX_ASSIGNMENT_ENABLED=false
+INBOX_QUICK_REPLIES_ENABLED=false
+NEXT_PUBLIC_INBOX_ATTACHMENTS_ENABLED=false
+NEXT_PUBLIC_INBOX_ASSIGNMENT_ENABLED=false
+NEXT_PUBLIC_INBOX_QUICK_REPLIES_ENABLED=false
 ```
 
    **Optional – show customers from a second database:** To merge customer data from another Supabase project into the Customers section, add:

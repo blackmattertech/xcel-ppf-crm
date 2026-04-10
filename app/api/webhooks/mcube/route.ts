@@ -255,9 +255,17 @@ async function resolveLeadAndAgent(
   if (!leadId) {
     leadId = await findLeadIdByCustomerPhone(supabase, payload.callto ?? null)
   }
+  // Some MCube payloads use click-to-call / display number; occasionally useful if callto differs from CRM.
+  if (!leadId && payload.clicktocalldid?.trim() && payload.clicktocalldid.trim() !== payload.callto?.trim()) {
+    leadId = await findLeadIdByCustomerPhone(supabase, payload.clicktocalldid)
+  }
 
   if (!leadId) {
-    throw new Error('Could not resolve lead for MCUBE call')
+    throw new Error(
+      'Could not resolve lead for MCUBE call: no session/ref match and no lead row matches callto (check leads.phone vs customer number ' +
+        String(payload.callto ?? '') +
+        ')'
+    )
   }
 
   // Fallback: for outbound calls without explicit ref/session mapping,

@@ -75,17 +75,41 @@ export interface LibraryTemplate {
   buttons: Array<{ type: string; text: string; example?: string }>
 }
 
-export type MessageStatus = 'sent' | 'delivered' | 'read'
+export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed'
 
 export interface ChatMessage {
   id: string
   lead_id: string | null
   phone: string
+  conversation_key?: string
   direction: 'out' | 'in'
   body: string
+  message_type?: 'text' | 'image' | 'video' | 'document'
+  attachment_url?: string | null
+  attachment_mime_type?: string | null
+  attachment_file_name?: string | null
+  attachment_size_bytes?: number | null
+  thumbnail_url?: string | null
+  assigned_to?: string | null
+  is_read?: boolean
+  read_at?: string | null
   meta_message_id: string | null
+  /** Parent wamid when this message is a reply (incoming from webhook or outgoing saved from inbox). */
+  reply_to_meta_message_id?: string | null
+  /** Meta context.from — who sent the quoted message (incoming replies). */
+  reply_context_from?: string | null
   status: MessageStatus | null
   created_at: string
+}
+
+export interface ConversationSummary {
+  conversation_key: string
+  phone: string
+  lead_id: string | null
+  lead_name: string | null
+  assigned_to: string | null
+  unread_count: number
+  last_message: ChatMessage
 }
 
 export type MetaTemplateOption = {
