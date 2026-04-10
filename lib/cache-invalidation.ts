@@ -8,18 +8,25 @@
 import { invalidateCachePrefix, deleteCache, CACHE_KEYS } from './cache'
 
 /**
- * Invalidate all lead-related caches
- * Call after creating, updating, or deleting leads
+ * Invalidate all lead-related caches.
+ * Call after creating, updating, or deleting leads.
+ * Pass requirementChanged=true only when the lead's requirement field changed,
+ * so we don't wipe the expensive product_stats cache on every update.
  */
-export async function invalidateLeadCaches(leadId?: string): Promise<void> {
-  await Promise.all([
+export async function invalidateLeadCaches(leadId?: string, requirementChanged = false): Promise<void> {
+  const tasks: Promise<unknown>[] = [
     invalidateCachePrefix(CACHE_KEYS.LEADS_LIST),
     invalidateCachePrefix(CACHE_KEYS.ANALYTICS),
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
-    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
-  ])
+  ]
 
-  // If specific lead ID provided, invalidate that lead's cache
+  // Only rebuild product stats when the requirement actually changed — it's expensive
+  if (requirementChanged) {
+    tasks.push(deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS))
+  }
+
+  await Promise.all(tasks)
+
   if (leadId) {
     await deleteCache(`${CACHE_KEYS.LEAD}:${leadId}`)
   }

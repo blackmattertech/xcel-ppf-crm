@@ -47,11 +47,10 @@ export async function GET(request: NextRequest) {
         scheduledBefore: tomorrow.toISOString(),
       })
 
-      // Filter out overdue from upcoming
       const overdue = (overdueFollowUps || []) as FollowUp[]
-      const upcoming = ((upcomingFollowUps || []) as FollowUp[]).filter(
-        (upcoming) => !overdue.some((overdue) => overdue.id === upcoming.id)
-      )
+      // Use a Set for O(1) deduplication instead of O(N) .some() on every item
+      const overdueIds = new Set(overdue.map((f) => f.id))
+      const upcoming = ((upcomingFollowUps || []) as FollowUp[]).filter((f) => !overdueIds.has(f.id))
 
       return NextResponse.json(
         {

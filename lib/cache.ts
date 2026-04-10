@@ -43,10 +43,10 @@ export const CACHE_KEYS = {
  * Default TTL values (in seconds)
  */
 export const CACHE_TTL = {
-  SHORT: 30,      // 30 seconds - frequently changing data
-  MEDIUM: 60,     // 1 minute - moderately stable data
-  LONG: 120,      // 2 minutes - relatively stable data
-  VERY_LONG: 300, // 5 minutes - very stable data
+  SHORT: 60,       // 1 minute  - frequently changing data
+  MEDIUM: 180,     // 3 minutes - moderately stable data
+  LONG: 300,       // 5 minutes - relatively stable data
+  VERY_LONG: 600,  // 10 minutes - very stable data
 } as const
 
 /**

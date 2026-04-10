@@ -21,23 +21,24 @@ export async function GET(request: NextRequest) {
   const cookie = request.headers.get('cookie') ?? ''
   const origin = request.nextUrl.origin
 
-  const [configRes, templatesRes, analyticsRes, metaRes] = await Promise.all([
-    fetch(`${origin}/api/marketing/whatsapp/config`, { headers: { cookie } }),
-    fetch(`${origin}/api/marketing/whatsapp/templates`, { headers: { cookie } }),
-    fetch(
-      `${origin}/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-      { headers: { cookie } }
-    ),
-    fetch(
-      `${origin}/api/marketing/meta-ads-overview?date_range=${encodeURIComponent(dateRange)}`,
-      { headers: { cookie } }
-    ),
+  // Each internal fetch gets its own AbortController — a slow endpoint won't block the others
+  function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<Response> {
+    const ac = new AbortController()
+    const t = setTimeout(() => ac.abort(), timeoutMs)
+    return fetch(url, { headers: { cookie }, signal: ac.signal }).finally(() => clearTimeout(t))
+  }
+
+  const [configRes, templatesRes, analyticsRes, metaRes] = await Promise.allSettled([
+    fetchWithTimeout(`${origin}/api/marketing/whatsapp/config`),
+    fetchWithTimeout(`${origin}/api/marketing/whatsapp/templates`),
+    fetchWithTimeout(`${origin}/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+    fetchWithTimeout(`${origin}/api/marketing/meta-ads-overview?date_range=${encodeURIComponent(dateRange)}`),
   ])
 
-  const config = configRes.ok ? await configRes.json() : { configured: false }
-  const templatesData = templatesRes.ok ? await templatesRes.json() : { templates: [] }
-  const analytics = analyticsRes.ok ? await analyticsRes.json() : null
-  const meta = metaRes.ok ? await metaRes.json() : null
+  const config = configRes.status === 'fulfilled' && configRes.value.ok ? await configRes.value.json() : { configured: false }
+  const templatesData = templatesRes.status === 'fulfilled' && templatesRes.value.ok ? await templatesRes.value.json() : { templates: [] }
+  const analytics = analyticsRes.status === 'fulfilled' && analyticsRes.value.ok ? await analyticsRes.value.json() : null
+  const meta = metaRes.status === 'fulfilled' && metaRes.value.ok ? await metaRes.value.json() : null
 
   const payload = {
     config: { configured: !!config?.configured },

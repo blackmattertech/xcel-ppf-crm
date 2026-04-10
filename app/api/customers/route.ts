@@ -61,48 +61,53 @@ export async function GET(request: NextRequest) {
     if ('error' in authResult) return authResult.error
 
     const supabase = createServiceClient()
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      if (error.code === '42P01') return NextResponse.json({ customers: [] })
-      throw new Error(`Failed to fetch customers: ${error.message}`)
-    }
-    let primaryCustomers = (data || []) as any[]
-
-    // Optionally fetch from external database
     const extClient = createExternalServiceClient()
     const extTable = getExternalCustomersTable()
-    let externalRows: Record<string, unknown>[] = []
-    if (extClient) {
-      const { data: extData, error: extError } = await extClient
-        .from(extTable)
-        .select('*')
-        .order('created_at', { ascending: false })
-      if (!extError && Array.isArray(extData)) {
-        externalRows = extData as Record<string, unknown>[]
-      } else if (extError && extError.code !== '42P01') {
-        console.error('External customers fetch error:', extError.message)
-      }
+
+    // Fetch primary customers and external customers in parallel
+    const [primaryResult, externalResult] = await Promise.all([
+      supabase
+        .from('customers')
+        .select('id, lead_id, name, phone, email, customer_type, tags, created_at, updated_at')
+        .order('created_at', { ascending: false }),
+      extClient
+        ? extClient
+            .from(extTable)
+            .select('id, customer_name, customer_email, customer_mobile, customer_type, tags, created_at, updated_at, car_number, chassis_number, service_type, series, service_date, service_location, dealer_name, warranty_years, ppf_warranty_years, car_name, car_model, car_photo_url, chassis_photo_url, dealer_invoice_url')
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: null, error: null }),
+    ])
+
+    if (primaryResult.error) {
+      if (primaryResult.error.code === '42P01') return NextResponse.json({ customers: [] })
+      throw new Error(`Failed to fetch customers: ${primaryResult.error.message}`)
     }
 
+    const primaryCustomers = (primaryResult.data || []) as any[]
+
+    let externalRows: Record<string, unknown>[] = []
+    if (externalResult.data && !externalResult.error) {
+      externalRows = externalResult.data as Record<string, unknown>[]
+    } else if (externalResult.error && (externalResult.error as any).code !== '42P01') {
+      console.error('External customers fetch error:', (externalResult.error as any).message)
+    }
+
+    // Fetch revenue for primary customers only if there are any
     const primaryIds = primaryCustomers.map((c) => c.id)
-    let revenueMap = new Map<string, number>()
+    const revenueMap = new Map<string, number>()
     if (primaryIds.length > 0) {
       const { data: orderRows, error: ordersError } = await supabase
         .from('orders')
-        .select('customer_id, payment_status, lead:leads (payment_amount)')
+        .select('customer_id, payment_status, lead:leads(payment_amount)')
         .in('customer_id', primaryIds)
+        .eq('payment_status', 'fully_paid')
       if (!ordersError && Array.isArray(orderRows)) {
-        orderRows.forEach((row: any) => {
-          if (!row.customer_id) return
-          if (row.payment_status !== 'fully_paid') return
+        for (const row of orderRows as any[]) {
+          if (!row.customer_id) continue
           const amount = row.lead?.payment_amount ? Number(row.lead.payment_amount) : 0
-          if (!amount || Number.isNaN(amount)) return
+          if (!amount || Number.isNaN(amount)) continue
           revenueMap.set(row.customer_id, (revenueMap.get(row.customer_id) || 0) + amount)
-        })
+        }
       }
     }
 

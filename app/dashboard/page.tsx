@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -10,25 +11,29 @@ import { useAuthContext } from '@/components/AuthProvider'
 import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
 import KPICard from '@/components/dashboard/KPICard'
 import DashboardCard from '@/components/dashboard/DashboardCard'
-import ViewSwitcher, { viewOptions, type ViewMode } from '@/components/dashboard/ViewSwitcher'
-import LeadsBySourcePie from '@/components/dashboard/LeadsBySourcePie'
-import LeadsByStatusPie from '@/components/dashboard/LeadsByStatusPie'
-import LeadsBySourceTable from '@/components/dashboard/LeadsBySourceTable'
-import LeadsByStatusTable from '@/components/dashboard/LeadsByStatusTable'
-import LeadsOverTimeLine from '@/components/dashboard/LeadsOverTimeLine'
-import LeadsOverTimeTable from '@/components/dashboard/LeadsOverTimeTable'
-import RepPerformanceBar from '@/components/dashboard/RepPerformanceBar'
-import RepPerformanceTable from '@/components/dashboard/RepPerformanceTable'
-import Leaderboard from '@/components/dashboard/Leaderboard'
-import LeaderboardBar from '@/components/dashboard/LeaderboardBar'
-import LeaderboardPie from '@/components/dashboard/LeaderboardPie'
-import LeadsInterestedByProductBar from '@/components/dashboard/LeadsInterestedByProductBar'
-import LeadsInterestedByProductPie from '@/components/dashboard/LeadsInterestedByProductPie'
-import LeadsInterestedByProductTable from '@/components/dashboard/LeadsInterestedByProductTable'
-import LeadsOverTimePie from '@/components/dashboard/LeadsOverTimePie'
-import ProductsHeatMap from '@/components/dashboard/ProductsHeatMap'
-import RepPerformancePie from '@/components/dashboard/RepPerformancePie'
+import { viewOptions, type ViewMode } from '@/components/dashboard/ViewSwitcher'
 import { cachedFetch } from '@/lib/api-client'
+
+// Chart components are lazy-loaded — they pull in Recharts which is heavy
+const ChartSkeleton = () => <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
+
+const LeadsBySourcePie = dynamic(() => import('@/components/dashboard/LeadsBySourcePie'), { loading: ChartSkeleton, ssr: false })
+const LeadsByStatusPie = dynamic(() => import('@/components/dashboard/LeadsByStatusPie'), { loading: ChartSkeleton, ssr: false })
+const LeadsBySourceTable = dynamic(() => import('@/components/dashboard/LeadsBySourceTable'), { ssr: false })
+const LeadsByStatusTable = dynamic(() => import('@/components/dashboard/LeadsByStatusTable'), { ssr: false })
+const LeadsOverTimeLine = dynamic(() => import('@/components/dashboard/LeadsOverTimeLine'), { loading: ChartSkeleton, ssr: false })
+const LeadsOverTimeTable = dynamic(() => import('@/components/dashboard/LeadsOverTimeTable'), { ssr: false })
+const LeadsOverTimePie = dynamic(() => import('@/components/dashboard/LeadsOverTimePie'), { loading: ChartSkeleton, ssr: false })
+const RepPerformanceBar = dynamic(() => import('@/components/dashboard/RepPerformanceBar'), { loading: ChartSkeleton, ssr: false })
+const RepPerformancePie = dynamic(() => import('@/components/dashboard/RepPerformancePie'), { loading: ChartSkeleton, ssr: false })
+const RepPerformanceTable = dynamic(() => import('@/components/dashboard/RepPerformanceTable'), { ssr: false })
+const Leaderboard = dynamic(() => import('@/components/dashboard/Leaderboard'), { ssr: false })
+const LeaderboardBar = dynamic(() => import('@/components/dashboard/LeaderboardBar'), { loading: ChartSkeleton, ssr: false })
+const LeaderboardPie = dynamic(() => import('@/components/dashboard/LeaderboardPie'), { loading: ChartSkeleton, ssr: false })
+const LeadsInterestedByProductBar = dynamic(() => import('@/components/dashboard/LeadsInterestedByProductBar'), { loading: ChartSkeleton, ssr: false })
+const LeadsInterestedByProductPie = dynamic(() => import('@/components/dashboard/LeadsInterestedByProductPie'), { loading: ChartSkeleton, ssr: false })
+const LeadsInterestedByProductTable = dynamic(() => import('@/components/dashboard/LeadsInterestedByProductTable'), { ssr: false })
+const ProductsHeatMap = dynamic(() => import('@/components/dashboard/ProductsHeatMap'), { loading: ChartSkeleton, ssr: false })
 
 interface Analytics {
   leadsBySource: Record<string, number>

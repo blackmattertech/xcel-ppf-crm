@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     for (const id of lead_ids) {
       try {
         await deleteLead(id)
-        await invalidateLeadCaches(id)
+        await invalidateLeadCaches(id, true)
         results.success.push(id)
       } catch (err) {
         results.failed.push({

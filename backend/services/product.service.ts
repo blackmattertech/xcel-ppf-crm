@@ -98,66 +98,6 @@ function getMetaDataFieldValue(leadMetaData: any, ...fieldNames: string[]): stri
   return null
 }
 
-/**
- * Check if a product name matches a lead's requirement or meta_data
- * Handles variations like "Paint Protection Film (PPF)" matching "paint_protection_film"
- * Reads from meta_data top-level or from meta_data.field_data (Meta Lead Ads sync)
- */
-function productMatchesLead(productTitle: string, leadRequirement: string | null, leadMetaData: any): boolean {
-  const normalizedProduct = normalizeProductName(productTitle)
-  const productKeyWords = extractKeyWords(productTitle)
-  
-  // Check requirement field
-  if (leadRequirement) {
-    const normalizedRequirement = normalizeProductName(leadRequirement)
-    
-    // Direct normalized match
-    if (normalizedRequirement === normalizedProduct) {
-      return true
-    }
-    
-    // Substring match (one contains the other)
-    if (normalizedRequirement.includes(normalizedProduct) || normalizedProduct.includes(normalizedRequirement)) {
-      return true
-    }
-    
-    // Check if key words from product appear in requirement
-    const requirementKeyWords = extractKeyWords(leadRequirement)
-    const matchingWords = productKeyWords.filter(word => 
-      requirementKeyWords.some(rw => rw.includes(word) || word.includes(rw))
-    )
-    if (matchingWords.length >= Math.min(2, productKeyWords.length)) {
-      return true
-    }
-  }
-  
-  // Check meta_data for product/service (direct keys + field_data array from Meta Lead Ads)
-  const interestedProduct = getInterestedProductFromMeta(leadMetaData)
-  if (interestedProduct) {
-    const normalizedValue = normalizeProductName(interestedProduct)
-
-    // Direct normalized match
-    if (normalizedValue === normalizedProduct) {
-      return true
-    }
-
-    // Substring match
-    if (normalizedValue.includes(normalizedProduct) || normalizedProduct.includes(normalizedValue)) {
-      return true
-    }
-
-    // Check if key words from product appear in the value
-    const valueKeyWords = extractKeyWords(interestedProduct)
-    const matchingWords = productKeyWords.filter(word =>
-      valueKeyWords.some(vw => vw.includes(word) || word.includes(vw))
-    )
-    if (matchingWords.length >= Math.min(2, productKeyWords.length)) {
-      return true
-    }
-  }
-  
-  return false
-}
 
 export async function getAllProducts(): Promise<Product[]> {
   const supabase = createServiceClient()
@@ -193,74 +133,110 @@ export async function getProductById(id: string): Promise<Product | null> {
   return data
 }
 
+/** Pre-computed per-lead data to avoid re-computing inside tight loops. */
+interface NormalizedLead {
+  id: string
+  normReq: string | null
+  reqKeyWords: string[] | null
+  interestedProduct: string | null
+  normInterested: string | null
+  interestedKeyWords: string[] | null
+}
+
+function preNormalizeLead(lead: { id: string; requirement: string | null; meta_data: any }): NormalizedLead {
+  const interestedProduct = getInterestedProductFromMeta(lead.meta_data) ?? null
+  return {
+    id: lead.id,
+    normReq: lead.requirement ? normalizeProductName(lead.requirement) : null,
+    reqKeyWords: lead.requirement ? extractKeyWords(lead.requirement) : null,
+    interestedProduct,
+    normInterested: interestedProduct ? normalizeProductName(interestedProduct) : null,
+    interestedKeyWords: interestedProduct ? extractKeyWords(interestedProduct) : null,
+  }
+}
+
+/** Fast match using pre-normalized lead data — avoids repeated string ops inside loops. */
+function productMatchesNormalizedLead(
+  normProduct: string,
+  productKeyWords: string[],
+  lead: NormalizedLead
+): boolean {
+  if (lead.normReq) {
+    if (lead.normReq === normProduct) return true
+    if (lead.normReq.includes(normProduct) || normProduct.includes(lead.normReq)) return true
+    if (lead.reqKeyWords) {
+      const matching = productKeyWords.filter(word =>
+        lead.reqKeyWords!.some(rw => rw.includes(word) || word.includes(rw))
+      )
+      if (matching.length >= Math.min(2, productKeyWords.length)) return true
+    }
+  }
+  if (lead.normInterested) {
+    if (lead.normInterested === normProduct) return true
+    if (lead.normInterested.includes(normProduct) || normProduct.includes(lead.normInterested)) return true
+    if (lead.interestedKeyWords) {
+      const matching = productKeyWords.filter(word =>
+        lead.interestedKeyWords!.some(vw => vw.includes(word) || word.includes(vw))
+      )
+      if (matching.length >= Math.min(2, productKeyWords.length)) return true
+    }
+  }
+  return false
+}
+
 export async function getProductsWithStats(): Promise<ProductWithStats[]> {
   const supabase = createServiceClient()
-  
-  // Get all products
-  const products = await getAllProducts()
-  
-  // Get all leads with requirement and meta_data
-  const { data: leads, error: leadsError } = await supabase
-    .from('leads')
-    .select('id, requirement, meta_data')
-  
-  if (leadsError) {
-    throw new Error(`Failed to fetch leads: ${leadsError.message}`)
+
+  // Fetch products, all leads, and orders in parallel
+  const [products, leadsResult, ordersResult] = await Promise.all([
+    getAllProducts(),
+    supabase.from('leads').select('id, requirement, meta_data'),
+    supabase.from('orders').select('id, lead_id, product_id').not('lead_id', 'is', null),
+  ])
+
+  if (leadsResult.error) throw new Error(`Failed to fetch leads: ${leadsResult.error.message}`)
+  if (ordersResult.error) throw new Error(`Failed to fetch orders: ${ordersResult.error.message}`)
+
+  const typedOrders = (ordersResult.data || []) as { id: string; lead_id: string | null; product_id: string | null }[]
+
+  // Fetch order leads only if there are orders (avoid unnecessary query)
+  const leadIds = typedOrders.map(o => o.lead_id).filter(Boolean) as string[]
+  const orderLeadsResult = leadIds.length > 0
+    ? await supabase.from('leads').select('id, requirement, meta_data').in('id', leadIds)
+    : { data: [] as { id: string; requirement: string | null; meta_data: any }[], error: null }
+
+  if (orderLeadsResult.error) throw new Error(`Failed to fetch order leads: ${orderLeadsResult.error.message}`)
+
+  // Pre-normalize all leads ONCE — avoids O(products × leads) repeated string operations
+  const normalizedLeads = (leadsResult.data || []).map(preNormalizeLead)
+  const normalizedOrderLeads = (orderLeadsResult.data || []).map(preNormalizeLead)
+
+  // Build product_id → order count map for O(1) lookup
+  const productIdOrderCount = new Map<string, number>()
+  for (const o of typedOrders) {
+    if (o.product_id) productIdOrderCount.set(o.product_id, (productIdOrderCount.get(o.product_id) ?? 0) + 1)
   }
-  
-  // Get all orders with lead information
-  const { data: orders, error: ordersError } = await supabase
-    .from('orders')
-    .select('id, lead_id, product_id')
-    .not('lead_id', 'is', null)
-  
-  if (ordersError) {
-    throw new Error(`Failed to fetch orders: ${ordersError.message}`)
-  }
-  
-  // Get leads for orders
-  const typedOrders = (orders || []) as { id: string; lead_id: string | null; product_id: string | null }[]
-  const leadIds = typedOrders.map(o => o.lead_id).filter(Boolean) as string[] || []
-  const { data: orderLeads, error: orderLeadsError } = leadIds.length > 0
-    ? await supabase
-        .from('leads')
-        .select('id, requirement, meta_data')
-        .in('id', leadIds)
-    : { data: [], error: null }
-  
-  if (orderLeadsError) {
-    throw new Error(`Failed to fetch order leads: ${orderLeadsError.message}`)
-  }
-  
-  // Calculate stats for each product
-  const typedLeads = (leads || []) as { id: string; requirement: string | null; meta_data: any }[]
-  const typedOrderLeads = (orderLeads || []) as { id: string; requirement: string | null; meta_data: any }[]
 
   const productsWithStats: ProductWithStats[] = products.map(product => {
-    // Count leads interested
-    const leadsInterested = typedLeads.filter(lead => 
-      productMatchesLead(product.title, lead.requirement, lead.meta_data)
+    const normProduct = normalizeProductName(product.title)
+    const productKeyWords = extractKeyWords(product.title)
+
+    const leadsInterested = normalizedLeads.filter(lead =>
+      productMatchesNormalizedLead(normProduct, productKeyWords, lead)
     ).length
-    
-    // Count customers who bought (through orders)
-    // First check if order has product_id matching
-    const ordersWithProductId = typedOrders.filter(o => o.product_id === product.id).length
-    
-    // Then check if order's lead matches product by name
-    const ordersWithMatchingLead = typedOrderLeads.filter(lead => 
-      productMatchesLead(product.title, lead.requirement, lead.meta_data)
+
+    const ordersWithProductId = productIdOrderCount.get(product.id) ?? 0
+    const ordersWithMatchingLead = normalizedOrderLeads.filter(lead =>
+      productMatchesNormalizedLead(normProduct, productKeyWords, lead)
     ).length
-    
-    // Total customers bought = orders with product_id OR orders with matching lead
-    const customersBought = Math.max(ordersWithProductId, ordersWithMatchingLead)
-    
+
     return {
       ...product,
       leads_interested: leadsInterested,
-      customers_bought: customersBought,
+      customers_bought: Math.max(ordersWithProductId, ordersWithMatchingLead),
     }
   })
-  
+
   return productsWithStats
 }
 

@@ -114,8 +114,8 @@ export async function PUT(
 
     const lead = await updateLead(id, updates as any)
 
-    // Invalidate related caches
-    await invalidateLeadCaches(id)
+    // Only wipe the expensive product_stats cache when requirement changed
+    await invalidateLeadCaches(id, 'requirement' in updates)
 
     return NextResponse.json({ lead })
   } catch (error) {
@@ -159,9 +159,9 @@ export async function DELETE(
     }
 
     await deleteLead(id)
-    
-    // Invalidate related caches
-    await invalidateLeadCaches(id)
+
+    // Deleted lead always affects product stats
+    await invalidateLeadCaches(id, true)
 
     return NextResponse.json({ message: 'Lead deleted successfully' })
   } catch (error) {
