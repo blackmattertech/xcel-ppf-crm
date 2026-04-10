@@ -184,14 +184,23 @@ export async function GET(request: NextRequest) {
     // Store or update Facebook Business settings
     const supabase = createServiceClient()
 
-    // Check if connection already exists
-    const { data: existingData } = await supabase
+    // Latest active row only (avoid .maybeSingle() when duplicates exist — it errors and led to extra inserts).
+    const { data: existingRows, error: existingLookupError } = await supabase
       .from('facebook_business_settings')
       .select('id')
       .eq('created_by', user.id)
       .eq('is_active', true)
-      .maybeSingle()
-    const existing = existingData as { id: string } | null
+      .order('updated_at', { ascending: false })
+      .limit(1)
+
+    if (existingLookupError) {
+      console.error('Error looking up Facebook settings:', existingLookupError)
+      return NextResponse.redirect(
+        new URL('/settings?error=save_failed&integration=facebook', request.url)
+      )
+    }
+
+    const existing = (existingRows?.[0] ?? null) as { id: string } | null
 
     const settingsData = {
       access_token: accessToken,
@@ -208,6 +217,8 @@ export async function GET(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
+    let savedId: string
+
     if (existing) {
       // Update existing connection (Supabase infers 'never' for untyped table)
       const { error: updateError } = await supabase
@@ -222,18 +233,34 @@ export async function GET(request: NextRequest) {
           new URL('/settings?error=update_failed&integration=facebook', request.url)
         )
       }
+      savedId = existing.id
     } else {
-      // Create new connection
-      const { error: insertError } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from('facebook_business_settings')
         .insert(settingsData as any)
+        .select('id')
+        .single()
 
-      if (insertError) {
+      if (insertError || !inserted) {
         console.error('Error saving Facebook settings:', insertError)
         return NextResponse.redirect(
           new URL('/settings?error=save_failed&integration=facebook', request.url)
         )
       }
+      savedId = (inserted as { id: string }).id
+    }
+
+    // Deactivate older duplicate rows so GET and future OAuth runs stay consistent
+    const { error: dedupeError } = await supabase
+      .from('facebook_business_settings')
+      // @ts-expect-error - facebook_business_settings Update type not inferred correctly
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('created_by', user.id)
+      .neq('id', savedId)
+      .eq('is_active', true)
+
+    if (dedupeError) {
+      console.error('Error deactivating duplicate Facebook settings:', dedupeError)
     }
 
     // Redirect to settings page with success message

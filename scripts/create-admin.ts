@@ -120,7 +120,9 @@ async function createAdmin() {
     console.log(`\n📋 Login credentials:`)
     console.log(`   Email: ${email}`)
     console.log(`   Password: ${password}`)
-    console.log(`\n🔗 Login at: http://localhost:3000/login`)
+    const loginBase =
+      process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '') || 'http://localhost:3000'
+    console.log(`\n🔗 Login at: ${loginBase}/login`)
   } catch (error) {
     console.error('❌ Error:', error instanceof Error ? error.message : error)
     process.exit(1)

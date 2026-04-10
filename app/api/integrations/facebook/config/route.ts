@@ -30,14 +30,17 @@ export async function GET(request: NextRequest) {
     const { user } = authResult
     const supabase = createServiceClient()
 
-    const { data, error } = await supabase
+    // Prefer latest row only. .maybeSingle() errors when multiple active rows exist (duplicate connects),
+    // which made the API return config: null after refresh even though data was saved.
+    const { data: rows, error } = await supabase
       .from('facebook_business_settings')
       .select('id, page_id, page_name, ad_account_id, ad_account_name, business_id, business_name, expires_at, is_active, created_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
-      .maybeSingle()
+      .order('updated_at', { ascending: false })
+      .limit(1)
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
       console.error('Error fetching Facebook settings:', error)
       return NextResponse.json(
         { error: 'Failed to load Facebook configuration.' },
@@ -45,6 +48,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const data = rows?.[0] ?? null
     if (!data) {
       return NextResponse.json({ config: null })
     }

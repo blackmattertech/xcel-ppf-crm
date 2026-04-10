@@ -1,5 +1,5 @@
 # Pull Meta Lead Ads into the CRM every 6 hours (UTC).
-# Repo → Settings → Secrets: APP_BASE_URL and CRON_SECRET (match production CRON_SECRET).
+# Repo → Settings → Secrets: APP_BASE_URL (e.g. https://crm.xcelppf.com) and CRON_SECRET (match production).
 
 name: Meta leads sync
 

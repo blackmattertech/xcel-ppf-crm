@@ -43,14 +43,15 @@ export async function GET(request: NextRequest) {
     const supabase = createServiceClient()
 
     // Get active Facebook Business connection
-    const { data, error: settingsError } = await supabase
+    const { data: rows, error: settingsError } = await supabase
       .from('facebook_business_settings')
       .select('id, access_token, ad_account_id, expires_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
-      .maybeSingle()
+      .order('updated_at', { ascending: false })
+      .limit(1)
 
-    const fbSettings = data as FbSettings | null
+    const fbSettings = (rows?.[0] ?? null) as FbSettings | null
     if (settingsError || !fbSettings) {
       return NextResponse.json(
         { error: 'Facebook Business account not connected. Please connect your account in Settings.' },

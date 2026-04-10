@@ -42,13 +42,15 @@ export interface MetaLeadNode {
  */
 export async function getFacebookLeadsSettings(userId: string): Promise<FacebookLeadsSettings | null> {
   const supabase = createServiceClient()
-  const { data, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('facebook_business_settings')
     .select('page_id, page_access_token, access_token, expires_at')
     .eq('created_by', userId)
     .eq('is_active', true)
-    .maybeSingle()
+    .order('updated_at', { ascending: false })
+    .limit(1)
 
+  const data = rows?.[0] ?? null
   if (error || !data) return null
 
   const row = data as {

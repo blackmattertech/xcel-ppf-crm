@@ -78,13 +78,18 @@ export async function POST(request: NextRequest) {
     const { user } = authResult
     const supabase = createServiceClient()
 
-    const { data: fbData, error: settingsError } = await supabase
+    const { data: fbRows, error: settingsError } = await supabase
       .from('facebook_business_settings')
       .select('access_token, page_id, expires_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
-      .maybeSingle()
-    const fbSettings = fbData as { access_token: string; page_id: string | null; expires_at: string | null } | null
+      .order('updated_at', { ascending: false })
+      .limit(1)
+    const fbSettings = (fbRows?.[0] ?? null) as {
+      access_token: string
+      page_id: string | null
+      expires_at: string | null
+    } | null
 
     if (settingsError || !fbSettings) {
       return NextResponse.json(

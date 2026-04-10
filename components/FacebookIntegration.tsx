@@ -38,7 +38,7 @@ export default function FacebookIntegration() {
   async function fetchConfig() {
     try {
       setLoading(true)
-      const response = await cachedFetch('/api/integrations/facebook/config')
+      const response = await cachedFetch('/api/integrations/facebook/config', undefined, 0)
       if (response.ok) {
         const data = await response.json()
         setConfig(data.config)

@@ -1,4 +1,5 @@
 import admin from 'firebase-admin'
+import { getPublicSiteUrl } from '@/lib/public-site-url'
 import { getPushTokensByUserId } from './push-token.service'
 
 let messaging: admin.messaging.Messaging | null = null
@@ -37,13 +38,9 @@ export type PushPayload = {
 
 const isDev = process.env.NODE_ENV === 'development'
 
-/** Base URL of the app (e.g. https://yourapp.com). Used for web push click action. */
+/** Base URL of the app (e.g. https://crm.xcelppf.com). Used for web push click action. */
 function getAppBaseUrl(): string {
-  const url =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
-  if (url) return url.replace(/\/$/, '')
-  return ''
+  return getPublicSiteUrl()
 }
 
 /**

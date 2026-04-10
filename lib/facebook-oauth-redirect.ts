@@ -1,15 +1,16 @@
 import type { NextRequest } from 'next/server'
+import { getPublicSiteUrl } from '@/lib/public-site-url'
 
 /**
  * OAuth redirect_uri must match exactly across: Meta app settings, /connect authorize URL, and /callback token exchange.
- * Use FACEBOOK_REDIRECT_URI (full callback URL) or NEXT_PUBLIC_APP_URL when request.nextUrl.origin is wrong behind proxies.
+ * Prefer FACEBOOK_REDIRECT_URI (full callback URL), then NEXT_PUBLIC_APP_URL / NEXT_PUBLIC_SITE_URL, then request origin.
  */
 export function resolveFacebookOAuthRedirectUri(request: NextRequest): string {
   const explicit = process.env.FACEBOOK_REDIRECT_URI?.trim()
   if (explicit) {
     return explicit.replace(/\/$/, '')
   }
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '')
+  const appUrl = getPublicSiteUrl()
   if (appUrl) {
     return `${appUrl}/api/integrations/facebook/callback`
   }

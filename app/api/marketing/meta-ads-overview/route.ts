@@ -86,14 +86,15 @@ export async function GET(request: NextRequest) {
     const supabase = createServiceClient()
 
     // Get Facebook Business connection (need page_id for leads, ad_account_id for campaigns)
-    const { data: fbData, error: settingsError } = await supabase
+    const { data: fbRows, error: settingsError } = await supabase
       .from('facebook_business_settings')
       .select('id, access_token, ad_account_id, page_id, page_access_token, expires_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
-      .maybeSingle()
+      .order('updated_at', { ascending: false })
+      .limit(1)
 
-    const fbSettings = fbData as FbSettings | null
+    const fbSettings = (fbRows?.[0] ?? null) as FbSettings | null
 
     if (settingsError || !fbSettings) {
       return NextResponse.json({

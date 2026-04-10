@@ -1,6 +1,6 @@
 # Runs automatically on the DEFAULT branch only (merge this file to main/master).
 # Schedule uses UTC. GitHub does not support cron faster than every 5 minutes.
-# Repo → Settings → Secrets → add APP_BASE_URL and CRON_SECRET (same as production CRON_SECRET).
+# Repo → Settings → Secrets → APP_BASE_URL (e.g. https://crm.xcelppf.com) and CRON_SECRET (production).
 # If the workflow never runs: Actions enabled? Default branch? Not a fork? Secrets set?
 
 name: WhatsApp Scheduled Processor

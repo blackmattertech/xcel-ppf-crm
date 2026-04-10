@@ -15,13 +15,15 @@ export async function GET(request: NextRequest) {
     const { user } = authResult
     const supabase = createServiceClient()
 
-    const { data, error } = await supabase
+    const { data: rows, error } = await supabase
       .from('facebook_business_settings')
       .select('access_token, expires_at')
       .eq('created_by', user.id)
       .eq('is_active', true)
-      .maybeSingle()
+      .order('updated_at', { ascending: false })
+      .limit(1)
 
+    const data = rows?.[0] ?? null
     if (error || !data) {
       return NextResponse.json(
         { error: 'Facebook Business account not connected.' },

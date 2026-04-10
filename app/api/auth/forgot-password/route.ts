@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { createClient } from '@supabase/supabase-js'
+import { getPublicSiteUrl } from '@/lib/public-site-url'
 import { z } from 'zod'
 
 const forgotPasswordSchema = z.object({
@@ -53,9 +54,15 @@ export async function POST(request: NextRequest) {
 
     // Use Supabase client with anon key to send password reset email
     // resetPasswordForEmail requires the anon key, not the service key
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 
-                   process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '') || 
-                   'https://xcel-ppf-crm-delta.vercel.app'
+    const siteUrl = getPublicSiteUrl()
+    if (!siteUrl) {
+      console.error(
+        '[auth] Password reset: set NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_SITE_URL to your live origin (e.g. https://crm.xcelppf.com)'
+      )
+      return NextResponse.json({
+        message: 'If an account with that email exists, you will receive a password reset link.',
+      })
+    }
     const redirectTo = `${siteUrl}/reset-password`
     
     // Create a client with anon key to use resetPasswordForEmail
