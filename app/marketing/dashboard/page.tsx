@@ -188,6 +188,11 @@ export default function MarketingDashboardPage() {
     }))
   }, [analytics])
 
+  const metaDisconnectedMessage =
+    metaAdsOverview == null
+      ? 'Meta Ads data did not load in time or the server returned an error. Refresh the page. If you already connected Facebook under Settings → Integrations, wait a few seconds and try again.'
+      : (metaAdsOverview.error ?? 'Connect your Facebook Business account in Settings → Integrations')
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -298,7 +303,7 @@ export default function MarketingDashboardPage() {
           {!metaAdsOverview?.connected ? (
             <div className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/80 p-8 text-center">
               <p className="text-base font-medium text-amber-900">
-                {metaAdsOverview?.error || 'Connect your Facebook Business account in Settings → Integrations'}
+                {metaDisconnectedMessage}
               </p>
               <p className="mt-2 text-sm text-amber-700">
                 All data is fetched directly from Meta: spend, impressions, reach, leads, CPM, CTR, platform breakdown, and more.

@@ -124,9 +124,14 @@ export default function OverviewPage() {
       cachedFetch(`/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`).then((r) =>
         r.ok ? r.json() : null
       ),
-      cachedFetch(`/api/marketing/meta-ads-overview?date_range=${encodeURIComponent(metaDateRange)}`).then((r) =>
-        r.ok ? r.json() : null
-      ),
+      cachedFetch(`/api/marketing/meta-ads-overview?date_range=${encodeURIComponent(metaDateRange)}`).then(async (r) => {
+        try {
+          const body = await r.json()
+          return body && typeof body === 'object' ? body : null
+        } catch {
+          return null
+        }
+      }),
     ])
       .then(([config, data, analyticsData, metaData]) => {
         setApiConfigured(!!config?.configured)
@@ -185,6 +190,11 @@ export default function OverviewPage() {
       count: d.count,
     }))
   }, [analytics])
+
+  const metaDisconnectedMessage =
+    metaAdsOverview == null
+      ? 'Meta Ads data did not load in time or the server returned an error. Refresh the page. If you already connected Facebook under Settings → Integrations, wait a few seconds and try again.'
+      : (metaAdsOverview.error ?? 'Connect your Facebook Business account in Settings → Integrations')
 
   if (loading) {
     return (
@@ -297,7 +307,7 @@ export default function OverviewPage() {
           {!metaAdsOverview?.connected ? (
             <div className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/80 p-8 text-center">
               <p className="text-base font-medium text-amber-900">
-                {metaAdsOverview?.error || 'Connect your Facebook Business account in Settings → Integrations'}
+                {metaDisconnectedMessage}
               </p>
               <p className="mt-2 text-sm text-amber-700">
                 All data is fetched directly from Meta: spend, impressions, reach, leads, CPM, CTR, platform breakdown, and more.

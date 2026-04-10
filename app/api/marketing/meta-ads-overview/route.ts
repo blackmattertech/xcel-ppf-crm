@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
+
+export const maxDuration = 60
 import { createServiceClient } from '@/lib/supabase/service'
 import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
 import {

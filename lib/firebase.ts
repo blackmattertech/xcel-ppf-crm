@@ -26,6 +26,15 @@ export function isFirebaseConfigured(): boolean {
   )
 }
 
+/** HTTPS or localhost only — required for FCM; stricter than isSecureContext alone in some Firefox/PWA cases. */
+export function isPushSecureContext(): boolean {
+  if (typeof window === 'undefined') return false
+  if (!window.isSecureContext) return false
+  const { protocol, hostname } = window.location
+  if (protocol === 'https:') return true
+  return hostname === 'localhost' || hostname === '127.0.0.1'
+}
+
 let app: FirebaseApp | null = null
 let messaging: Messaging | null = null
 
@@ -48,7 +57,7 @@ export function getFirebaseApp(): FirebaseApp | null {
  */
 export function isFirebaseMessagingSupported(): boolean {
   if (typeof window === 'undefined') return false
-  if (!window.isSecureContext) return false
+  if (!isPushSecureContext()) return false
   if (!('serviceWorker' in navigator)) return false
   if (!('PushManager' in window)) return false
   try {
@@ -70,8 +79,8 @@ export function getPushUnavailableReason(): string | null {
   if (!isFirebaseConfigured()) {
     return 'Push notifications are not configured. Add Firebase env vars (NEXT_PUBLIC_FIREBASE_* and NEXT_PUBLIC_FIREBASE_VAPID_KEY) to .env.local. See FIREBASE_PUSH_SETUP.md.'
   }
-  if (!window.isSecureContext) {
-    return 'Notifications require a secure connection (HTTPS). Open this app via https:// or localhost.'
+  if (!isPushSecureContext()) {
+    return 'Notifications require HTTPS (or localhost). Open the CRM at https://… — not http:// on a LAN IP.'
   }
   if (!('Notification' in window)) return 'This browser does not support notifications.'
   if (!('serviceWorker' in navigator)) return 'This browser or context does not support service workers (needed for push).'
@@ -106,6 +115,8 @@ const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ?? ''
  * Get FCM token when permission is already granted. Does NOT call requestPermission().
  * Use this after the user has already allowed notifications (e.g. from a click handler that called requestPermission() first).
  */
+let fcmGetTokenWarned = false
+
 export async function getFCMTokenWhenGranted(): Promise<string | null> {
   if (typeof window === 'undefined') return null
   if (!vapidKey || !isFirebaseConfigured()) return null
@@ -122,13 +133,13 @@ export async function getFCMTokenWhenGranted(): Promise<string | null> {
     })
     return token
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes('insecure') || (err instanceof DOMException && err.name === 'SecurityError')) {
-      console.error(
-        'FCM getToken failed: Not in a secure context. Use https:// or open the app at http://localhost (not http://192.168.x.x or other HTTP URLs).'
+    // Log the real failure once (often SW / browser policy, not "wrong URL" when already on https).
+    if (!fcmGetTokenWarned) {
+      fcmGetTokenWarned = true
+      console.warn(
+        '[Push] FCM getToken failed — push may be unavailable in this browser/profile. Details:',
+        err
       )
-    } else {
-      console.error('FCM getToken error:', err)
     }
     return null
   }
