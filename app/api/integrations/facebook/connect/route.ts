@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
-import { createServiceClient } from '@/lib/supabase/service'
+import { resolveFacebookOAuthRedirectUri } from '@/lib/facebook-oauth-redirect'
 
 /**
  * GET /api/integrations/facebook/connect
@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
 
     const { user } = authResult
     const searchParams = request.nextUrl.searchParams
-    const redirectUri = searchParams.get('redirect_uri') || `${request.nextUrl.origin}/api/integrations/facebook/callback`
+    const redirectUri =
+      searchParams.get('redirect_uri') || resolveFacebookOAuthRedirectUri(request)
 
     // Facebook OAuth configuration
     const appId = process.env.FACEBOOK_APP_ID

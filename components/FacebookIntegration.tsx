@@ -59,7 +59,8 @@ export default function FacebookIntegration() {
       setError(null)
 
       // Get auth URL
-      const response = await cachedFetch('/api/integrations/facebook/connect')
+      // Never cache: state embeds the current user and redirect_uri; a cached URL breaks OAuth.
+      const response = await cachedFetch('/api/integrations/facebook/connect', undefined, 0)
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({})) as { error?: string; detail?: string }
         const msg = errorData.detail ? `${errorData.error}: ${errorData.detail}` : (errorData.error || 'Failed to initiate connection')

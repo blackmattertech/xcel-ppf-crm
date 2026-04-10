@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import { safeParseJsonResponse } from '@/shared/utils/safe-parse-json'
+import {
+  isAllowedFacebookCallbackRedirect,
+  resolveFacebookOAuthRedirectUri,
+} from '@/lib/facebook-oauth-redirect'
 
 /**
  * GET /api/integrations/facebook/callback
@@ -34,8 +38,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Decode state to get userId and redirectUri
-    let stateData: { userId: string; redirectUri: string }
+    // Decode state to get userId and redirectUri (must match authorize URL byte-for-byte)
+    let stateData: { userId: string; redirectUri?: string }
     try {
       stateData = JSON.parse(Buffer.from(state, 'base64').toString())
     } catch {
@@ -44,9 +48,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    if (!stateData.userId || stateData.userId !== user.id) {
+      return NextResponse.redirect(
+        new URL('/settings?error=invalid_state&integration=facebook', request.url)
+      )
+    }
+
+    const fallbackRedirect = resolveFacebookOAuthRedirectUri(request)
+    const redirectUri =
+      stateData.redirectUri && isAllowedFacebookCallbackRedirect(stateData.redirectUri)
+        ? stateData.redirectUri
+        : fallbackRedirect
+
     const appId = process.env.FACEBOOK_APP_ID
     const appSecret = process.env.FACEBOOK_APP_SECRET
-    const redirectUri = `${request.nextUrl.origin}/api/integrations/facebook/callback`
 
     if (!appId || !appSecret) {
       return NextResponse.redirect(
@@ -63,19 +78,41 @@ export async function GET(request: NextRequest) {
     const tokenParsed = await safeParseJsonResponse<{
       access_token?: string
       expires_in?: number
+      error?: { message?: string; type?: string; code?: number }
     }>(tokenResponse)
+
     if (!tokenResponse.ok) {
-      console.error('Facebook token exchange error:', tokenParsed.ok ? tokenParsed.data : tokenParsed.error)
+      const fbError = tokenParsed.ok ? tokenParsed.data?.error : null
+      console.error(
+        'Facebook token exchange HTTP error:',
+        tokenResponse.status,
+        fbError ?? (tokenParsed.ok ? tokenParsed.data : tokenParsed.error)
+      )
       return NextResponse.redirect(
         new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
       )
     }
-    if (!tokenParsed.ok || !tokenParsed.data?.access_token) {
+    if (!tokenParsed.ok) {
+      console.error('Facebook token exchange parse error:', tokenParsed.error)
+      return NextResponse.redirect(
+        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
+      )
+    }
+
+    const tokenBody = tokenParsed.data
+    if (tokenBody.error) {
+      console.error('Facebook token exchange API error:', tokenBody.error.message ?? tokenBody.error)
+      return NextResponse.redirect(
+        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
+      )
+    }
+    if (!tokenBody.access_token) {
       return NextResponse.redirect(
         new URL('/settings?error=no_access_token&integration=facebook', request.url)
       )
     }
-    const tokenData = tokenParsed.data
+
+    const tokenData = tokenBody
     const accessToken = tokenData.access_token!
 
     // Get token expiration

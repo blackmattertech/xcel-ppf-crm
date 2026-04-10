@@ -51,11 +51,11 @@ function SettingsContent() {
         callback_failed: 'Failed to process Facebook callback. Please try again.',
         facebook_not_configured: 'Facebook integration is not configured. Please contact your administrator.',
       }
+      const detail = searchParams.get('detail')
+      const baseMessage = errorMessages[error] || 'An error occurred while connecting Facebook.'
+      const message = detail ? `${baseMessage} (${decodeURIComponent(detail)})` : baseMessage
       setTimeout(() => {
-        setNotification({
-          type: 'error',
-          message: errorMessages[error] || 'An error occurred while connecting Facebook.',
-        })
+        setNotification({ type: 'error', message })
       }, 0)
       // Clear URL params
       router.replace('/settings', { scroll: false })
