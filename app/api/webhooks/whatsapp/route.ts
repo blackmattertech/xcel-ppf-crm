@@ -358,7 +358,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Handle incoming messages
-        if (!value.messages) continue
+        if (!value.messages?.length) continue
+
+        console.info('[webhooks/whatsapp] inbound messages', {
+          field: change.field ?? '(missing)',
+          count: value.messages.length,
+          wabaIdSuffix: wabaId.length > 6 ? wabaId.slice(-6) : wabaId,
+        })
+
         for (const msg of value.messages) {
           const from = String(msg.from ?? '')
           if (!from) continue
@@ -380,30 +387,57 @@ export async function POST(request: NextRequest) {
               .limit(1)
             const rows = data as { id: string }[] | null
             if (rows?.[0]?.id) leadId = rows[0].id
-          } catch {
-            // ignore
+          } catch (err) {
+            console.warn(
+              '[webhooks/whatsapp] lead lookup failed (message will still be saved without lead_id):',
+              err instanceof Error ? err.message : err
+            )
           }
 
-          await saveIncomingMessage({
-            phone: from,
-            body: bodyText,
-            metaMessageId: msg.id,
-            leadId,
-            messageType,
-            attachmentUrl,
-            attachmentMimeType,
-            attachmentFileName,
-            replyToMetaMessageId: extractReplyToMetaId(msg),
-            replyContextFrom: extractReplyContextFrom(msg),
-          })
-          markMessageAsRead(msg.id, config).catch((err) => console.warn('[webhooks/whatsapp] mark read failed:', err))
+          const metaId = typeof msg.id === 'string' ? msg.id.trim() : String(msg.id ?? '').trim()
+          let saved
+          try {
+            saved = await saveIncomingMessage({
+              phone: from,
+              body: bodyText,
+              metaMessageId: metaId || null,
+              leadId,
+              messageType,
+              attachmentUrl,
+              attachmentMimeType,
+              attachmentFileName,
+              replyToMetaMessageId: extractReplyToMetaId(msg),
+              replyContextFrom: extractReplyContextFrom(msg),
+            })
+          } catch (err) {
+            console.error('[webhooks/whatsapp] saveIncomingMessage threw:', err)
+            return NextResponse.json({ ok: false, error: 'persist_inbound_failed' }, { status: 500 })
+          }
+
+          if (!saved) {
+            console.error(
+              '[webhooks/whatsapp] saveIncomingMessage returned null — check server logs for [whatsapp-chat] saveIncomingMessage, ' +
+                'SUPABASE_SERVICE_ROLE_KEY on the host, and that migrations for whatsapp_messages are applied.'
+            )
+            return NextResponse.json({ ok: false, error: 'persist_inbound_failed' }, { status: 500 })
+          }
+
+          markMessageAsRead(metaId, config).catch((err) => console.warn('[webhooks/whatsapp] mark read failed:', err))
         }
       }
     }
 
     return NextResponse.json({ ok: true })
   } catch (e) {
-    console.error('[webhooks/whatsapp]', e)
-    return NextResponse.json({ ok: true })
+    const errMsg = e instanceof Error ? e.message : String(e)
+    console.error('[webhooks/whatsapp] unhandled:', e)
+    if (errMsg.includes('Service role key is not configured')) {
+      console.error(
+        '[webhooks/whatsapp] Fix: set SUPABASE_SERVICE_ROLE_KEY in production (e.g. Vercel → Environment Variables). ' +
+          'Without it, inbound messages cannot be written to Supabase.'
+      )
+    }
+    // Non-2xx so Meta shows failed delivery and retries; returning 200 hid DB/config errors from you.
+    return NextResponse.json({ ok: false, error: 'webhook_handler_error' }, { status: 500 })
   }
 }
