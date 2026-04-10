@@ -309,7 +309,31 @@ export async function POST(request: NextRequest) {
         }>
       }>
     }
+    if (process.env.WHATSAPP_WEBHOOK_DEBUG === 'true') {
+      const sample = body.entry?.slice(0, 3).map((e) => ({
+        idType: typeof e.id,
+        changeFields: e.changes?.map((c) => ({
+          field: c.field,
+          hasMessages: Array.isArray(c.value?.messages) ? c.value!.messages!.length : 0,
+          hasStatuses: Array.isArray(c.value?.statuses) ? c.value!.statuses!.length : 0,
+          hasTemplateEvent: !!(c.value && 'event' in c.value && c.value.event),
+        })),
+      }))
+      console.info('[webhooks/whatsapp] WHATSAPP_WEBHOOK_DEBUG payload shape', {
+        object: body.object,
+        entryLen: body.entry?.length ?? 0,
+        sample,
+      })
+    }
+
     if (body.object !== 'whatsapp_business_account' || !body.entry?.length) {
+      if (body.entry?.length && body.object) {
+        console.warn(
+          '[webhooks/whatsapp] Ignoring webhook: object is not whatsapp_business_account (no messages will be stored). object=',
+          body.object,
+          '— Fix Meta app / subscription so WhatsApp Cloud API hits this URL, or you subscribed the wrong product.'
+        )
+      }
       return NextResponse.json({ ok: true })
     }
 
