@@ -23,6 +23,11 @@ const NewLeadForm = dynamic(() => import('@/components/NewLeadForm'), {
   ssr: false,
 })
 
+const LeadDetailPageContent = dynamic(
+  () => import('./LeadDetailPageContent'),
+  { ssr: false }
+)
+
 // Source Icon Component with fallback
 function SourceIcon({ platform, source }: { platform?: string | null; source: string }) {
   const [imgError, setImgError] = useState(false)
@@ -140,8 +145,7 @@ function GridView({
   getLastContactedTime,
   formatStageName,
   getStageBadgeColor,
-  router,
-  currentPage,
+  onOpenLeadDetail,
   onDeleteLead,
   canDeleteLeads,
   deletingLeadId,
@@ -154,8 +158,7 @@ function GridView({
   getLastContactedTime: (lead: Lead) => string | null
   formatStageName: (status: string) => string
   getStageBadgeColor: (status: string) => string
-  router: ReturnType<typeof useRouter>
-  currentPage: number
+  onOpenLeadDetail: (leadId: string) => void
   onDeleteLead?: (leadId: string) => void
   canDeleteLeads?: boolean
   deletingLeadId?: string | null
@@ -446,7 +449,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
+                    onOpenLeadDetail(lead.id)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#ed1b24] text-white rounded-md text-[10px] font-medium hover:bg-[#c0040e] transition-colors"
                 >
@@ -455,7 +458,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
+                    onOpenLeadDetail(lead.id)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-[#eaecee] text-[#717d8a] rounded-md text-[10px] font-medium hover:bg-[#f5f5f5] transition-colors"
                 >
@@ -480,8 +483,7 @@ function KanbanBoard({
   getVehicleName,
   getProductInterest,
   getTimeAgo,
-  router,
-  currentPage,
+  onOpenLeadDetail,
 }: {
   leads: Lead[]
   allLeads: Lead[]
@@ -490,8 +492,7 @@ function KanbanBoard({
   getVehicleName: (lead: Lead) => string
   getProductInterest: (lead: Lead) => string
   getTimeAgo: (date: string | null) => string
-  router: ReturnType<typeof useRouter>
-  currentPage: number
+  onOpenLeadDetail: (leadId: string) => void
 }) {
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
@@ -807,7 +808,7 @@ function KanbanBoard({
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => router.push(`/leads/${lead.id}?fromPage=${currentPage}`)}
+                      onClick={() => onOpenLeadDetail(lead.id)}
                       className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-[#eaecee]"
                     >
                       {/* Name and Product */}
@@ -971,9 +972,22 @@ function LeadsPageContent() {
 
   // Pagination: current page is derived from URL so closing lead detail always shows the right page
   const pageParam = searchParams.get('page')
+  const detailLeadId = searchParams.get('detail')
   const currentPage = !pageParam ? 1 : Math.max(1, parseInt(pageParam, 10) || 1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const PAGINATION_STORAGE_KEY = 'leads-list-pagination'
+
+  function openLeadDetail(leadId: string) {
+    const p = new URLSearchParams(searchParams.toString())
+    p.set('detail', leadId)
+    router.push(`${pathname}?${p.toString()}`, { scroll: false })
+  }
+
+  function closeLeadDetail() {
+    const p = new URLSearchParams(searchParams.toString())
+    p.delete('detail')
+    router.replace(p.toString() ? `${pathname}?${p.toString()}` : pathname, { scroll: false })
+  }
 
   // Column customization state
   interface ColumnConfig {
@@ -2295,7 +2309,7 @@ function LeadsPageContent() {
       : allLeads.length) / itemsPerPage
   )
 
-  if (loading) {
+  if (loading && !detailLeadId) {
     return (
       <Layout>
         <div className="min-h-screen flex items-center justify-center">
@@ -3742,7 +3756,7 @@ function LeadsPageContent() {
                             (e.target as HTMLElement).closest('button')) {
                           return
                         }
-                        router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
+                        openLeadDetail(lead.id)
                       }}
                     >
                     {isAdmin && (
@@ -3871,8 +3885,7 @@ function LeadsPageContent() {
               getVehicleName={getVehicleName}
               getProductInterest={getProductInterest}
               getTimeAgo={getTimeAgo}
-              router={router}
-              currentPage={currentPage}
+              onOpenLeadDetail={openLeadDetail}
             />
           )}
 
@@ -3886,8 +3899,7 @@ function LeadsPageContent() {
                 getLastContactedTime={getLastContactedTime}
                 formatStageName={formatStageName}
                 getStageBadgeColor={getStageBadgeColor}
-                router={router}
-                currentPage={currentPage}
+                onOpenLeadDetail={openLeadDetail}
                 onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
                 canDeleteLeads={canDeleteLeads}
                 deletingLeadId={deletingLeadId}
@@ -4509,6 +4521,17 @@ function LeadsPageContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {detailLeadId && (
+        <LeadDetailPageContent
+          leadId={detailLeadId}
+          onClose={closeLeadDetail}
+          embedded
+          onLeadDeleted={() => {
+            void fetchLeads()
+          }}
+        />
       )}
     </>
   )
