@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -16,6 +16,10 @@ import MobileHeader from '@/components/MobileHeader'
 import MobileBottomNav from '@/components/MobileBottomNav'
 import { cachedFetch } from '@/lib/api-client'
 import { VirtualizedScrollList } from '@/components/leads/VirtualizedScrollList'
+
+/** Persist list state before opening /leads/[id] so returning does not remount into loading + full refetch. */
+const LEADS_RETURN_SNAPSHOT_KEY = 'leads-return-snapshot-v1'
+const LEADS_RETURN_SNAPSHOT_MAX_AGE_MS = 30 * 60 * 1000
 
 // New lead modal is quite heavy; load it only when the user actually opens it
 // so the main Leads list and filters become interactive faster.
@@ -132,6 +136,23 @@ interface LeadStats {
   activeLeads: number
 }
 
+/** Serialized when navigating to lead detail; restored on return to /leads */
+interface LeadsReturnSnapshot {
+  savedAt: number
+  userId: string
+  page: number
+  itemsPerPage: number
+  searchQuery: string
+  filterConditions: Array<{ id: string; column: string; operator: string; value: string; logic?: 'AND' | 'OR' }>
+  sortColumn: string
+  sortDirection: 'asc' | 'desc'
+  activeQuickFilter: null | 'untouched' | 'contacted' | 'qualified' | 'hot' | 'conversions' | 'discarded'
+  groupBy: string
+  viewMode: 'table' | 'kanban' | 'grid'
+  leads: Lead[]
+  scrollY: number
+}
+
 // Grid View Component
 function GridView({
   leads,
@@ -140,8 +161,7 @@ function GridView({
   getLastContactedTime,
   formatStageName,
   getStageBadgeColor,
-  router,
-  currentPage,
+  onOpenLeadDetail,
   onDeleteLead,
   canDeleteLeads,
   deletingLeadId,
@@ -154,8 +174,7 @@ function GridView({
   getLastContactedTime: (lead: Lead) => string | null
   formatStageName: (status: string) => string
   getStageBadgeColor: (status: string) => string
-  router: ReturnType<typeof useRouter>
-  currentPage: number
+  onOpenLeadDetail: (leadId: string) => void
   onDeleteLead?: (leadId: string) => void
   canDeleteLeads?: boolean
   deletingLeadId?: string | null
@@ -446,7 +465,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
+                    onOpenLeadDetail(lead.id)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-[#ed1b24] text-white rounded-md text-[10px] font-medium hover:bg-[#c0040e] transition-colors"
                 >
@@ -455,7 +474,7 @@ function GridView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
+                    onOpenLeadDetail(lead.id)
                   }}
                   className="flex items-center justify-center gap-1 px-2 py-1.5 bg-white border border-[#eaecee] text-[#717d8a] rounded-md text-[10px] font-medium hover:bg-[#f5f5f5] transition-colors"
                 >
@@ -480,8 +499,7 @@ function KanbanBoard({
   getVehicleName,
   getProductInterest,
   getTimeAgo,
-  router,
-  currentPage,
+  onOpenLeadDetail,
 }: {
   leads: Lead[]
   allLeads: Lead[]
@@ -490,8 +508,7 @@ function KanbanBoard({
   getVehicleName: (lead: Lead) => string
   getProductInterest: (lead: Lead) => string
   getTimeAgo: (date: string | null) => string
-  router: ReturnType<typeof useRouter>
-  currentPage: number
+  onOpenLeadDetail: (leadId: string) => void
 }) {
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null)
   const [draggedOverColumn, setDraggedOverColumn] = useState<string | null>(null)
@@ -807,7 +824,7 @@ function KanbanBoard({
                       draggable={true}
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => router.push(`/leads/${lead.id}?fromPage=${currentPage}`)}
+                      onClick={() => onOpenLeadDetail(lead.id)}
                       className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-[#eaecee]"
                     >
                       {/* Name and Product */}
@@ -974,6 +991,8 @@ function LeadsPageContent() {
   const currentPage = !pageParam ? 1 : Math.max(1, parseInt(pageParam, 10) || 1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const PAGINATION_STORAGE_KEY = 'leads-list-pagination'
+  const needsSilentLeadsRefetch = useRef(false)
+  const pendingListScrollY = useRef(0)
 
   // Column customization state
   interface ColumnConfig {
@@ -1111,10 +1130,63 @@ function LeadsPageContent() {
     }
   }, [authLoading, userId, role?.name, router])
 
+  // Restore list from session snapshot before paint (return from /leads/[id]); then refetch silently.
+  useLayoutEffect(() => {
+    if (authLoading || !userId) return
+    needsSilentLeadsRefetch.current = false
+    pendingListScrollY.current = 0
+    try {
+      const raw = typeof window !== 'undefined' ? sessionStorage.getItem(LEADS_RETURN_SNAPSHOT_KEY) : null
+      if (!raw) return
+      const snap = JSON.parse(raw) as LeadsReturnSnapshot
+      const ippOk = [10, 25, 50, 100].includes(snap.itemsPerPage)
+      if (
+        Date.now() - snap.savedAt > LEADS_RETURN_SNAPSHOT_MAX_AGE_MS ||
+        snap.userId !== userId ||
+        snap.page !== currentPage ||
+        !Array.isArray(snap.leads) ||
+        !ippOk
+      ) {
+        return
+      }
+      sessionStorage.removeItem(LEADS_RETURN_SNAPSHOT_KEY)
+      setItemsPerPage(snap.itemsPerPage)
+      setSearchQuery(snap.searchQuery)
+      setFilterConditions(snap.filterConditions)
+      setSortColumn(snap.sortColumn)
+      setSortDirection(snap.sortDirection)
+      setActiveQuickFilter(snap.activeQuickFilter)
+      setGroupBy(snap.groupBy)
+      if (snap.viewMode === 'table' || snap.viewMode === 'kanban' || snap.viewMode === 'grid') {
+        setViewMode(snap.viewMode)
+      }
+      setAllLeads(snap.leads)
+      setLoading(false)
+      needsSilentLeadsRefetch.current = true
+      pendingListScrollY.current = snap.scrollY
+    } catch {
+      // ignore invalid snapshot
+    }
+  }, [authLoading, userId, currentPage])
+
   // Fetch leads when user is ready (and when userId changes, e.g. after switching account).
   useEffect(() => {
     if (authLoading || !userId) return
-    fetchLeads()
+    let cancelled = false
+    void (async () => {
+      const silent = needsSilentLeadsRefetch.current
+      needsSilentLeadsRefetch.current = false
+      const scrollY = pendingListScrollY.current
+      pendingListScrollY.current = 0
+      await fetchLeads()
+      if (cancelled) return
+      if (silent) {
+        requestAnimationFrame(() => window.scrollTo(0, scrollY))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [authLoading, userId])
 
   // Handle scroll to hide stats cards and stick toolbar
@@ -1243,6 +1315,38 @@ function LeadsPageContent() {
   // Update URL when user changes page (closing lead detail then lands on this URL)
   function goToPage(page: number) {
     router.replace(pathname + (page === 1 ? '' : `?page=${page}`), { scroll: false })
+  }
+
+  function pushLeadDetail(leadId: string) {
+    if (typeof window !== 'undefined' && userId) {
+      try {
+        const snapshot: LeadsReturnSnapshot = {
+          savedAt: Date.now(),
+          userId,
+          page: currentPage,
+          itemsPerPage,
+          searchQuery,
+          filterConditions: filterConditions.map(({ id, column, operator, value, logic }) => ({
+            id,
+            column,
+            operator,
+            value,
+            logic,
+          })),
+          sortColumn,
+          sortDirection,
+          activeQuickFilter,
+          groupBy,
+          viewMode,
+          leads: allLeads,
+          scrollY: window.scrollY,
+        }
+        sessionStorage.setItem(LEADS_RETURN_SNAPSHOT_KEY, JSON.stringify(snapshot))
+      } catch {
+        // ignore quota / private mode
+      }
+    }
+    router.push(`/leads/${leadId}?fromPage=${currentPage}`)
   }
 
   // Clean up columns on mount to ensure only valid columns are shown; preserve column order
@@ -3742,7 +3846,7 @@ function LeadsPageContent() {
                             (e.target as HTMLElement).closest('button')) {
                           return
                         }
-                        router.push(`/leads/${lead.id}?fromPage=${currentPage}`)
+                        pushLeadDetail(lead.id)
                       }}
                     >
                     {isAdmin && (
@@ -3871,8 +3975,7 @@ function LeadsPageContent() {
               getVehicleName={getVehicleName}
               getProductInterest={getProductInterest}
               getTimeAgo={getTimeAgo}
-              router={router}
-              currentPage={currentPage}
+              onOpenLeadDetail={pushLeadDetail}
             />
           )}
 
@@ -3886,8 +3989,7 @@ function LeadsPageContent() {
                 getLastContactedTime={getLastContactedTime}
                 formatStageName={formatStageName}
                 getStageBadgeColor={getStageBadgeColor}
-                router={router}
-                currentPage={currentPage}
+                onOpenLeadDetail={pushLeadDetail}
                 onDeleteLead={canDeleteLeads ? handleDeleteLead : undefined}
                 canDeleteLeads={canDeleteLeads}
                 deletingLeadId={deletingLeadId}

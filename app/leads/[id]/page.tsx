@@ -486,6 +486,10 @@ export default function LeadDetailPage() {
     const fromPage =
       searchParams.get('fromPage') ??
       (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('fromPage') : null)
+    if (fromPage && typeof window !== 'undefined' && window.history.length > 1) {
+      router.back()
+      return
+    }
     if (fromPage) router.push(`/leads?page=${fromPage}`)
     else router.back()
   }
@@ -2169,11 +2173,14 @@ export default function LeadDetailPage() {
                           </p>
                         ) : null}
                         {call.recording_url ? (
-                          <div className="mt-2 p-2 rounded-md border border-[#e5e7eb] bg-[#f8fafc]">
-                            <p className="text-[10px] font-medium text-[#4b5563] mb-1">Call recording</p>
-                            <audio controls preload="none" className="w-full max-w-full h-8">
-                              <source src={call.recording_url} type="audio/wav" />
-                              <source src={call.recording_url} type="audio/mpeg" />
+                          <div className="mt-2 p-2 rounded-md border border-[#e5e7eb] bg-[#f8fafc] overflow-x-auto">
+                            <p className="text-[10px] font-medium text-[#4b5563] mb-1.5">Call recording</p>
+                            <audio
+                              controls
+                              preload="auto"
+                              className="block w-full min-w-[280px] max-w-full h-auto min-h-[48px]"
+                            >
+                              <source src={call.recording_url} />
                               Your browser does not support audio preview.
                             </audio>
                             <a
