@@ -33,6 +33,8 @@ export const CACHE_KEYS = {
   USER_SESSION: 'session',
   PRODUCT: 'product',
   PRODUCTS_LIST: 'products:list',
+  /** Server-side cache for GET /api/products?with_stats=true (heavy in-process aggregation). */
+  PRODUCTS_WITH_STATS: 'products:with_stats',
   QUOTATION: 'quotation',
   FOLLOWUP: 'followup',
 } as const

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
-import { getAllProducts, getProductsWithStats, createProduct } from '@/backend/services/product.service'
+import { getAllProducts, createProduct } from '@/backend/services/product.service'
+import { fetchProductsWithStatsCached } from '@/lib/server/dashboard-payload'
+import { invalidateProductCaches } from '@/lib/cache-invalidation'
 import { z } from 'zod'
 
 const createProductSchema = z.object({
@@ -45,7 +47,7 @@ export async function GET(request: NextRequest) {
     const withStats = searchParams.get('with_stats') === 'true'
 
     if (withStats) {
-      const products = await getProductsWithStats()
+      const products = await fetchProductsWithStatsCached()
       return NextResponse.json(products)
     }
 
@@ -98,6 +100,8 @@ export async function POST(request: NextRequest) {
       is_active: validatedData.is_active,
       created_by: user.id,
     })
+
+    await invalidateProductCaches(product.id)
 
     return NextResponse.json(product, { status: 201 })
   } catch (error) {

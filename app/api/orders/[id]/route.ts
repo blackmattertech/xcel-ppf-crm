@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
+import { invalidateAnalyticsCaches } from '@/lib/cache-invalidation'
 import { z } from 'zod'
 
 const updateOrderSchema = z.object({
@@ -116,6 +117,8 @@ export async function PATCH(
         console.error('Failed to update lead payment status:', leadUpdateError)
       }
     }
+
+    await invalidateAnalyticsCaches()
 
     return NextResponse.json({ order })
   } catch (error) {

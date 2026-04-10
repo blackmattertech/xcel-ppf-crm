@@ -53,7 +53,10 @@ export default function DashboardPage() {
   const { isAuthenticated, role } = useAuthContext()
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [productsWithStats, setProductsWithStats] = useState<Array<{ id: string; title: string; leads_interested: number; customers_bought: number }>>([])
-  const [loading, setLoading] = useState(true)
+  /** When false, KPI + analytics-driven charts render (fast path once /api/analytics is cached). */
+  const [analyticsLoading, setAnalyticsLoading] = useState(true)
+  /** Product sections wait on /api/products?with_stats (Redis-cached separately). */
+  const [productsLoading, setProductsLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [followUpAlerts, setFollowUpAlerts] = useState<{
     overdue: number
@@ -75,44 +78,57 @@ export default function DashboardPage() {
       router.push('/login')
       return
     }
-    checkAuth()
-    fetchAnalytics()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated])
 
-  async function checkAuth() {
+    let cancelled = false
+    let alertsInterval: ReturnType<typeof setInterval> | undefined
+
     const roleName = role?.name ?? null
     setUserRole(roleName)
-
     const isAssignedOnlyRole = isAssignedOnlyFollowUpsRole(roleName)
     const isAdmin = roleName === 'admin' || roleName === 'super_admin'
     if (isAssignedOnlyRole || isAdmin) {
-      fetchFollowUpAlerts()
-      const interval = setInterval(fetchFollowUpAlerts, 30 * 1000)
-      return () => clearInterval(interval)
+      void fetchFollowUpAlerts()
+      alertsInterval = setInterval(() => void fetchFollowUpAlerts(), 30 * 1000)
     }
-  }
 
-  async function fetchAnalytics() {
-    try {
-      const [analyticsRes, productsRes] = await Promise.all([
-        cachedFetch('/api/analytics'),
-        cachedFetch('/api/products?with_stats=true'),
-      ])
-      if (analyticsRes.ok) {
-        const data = await analyticsRes.json()
-        setAnalytics(data)
+    setAnalyticsLoading(true)
+    setProductsLoading(true)
+
+    void (async () => {
+      try {
+        const r = await cachedFetch('/api/analytics', undefined, 60_000)
+        if (cancelled || !r.ok) return
+        const data = await r.json()
+        if (!cancelled) setAnalytics(data)
+      } catch (error) {
+        console.error('Failed to fetch analytics:', error)
+      } finally {
+        if (!cancelled) setAnalyticsLoading(false)
       }
-      if (productsRes.ok) {
-        const products = await productsRes.json()
+    })()
+
+    void (async () => {
+      try {
+        const r = await cachedFetch('/api/products?with_stats=true', undefined, 60_000)
+        if (cancelled) return
+        if (!r.ok) {
+          setProductsWithStats([])
+          return
+        }
+        const products = await r.json()
         setProductsWithStats(Array.isArray(products) ? products : [])
+      } catch (error) {
+        console.error('Failed to fetch products with stats:', error)
+      } finally {
+        if (!cancelled) setProductsLoading(false)
       }
-    } catch (error) {
-      console.error('Failed to fetch analytics:', error)
-    } finally {
-      setLoading(false)
+    })()
+
+    return () => {
+      cancelled = true
+      if (alertsInterval) clearInterval(alertsInterval)
     }
-  }
+  }, [isAuthenticated, role?.name, router])
 
   // Active leads: exclude lost, discarded, and conversion statuses (same as leads page)
   const ACTIVE_LEADS_EXCLUDE = ['lost', 'discarded', 'deal_won', 'converted', 'payment_pending', 'advance_received', 'fully_paid']
@@ -197,7 +213,7 @@ export default function DashboardPage() {
             Overview of leads, conversions, and team performance
           </motion.p>
 
-          {loading && (
+          {analyticsLoading && (
             <div className="mb-8 space-y-6">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {[1, 2, 3, 4].map((i) => (
@@ -296,7 +312,7 @@ export default function DashboardPage() {
             </motion.div>
           )}
 
-          {!loading && (
+          {!analyticsLoading && analytics && (
             <>
               {/* KPI Cards - theme aligned */}
               <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -372,48 +388,56 @@ export default function DashboardPage() {
               )}
 
               {/* Leads interested in products - same data as Products page */}
-              <div className="mb-8">
-                <DashboardCard
-                  title="Leads interested in products"
-                  subtitle="Leads whose requirement matches each product (same as Products page)"
-                  viewMode={viewProductsInterest}
-                  onViewModeChange={setViewProductsInterest}
-                  viewOptions={productViewOptions}
-                  sectionId="products-interest"
-                >
-                  {viewProductsInterest === 'bar' ? (
-                    <LeadsInterestedByProductBar data={leadsInterestedByProductFromProducts} hideTitle />
-                  ) : viewProductsInterest === 'pie' ? (
-                    <LeadsInterestedByProductPie data={leadsInterestedByProductFromProducts} hideTitle />
-                  ) : viewProductsInterest === 'heatmap' ? (
-                    <ProductsHeatMap data={productsHeatMapData} hideTitle />
-                  ) : (
-                    <LeadsInterestedByProductTable data={leadsInterestedByProductFromProducts} />
-                  )}
-                </DashboardCard>
-              </div>
+              {productsLoading ? (
+                <div className="mb-8 space-y-6">
+                  <div className="h-[22rem] animate-pulse rounded-2xl border border-gray-200/80 bg-gray-100/80" />
+                  <div className="h-[22rem] animate-pulse rounded-2xl border border-gray-200/80 bg-gray-100/80" />
+                </div>
+              ) : (
+                <>
+                  <div className="mb-8">
+                    <DashboardCard
+                      title="Leads interested in products"
+                      subtitle="Leads whose requirement matches each product (same as Products page)"
+                      viewMode={viewProductsInterest}
+                      onViewModeChange={setViewProductsInterest}
+                      viewOptions={productViewOptions}
+                      sectionId="products-interest"
+                    >
+                      {viewProductsInterest === 'bar' ? (
+                        <LeadsInterestedByProductBar data={leadsInterestedByProductFromProducts} hideTitle />
+                      ) : viewProductsInterest === 'pie' ? (
+                        <LeadsInterestedByProductPie data={leadsInterestedByProductFromProducts} hideTitle />
+                      ) : viewProductsInterest === 'heatmap' ? (
+                        <ProductsHeatMap data={productsHeatMapData} hideTitle />
+                      ) : (
+                        <LeadsInterestedByProductTable data={leadsInterestedByProductFromProducts} />
+                      )}
+                    </DashboardCard>
+                  </div>
 
-              {/* Converted leads for products (Customers Bought) - same data as Products page */}
-              <div className="mb-8">
-                <DashboardCard
-                  title="Converted leads for products"
-                  subtitle="Customers who bought per product (same as Products page)"
-                  viewMode={viewConvertedProducts}
-                  onViewModeChange={setViewConvertedProducts}
-                  viewOptions={productViewOptions}
-                  sectionId="converted-products"
-                >
-                  {viewConvertedProducts === 'bar' ? (
-                    <LeadsInterestedByProductBar data={convertedLeadsByProductFromProducts} hideTitle />
-                  ) : viewConvertedProducts === 'pie' ? (
-                    <LeadsInterestedByProductPie data={convertedLeadsByProductFromProducts} hideTitle countLabel="Customers bought" />
-                  ) : viewConvertedProducts === 'heatmap' ? (
-                    <ProductsHeatMap data={productsHeatMapData} hideTitle />
-                  ) : (
-                    <LeadsInterestedByProductTable data={convertedLeadsByProductFromProducts} countLabel="Customers bought" />
-                  )}
-                </DashboardCard>
-              </div>
+                  <div className="mb-8">
+                    <DashboardCard
+                      title="Converted leads for products"
+                      subtitle="Customers who bought per product (same as Products page)"
+                      viewMode={viewConvertedProducts}
+                      onViewModeChange={setViewConvertedProducts}
+                      viewOptions={productViewOptions}
+                      sectionId="converted-products"
+                    >
+                      {viewConvertedProducts === 'bar' ? (
+                        <LeadsInterestedByProductBar data={convertedLeadsByProductFromProducts} hideTitle />
+                      ) : viewConvertedProducts === 'pie' ? (
+                        <LeadsInterestedByProductPie data={convertedLeadsByProductFromProducts} hideTitle countLabel="Customers bought" />
+                      ) : viewConvertedProducts === 'heatmap' ? (
+                        <ProductsHeatMap data={productsHeatMapData} hideTitle />
+                      ) : (
+                        <LeadsInterestedByProductTable data={convertedLeadsByProductFromProducts} countLabel="Customers bought" />
+                      )}
+                    </DashboardCard>
+                  </div>
+                </>
+              )}
 
               {/* Leads by source & by status - Chart | Table */}
               <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">

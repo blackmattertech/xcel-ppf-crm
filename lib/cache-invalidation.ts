@@ -16,6 +16,7 @@ export async function invalidateLeadCaches(leadId?: string): Promise<void> {
     invalidateCachePrefix(CACHE_KEYS.LEADS_LIST),
     invalidateCachePrefix(CACHE_KEYS.ANALYTICS),
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
+    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
   ])
 
   // If specific lead ID provided, invalidate that lead's cache
@@ -45,6 +46,7 @@ export async function invalidateCustomerCaches(customerId?: string): Promise<voi
 export async function invalidateProductCaches(productId?: string): Promise<void> {
   await Promise.all([
     invalidateCachePrefix(CACHE_KEYS.PRODUCTS_LIST),
+    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
   ])
 
   if (productId) {
@@ -60,6 +62,7 @@ export async function invalidateAnalyticsCaches(): Promise<void> {
   await Promise.all([
     invalidateCachePrefix(CACHE_KEYS.ANALYTICS),
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
+    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
   ])
 }
 
@@ -83,5 +86,6 @@ export async function invalidateAllCaches(): Promise<void> {
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
     invalidateCachePrefix(CACHE_KEYS.QUOTATION),
     invalidateCachePrefix(CACHE_KEYS.FOLLOWUP),
+    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
   ])
 }

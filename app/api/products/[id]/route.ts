@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { getProductById, updateProduct, deleteProduct } from '@/backend/services/product.service'
+import { invalidateProductCaches } from '@/lib/cache-invalidation'
 import { z } from 'zod'
 
 const updateProductSchema = z.object({
@@ -104,6 +105,8 @@ export async function PUT(
 
     const product = await updateProduct(id, updateData)
 
+    await invalidateProductCaches(id)
+
     return NextResponse.json(product)
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -147,6 +150,8 @@ export async function DELETE(
 
     const { id } = await params
     await deleteProduct(id)
+
+    await invalidateProductCaches(id)
 
     return NextResponse.json({ message: 'Product deleted successfully' })
   } catch (error) {
