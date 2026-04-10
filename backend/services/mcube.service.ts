@@ -52,26 +52,29 @@ export function mapDialStatusToOutcome(dialstatus: string | undefined | null): C
   return 'not_reachable'
 }
 
-/** Match MCube `callto` (often 10 digits) to `leads.phone` which may be stored as +91…, 91…, or spaces. */
-function phoneLookupVariants(rawPhone: string): string[] {
+/**
+ * MCUBE often sends 10-digit domestic numbers; CRM may store +91…, spaces, or 91-prefixed digits.
+ * Exact `.in('phone', …)` misses when DB has "+918217681871" and payload has "8217681871".
+ */
+export function buildLeadPhoneLookupVariants(rawPhone: string | undefined | null): string[] {
+  if (!rawPhone?.trim()) return []
   const trimmed = rawPhone.trim()
+  const digits = trimmed.replace(/\D/g, '')
+  if (digits.length < 10) return [trimmed]
+  const last10 = digits.slice(-10)
   const normalized = normalizePhoneForStorage(trimmed)
-  const last10 = normalized.slice(-10)
-  const withPlus91 = `+91${last10}`
-  const withPlus = normalized.startsWith('91') && normalized.length >= 12 ? `+${normalized}` : null
-  return [
-    ...new Set(
-      [
-        normalized,
-        last10,
-        trimmed,
-        withPlus91,
-        withPlus,
-        `91${last10}`,
-        `0${last10}`,
-      ].filter((v): v is string => Boolean(v))
-    ),
-  ]
+  const set = new Set<string>([
+    trimmed,
+    normalized,
+    last10,
+    `91${last10}`,
+    `+91${last10}`,
+    `+91 ${last10}`,
+    `+${normalized}`,
+    `0${last10}`,
+    trimmed.replace(/\s/g, ''),
+  ])
+  return [...set].filter(Boolean)
 }
 
 export async function findLeadIdByCustomerPhone(
@@ -79,14 +82,30 @@ export async function findLeadIdByCustomerPhone(
   rawPhone: string | undefined | null
 ): Promise<string | null> {
   if (!rawPhone?.trim()) return null
-  const variants = phoneLookupVariants(rawPhone)
-  const { data } = await supabase
-    .from('leads')
-    .select('id, phone, created_at, updated_at')
-    .in('phone', variants)
-  const rows = data as
-    | Array<{ id: string; phone: string; created_at: string; updated_at: string }>
-    | null
+  const trimmed = rawPhone.trim()
+  const normalized = normalizePhoneForStorage(trimmed)
+  const last10 = normalized.slice(-10)
+  const variants = [...new Set([...buildLeadPhoneLookupVariants(rawPhone), normalized, last10, trimmed])]
+
+  let rows =
+    ((
+      await supabase
+        .from('leads')
+        .select('id, phone, created_at, updated_at')
+        .in('phone', variants)
+    ).data as Array<{ id: string; phone: string; created_at: string; updated_at: string }> | null) ?? null
+
+  if (!rows?.length) {
+    const { data: fuzzy } = await supabase
+      .from('leads')
+      .select('id, phone, created_at, updated_at')
+      .ilike('phone', `%${last10}%`)
+      .limit(50)
+    const raw = (fuzzy as Array<{ id: string; phone: string; created_at: string; updated_at: string }> | null) ?? null
+    rows =
+      raw?.filter((r) => normalizePhoneForStorage(r.phone).slice(-10) === last10) ?? null
+  }
+
   if (!rows?.length) return null
 
   // Prefer the most recently created lead when duplicate phone variants exist.
