@@ -92,6 +92,8 @@ export default function UserDetailPage() {
   const [calls, setCalls] = useState<Call[]>([])
   const [formData, setFormData] = useState({
     name: '',
+    email: '',
+    newPassword: '',
     phone: '',
     roleId: '',
     address: '',
@@ -152,6 +154,8 @@ export default function UserDetailPage() {
         const languages = data.user.languages_known || []
         setFormData({
           name: data.user.name,
+          email: data.user.email || '',
+          newPassword: '',
           phone: data.user.phone || '',
           roleId: data.user.role_id,
           address: data.user.address || '',
@@ -475,6 +479,17 @@ export default function UserDetailPage() {
       
       if (canEditRole) {
         updatePayload.roleId = formData.roleId
+        const trimmedEmail = formData.email.trim()
+        if (trimmedEmail !== user?.email) {
+          updatePayload.email = trimmedEmail
+        }
+        const pw = formData.newPassword.trim()
+        if (pw.length > 0) {
+          if (pw.length < 6) {
+            throw new Error('New password must be at least 6 characters')
+          }
+          updatePayload.password = pw
+        }
       } else {
         updatePayload.roleId = user?.role?.id || formData.roleId
       }
@@ -487,6 +502,7 @@ export default function UserDetailPage() {
 
       if (response.ok) {
         await fetchUser()
+        setFormData((prev) => ({ ...prev, newPassword: '' }))
         setProfileImage(null)
         setShowLanguagePicker(false) // Hide picker after saving
         alert('User updated successfully')
@@ -674,9 +690,40 @@ export default function UserDetailPage() {
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                    <p className="text-sm text-gray-900">{user.email}</p>
-                    <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                    {canEditRole ? (
+                      <>
+                        <input
+                          type="email"
+                          autoComplete="off"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Administrators can change sign-in email (Supabase Auth)
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-gray-900">{user.email}</p>
+                        <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                      </>
+                    )}
                 </div>
+                {canEditRole && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">New password</label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={formData.newPassword}
+                      onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                      placeholder="Leave blank to keep current password"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Minimum 6 characters when set</p>
+                  </div>
+                )}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
                   {canEdit ? (

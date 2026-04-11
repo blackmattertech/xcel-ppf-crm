@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, requirePermission } from '@/backend/middleware/auth'
-import { getUserById, updateUser, deleteUser } from '@/backend/services/user.service'
+import { getUserById, updateUser, updateUserAuthCredentials, deleteUser } from '@/backend/services/user.service'
 import { redistributeNewLeadsAmongTeleCallers } from '@/backend/services/assignment.service'
 import { ASSIGNABLE_LEAD_ROLES } from '@/shared/constants/roles'
 import { z } from 'zod'
@@ -16,6 +16,8 @@ const updateUserSchema = z.object({
   dob: z.string().nullable().optional(),
   doj: z.string().nullable().optional(),
   languagesKnown: z.array(z.string()).nullable().optional(),
+  email: z.string().email().optional(),
+  password: z.union([z.string().min(6), z.literal('')]).optional(),
 })
 
 export async function GET(
@@ -78,7 +80,36 @@ export async function PUT(
     }
 
     const body = await request.json()
-    let { name, phone, roleId, branchId, profileImageUrl, address, dob, doj, languagesKnown } = updateUserSchema.parse(body)
+    let {
+      name,
+      phone,
+      roleId,
+      branchId,
+      profileImageUrl,
+      address,
+      dob,
+      doj,
+      languagesKnown,
+      email: nextEmail,
+      password: nextPassword,
+    } = updateUserSchema.parse(body)
+
+    const credentialEmailRequested = nextEmail !== undefined
+    const credentialPasswordRequested =
+      nextPassword !== undefined && String(nextPassword).length > 0
+
+    if (credentialEmailRequested || credentialPasswordRequested) {
+      if (!isAdmin) {
+        return NextResponse.json(
+          { error: 'Only administrators can change email or password' },
+          { status: 403 }
+        )
+      }
+      await updateUserAuthCredentials(id, {
+        email: credentialEmailRequested ? nextEmail : undefined,
+        password: credentialPasswordRequested ? String(nextPassword) : undefined,
+      })
+    }
 
     const existingUser = await getUserById(id) as {
       name?: string

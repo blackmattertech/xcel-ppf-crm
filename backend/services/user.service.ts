@@ -116,6 +116,51 @@ export async function createUser(
   }
 }
 
+/**
+ * Update Supabase Auth email/password and keep public.users.email in sync.
+ * Call only from trusted server routes (admin / super_admin).
+ */
+export async function updateUserAuthCredentials(
+  userId: string,
+  options: { email?: string; password?: string }
+) {
+  const supabase = createServiceClient()
+  const adminPayload: {
+    email?: string
+    password?: string
+    email_confirm?: boolean
+  } = {}
+
+  if (options.email !== undefined) {
+    adminPayload.email = options.email.trim()
+    adminPayload.email_confirm = true
+  }
+  if (options.password !== undefined && options.password.length > 0) {
+    adminPayload.password = options.password
+  }
+
+  if (Object.keys(adminPayload).length === 0) {
+    return
+  }
+
+  const { error: authError } = await supabase.auth.admin.updateUserById(userId, adminPayload)
+  if (authError) {
+    throw new Error(`Failed to update login: ${authError.message}`)
+  }
+
+  if (options.email !== undefined) {
+    const emailRow = { email: options.email.trim(), updated_at: new Date().toISOString() }
+    const { error: dbError } = await supabase
+      .from('users')
+      // @ts-ignore - Supabase type inference issue with dynamic updates
+      .update(emailRow as any)
+      .eq('id', userId)
+    if (dbError) {
+      throw new Error(`Failed to sync email in profile: ${dbError.message}`)
+    }
+  }
+}
+
 export async function updateUser(
   id: string,
   name: string,

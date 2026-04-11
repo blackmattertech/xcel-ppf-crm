@@ -65,6 +65,8 @@ interface Call {
 export default function TeamsPage() {
   const router = useRouter()
   const { isAuthenticated, role, userId: currentUserId } = useAuthContext()
+  const canManageUserLogin =
+    role?.name === 'super_admin' || role?.name === 'admin'
   const [users, setUsers] = useState<UserWithStats[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,6 +93,8 @@ export default function TeamsPage() {
   const [userCalls, setUserCalls] = useState<Call[]>([])
   const [detailFormData, setDetailFormData] = useState({
     name: '',
+    email: '',
+    newPassword: '',
     phone: '',
     roleId: '',
     address: '',
@@ -374,6 +378,8 @@ export default function TeamsPage() {
     const languages = user.languages_known || []
     setDetailFormData({
       name: user.name,
+      email: user.email || '',
+      newPassword: '',
       phone: user.phone || '',
       roleId: user.role_id || '',
       address: user.address || '',
@@ -403,6 +409,8 @@ export default function TeamsPage() {
         const updatedLanguages = fullUser.languages_known || []
         setDetailFormData({
           name: fullUser.name,
+          email: fullUser.email || '',
+          newPassword: '',
           phone: fullUser.phone || '',
           roleId: fullUser.role_id,
           address: fullUser.address || '',
@@ -563,7 +571,7 @@ export default function TeamsPage() {
         setUploadingImage(false)
       }
 
-      const updatePayload: any = {
+      const updatePayload: Record<string, unknown> = {
         name: detailFormData.name,
         phone: detailFormData.phone || null,
         profileImageUrl: profileImageUrl,
@@ -574,6 +582,20 @@ export default function TeamsPage() {
         roleId: detailFormData.roleId,
       }
 
+      if (canManageUserLogin) {
+        const trimmedEmail = detailFormData.email.trim()
+        if (trimmedEmail !== selectedUser.email) {
+          updatePayload.email = trimmedEmail
+        }
+        const pw = detailFormData.newPassword.trim()
+        if (pw.length > 0) {
+          if (pw.length < 6) {
+            throw new Error('New password must be at least 6 characters')
+          }
+          updatePayload.password = pw
+        }
+      }
+
       const response = await cachedFetch(`/api/users/${selectedUser.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -581,8 +603,17 @@ export default function TeamsPage() {
       })
 
       if (response.ok) {
+        const data = await response.json()
+        const updated = data.user as UserWithStats | undefined
         await fetchUsers()
-        await openUserDetail({ ...selectedUser, ...updatePayload })
+        if (updated) {
+          await openUserDetail({
+            ...selectedUser,
+            ...updated,
+            role: updated.role ?? selectedUser.role,
+          })
+        }
+        setDetailFormData((prev) => ({ ...prev, newPassword: '' }))
         setDetailProfileImage(null)
         setShowLanguagePicker(false)
         alert('User updated successfully')
@@ -1382,9 +1413,46 @@ export default function TeamsPage() {
                               </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                                <p className="text-sm text-gray-900">{selectedUser.email}</p>
-                                <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                                {canManageUserLogin ? (
+                                  <>
+                                    <input
+                                      type="email"
+                                      autoComplete="off"
+                                      value={detailFormData.email}
+                                      onChange={(e) =>
+                                        setDetailFormData({ ...detailFormData, email: e.target.value })
+                                      }
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      Updates sign-in email for this user in Supabase Auth
+                                    </p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="text-sm text-gray-900">{selectedUser.email}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                                  </>
+                                )}
                               </div>
+                              {canManageUserLogin && (
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    New password
+                                  </label>
+                                  <input
+                                    type="password"
+                                    autoComplete="new-password"
+                                    value={detailFormData.newPassword}
+                                    onChange={(e) =>
+                                      setDetailFormData({ ...detailFormData, newPassword: e.target.value })
+                                    }
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
+                                    placeholder="Leave blank to keep current password"
+                                  />
+                                  <p className="text-xs text-gray-500 mt-1">Minimum 6 characters when set</p>
+                                </div>
+                              )}
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
                                 <input
