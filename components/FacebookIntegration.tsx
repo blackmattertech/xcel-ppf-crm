@@ -38,7 +38,7 @@ export default function FacebookIntegration() {
   async function fetchConfig() {
     try {
       setLoading(true)
-      const response = await cachedFetch('/api/integrations/facebook/config', undefined, 0)
+      const response = await cachedFetch('/api/integrations/facebook/config')
       if (response.ok) {
         const data = await response.json()
         setConfig(data.config)
@@ -58,6 +58,7 @@ export default function FacebookIntegration() {
       setConnecting(true)
       setError(null)
 
+      // Get auth URL
       // Never cache: state embeds the current user and redirect_uri; a cached URL breaks OAuth.
       const response = await cachedFetch('/api/integrations/facebook/connect', undefined, 0)
       if (!response.ok) {
@@ -68,9 +69,43 @@ export default function FacebookIntegration() {
 
       const { authUrl } = await response.json()
 
-      // Full-page navigation (not a popup). Popups often lose Supabase session cookies on the
-      // return trip from facebook.com, so /api/.../callback gets 307 → /login and Meta never connects.
-      window.location.assign(authUrl)
+      // Open Facebook OAuth in new window
+      const width = 600
+      const height = 700
+      const left = window.screen.width / 2 - width / 2
+      const top = window.screen.height / 2 - height / 2
+
+      const popup = window.open(
+        authUrl,
+        'Facebook Login',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+      )
+
+      if (!popup) {
+        throw new Error('Popup blocked. Please allow popups for this site.')
+      }
+
+      // Poll for popup closure or message
+      const checkClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkClosed)
+          setConnecting(false)
+          // Refresh config after popup closes
+          setTimeout(() => {
+            fetchConfig()
+          }, 1000)
+        }
+      }, 500)
+
+      // Listen for messages from popup (if using postMessage)
+      window.addEventListener('message', (event) => {
+        if (event.data.type === 'FACEBOOK_CONNECTED') {
+          clearInterval(checkClosed)
+          popup.close()
+          setConnecting(false)
+          fetchConfig()
+        }
+      })
     } catch (error) {
       console.error('Failed to connect Facebook:', error)
       setError(error instanceof Error ? error.message : 'Failed to connect Facebook account')
@@ -399,8 +434,7 @@ export default function FacebookIntegration() {
           </button>
 
           <p className="text-xs text-gray-500 mt-3">
-            You&apos;ll leave this page to sign in on Meta, then return to Settings automatically. Use the same browser
-            window so your session is preserved.
+            You'll be redirected to Facebook to authorize access to your Business account, pages, and ad accounts.
           </p>
         </div>
       )}

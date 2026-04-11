@@ -8,25 +8,17 @@
 import { invalidateCachePrefix, deleteCache, CACHE_KEYS } from './cache'
 
 /**
- * Invalidate all lead-related caches.
- * Call after creating, updating, or deleting leads.
- * Pass requirementChanged=true only when the lead's requirement field changed,
- * so we don't wipe the expensive product_stats cache on every update.
+ * Invalidate all lead-related caches
+ * Call after creating, updating, or deleting leads
  */
-export async function invalidateLeadCaches(leadId?: string, requirementChanged = false): Promise<void> {
-  const tasks: Promise<unknown>[] = [
+export async function invalidateLeadCaches(leadId?: string): Promise<void> {
+  await Promise.all([
     invalidateCachePrefix(CACHE_KEYS.LEADS_LIST),
     invalidateCachePrefix(CACHE_KEYS.ANALYTICS),
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
-  ]
+  ])
 
-  // Only rebuild product stats when the requirement actually changed — it's expensive
-  if (requirementChanged) {
-    tasks.push(deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS))
-  }
-
-  await Promise.all(tasks)
-
+  // If specific lead ID provided, invalidate that lead's cache
   if (leadId) {
     await deleteCache(`${CACHE_KEYS.LEAD}:${leadId}`)
   }
@@ -53,7 +45,6 @@ export async function invalidateCustomerCaches(customerId?: string): Promise<voi
 export async function invalidateProductCaches(productId?: string): Promise<void> {
   await Promise.all([
     invalidateCachePrefix(CACHE_KEYS.PRODUCTS_LIST),
-    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
   ])
 
   if (productId) {
@@ -69,7 +60,6 @@ export async function invalidateAnalyticsCaches(): Promise<void> {
   await Promise.all([
     invalidateCachePrefix(CACHE_KEYS.ANALYTICS),
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
-    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
   ])
 }
 
@@ -93,6 +83,5 @@ export async function invalidateAllCaches(): Promise<void> {
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
     invalidateCachePrefix(CACHE_KEYS.QUOTATION),
     invalidateCachePrefix(CACHE_KEYS.FOLLOWUP),
-    deleteCache(CACHE_KEYS.PRODUCTS_WITH_STATS),
   ])
 }

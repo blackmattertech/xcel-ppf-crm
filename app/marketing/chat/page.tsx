@@ -293,11 +293,9 @@ export default function ChatWithLeadsPage() {
         : undefined
     const url = buildThreadMessagesUrl(selectedContact.phone, selectedConversationKey ?? undefined, leadId)
     invalidateApiCache('GET:/api/marketing/whatsapp/chat')
-    const headers: Record<string, string> = {}
-    if (messagesEtagRef.current) {
-      headers['If-None-Match'] = messagesEtagRef.current
-    }
-    fetch(url, { credentials: 'include', headers })
+    // Do not send If-None-Match here: after Realtime INSERT or webhook save, a stale ETag could yield 304
+    // and leave inbound bubbles missing until a full refetch.
+    fetch(url, { credentials: 'include' })
       .then((res) => {
         if (res.status === 304) return null
         if (!res.ok) return null

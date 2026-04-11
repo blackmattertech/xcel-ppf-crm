@@ -7,26 +7,6 @@ import {
   resolveFacebookOAuthRedirectUri,
 } from '@/lib/facebook-oauth-redirect'
 
-type FbOAuthErrorBody = {
-  access_token?: string
-  expires_in?: number
-  error?: { message?: string; type?: string; code?: number; error_subcode?: number }
-}
-
-function redirectFacebookSettingsError(
-  request: NextRequest,
-  code: string,
-  detail?: string
-): NextResponse {
-  const u = new URL('/settings', request.url)
-  u.searchParams.set('error', code)
-  u.searchParams.set('integration', 'facebook')
-  if (detail) {
-    u.searchParams.set('detail', detail.slice(0, 400))
-  }
-  return NextResponse.redirect(u)
-}
-
 /**
  * GET /api/integrations/facebook/callback
  * Handles Facebook OAuth callback and stores access token
@@ -80,60 +60,56 @@ export async function GET(request: NextRequest) {
         ? stateData.redirectUri
         : fallbackRedirect
 
-    const appId = process.env.FACEBOOK_APP_ID?.trim()
-    const appSecret = process.env.FACEBOOK_APP_SECRET?.trim()
+    const appId = process.env.FACEBOOK_APP_ID
+    const appSecret = process.env.FACEBOOK_APP_SECRET
 
     if (!appId || !appSecret) {
-      return redirectFacebookSettingsError(request, 'facebook_not_configured')
+      return NextResponse.redirect(
+        new URL('/settings?error=facebook_not_configured&integration=facebook', request.url)
+      )
     }
 
-    // POST keeps client_secret out of access logs and avoids broken GET URLs for long codes / special chars.
-    const tokenResponse = await fetch('https://graph.facebook.com/v25.0/oauth/access_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: appId,
-        client_secret: appSecret,
-        redirect_uri: redirectUri,
-        code,
-      }).toString(),
-    })
+    // Exchange code for access token
+    const tokenResponse = await fetch(
+      `https://graph.facebook.com/v25.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`,
+      { method: 'GET' }
+    )
 
-    const tokenParsed = await safeParseJsonResponse<FbOAuthErrorBody>(tokenResponse)
+    const tokenParsed = await safeParseJsonResponse<{
+      access_token?: string
+      expires_in?: number
+      error?: { message?: string; type?: string; code?: number }
+    }>(tokenResponse)
 
-    const metaErrMsg = (e: FbOAuthErrorBody['error']): string | undefined => {
-      if (!e) return undefined
-      if (typeof e === 'object' && e.message) return e.message
-      return String(e)
+    if (!tokenResponse.ok) {
+      const fbError = tokenParsed.ok ? tokenParsed.data?.error : null
+      console.error(
+        'Facebook token exchange HTTP error:',
+        tokenResponse.status,
+        fbError ?? (tokenParsed.ok ? tokenParsed.data : tokenParsed.error)
+      )
+      return NextResponse.redirect(
+        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
+      )
     }
-
     if (!tokenParsed.ok) {
       console.error('Facebook token exchange parse error:', tokenParsed.error)
-      return redirectFacebookSettingsError(request, 'token_exchange_failed', tokenParsed.error)
+      return NextResponse.redirect(
+        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
+      )
     }
 
     const tokenBody = tokenParsed.data
     if (tokenBody.error) {
-      const msg = metaErrMsg(tokenBody.error)
-      console.error('Facebook token exchange API error:', tokenBody.error)
-      return redirectFacebookSettingsError(request, 'token_exchange_failed', msg)
-    }
-
-    if (!tokenResponse.ok) {
-      console.error(
-        'Facebook token exchange HTTP error:',
-        tokenResponse.status,
-        tokenBody.error ?? tokenBody
-      )
-      return redirectFacebookSettingsError(
-        request,
-        'token_exchange_failed',
-        metaErrMsg(tokenBody.error) ?? `HTTP ${tokenResponse.status}`
+      console.error('Facebook token exchange API error:', tokenBody.error.message ?? tokenBody.error)
+      return NextResponse.redirect(
+        new URL('/settings?error=token_exchange_failed&integration=facebook', request.url)
       )
     }
-
     if (!tokenBody.access_token) {
-      return redirectFacebookSettingsError(request, 'no_access_token')
+      return NextResponse.redirect(
+        new URL('/settings?error=no_access_token&integration=facebook', request.url)
+      )
     }
 
     const tokenData = tokenBody
@@ -208,23 +184,14 @@ export async function GET(request: NextRequest) {
     // Store or update Facebook Business settings
     const supabase = createServiceClient()
 
-    // Latest active row only (avoid .maybeSingle() when duplicates exist — it errors and led to extra inserts).
-    const { data: existingRows, error: existingLookupError } = await supabase
+    // Check if connection already exists
+    const { data: existingData } = await supabase
       .from('facebook_business_settings')
       .select('id')
       .eq('created_by', user.id)
       .eq('is_active', true)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-
-    if (existingLookupError) {
-      console.error('Error looking up Facebook settings:', existingLookupError)
-      return NextResponse.redirect(
-        new URL('/settings?error=save_failed&integration=facebook', request.url)
-      )
-    }
-
-    const existing = (existingRows?.[0] ?? null) as { id: string } | null
+      .maybeSingle()
+    const existing = existingData as { id: string } | null
 
     const settingsData = {
       access_token: accessToken,
@@ -241,8 +208,6 @@ export async function GET(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
-    let savedId: string
-
     if (existing) {
       // Update existing connection (Supabase infers 'never' for untyped table)
       const { error: updateError } = await supabase
@@ -257,34 +222,18 @@ export async function GET(request: NextRequest) {
           new URL('/settings?error=update_failed&integration=facebook', request.url)
         )
       }
-      savedId = existing.id
     } else {
-      const { data: inserted, error: insertError } = await supabase
+      // Create new connection
+      const { error: insertError } = await supabase
         .from('facebook_business_settings')
         .insert(settingsData as any)
-        .select('id')
-        .single()
 
-      if (insertError || !inserted) {
+      if (insertError) {
         console.error('Error saving Facebook settings:', insertError)
         return NextResponse.redirect(
           new URL('/settings?error=save_failed&integration=facebook', request.url)
         )
       }
-      savedId = (inserted as { id: string }).id
-    }
-
-    // Deactivate older duplicate rows so GET and future OAuth runs stay consistent
-    const { error: dedupeError } = await supabase
-      .from('facebook_business_settings')
-      // @ts-expect-error - facebook_business_settings Update type not inferred correctly
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('created_by', user.id)
-      .neq('id', savedId)
-      .eq('is_active', true)
-
-    if (dedupeError) {
-      console.error('Error deactivating duplicate Facebook settings:', dedupeError)
     }
 
     // Redirect to settings page with success message

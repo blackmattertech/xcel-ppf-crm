@@ -374,17 +374,26 @@ export async function listMessagesByConversationKey(conversationKey: string): Pr
   const normalized = toConversationKey(conversationKey)
   if (!normalized || normalized.length < 10) return []
   const supabase = createServiceClient()
+  // Match conversation_key OR phone so inbound (webhook) + outbound (CRM) always share a thread even if
+  // legacy rows only had phone, or keys ever diverged for the same E.164-ish digits.
   const { data, error } = await supabase
     .from('whatsapp_messages')
     .select('*')
-    .eq('conversation_key', normalized)
+    .or(`conversation_key.eq.${normalized},phone.eq.${normalized}`)
     .order('created_at', { ascending: true })
   if (error) {
     if (error.code === '42P01' || error.code === '42703') return []
     console.error('[whatsapp-chat] listMessagesByConversationKey:', error)
     return []
   }
-  return ((data ?? []) as WhatsAppMessageRow[]).map(toInboxMessageDTO)
+  const rows = (data ?? []) as WhatsAppMessageRow[]
+  const byId = new Map<string, WhatsAppMessageRow>()
+  for (const row of rows) {
+    byId.set(row.id, row)
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .map(toInboxMessageDTO)
 }
 
 /**
