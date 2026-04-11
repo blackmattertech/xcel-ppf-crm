@@ -1,6 +1,10 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { getCache, setCache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache'
-import { getProductsWithStats, type ProductWithStats } from '@/backend/services/product.service'
+import {
+  getProductsWithStats,
+  type ProductWithStats,
+  type ProductsWithStatsPayload,
+} from '@/backend/services/product.service'
 type AnalyticsDashboardRpc = {
   leadsBySource: Record<string, number>
   leadsByStatus: Record<string, number>
@@ -109,10 +113,27 @@ export async function fetchAnalyticsDashboardPayload(
 /**
  * Heavy product × lead aggregation; cached globally (same for all viewers with access).
  */
-export async function fetchProductsWithStatsCached(): Promise<ProductWithStats[]> {
+export async function fetchProductsWithStatsCached(): Promise<ProductsWithStatsPayload> {
   const cacheKey = CACHE_KEYS.PRODUCTS_WITH_STATS
-  const cached = await getCache<ProductWithStats[]>(cacheKey)
-  if (cached && Array.isArray(cached)) return cached
+  const cached = await getCache<ProductsWithStatsPayload | ProductWithStats[]>(cacheKey)
+  if (cached != null) {
+    if (Array.isArray(cached)) {
+      return {
+        products: cached,
+        summary: {
+          total_products: cached.length,
+          active_products: cached.filter((p) => p.is_active).length,
+          total_leads_in_system: 0,
+          leads_matching_at_least_one_product: 0,
+          total_orders: 0,
+          orders_with_product_assigned: 0,
+        },
+      }
+    }
+    if (Array.isArray(cached.products) && cached.summary) {
+      return cached as ProductsWithStatsPayload
+    }
+  }
 
   const data = await getProductsWithStats()
   await setCache(cacheKey, data, CACHE_TTL.VERY_LONG)

@@ -72,7 +72,12 @@ export async function createUser(
   })
 
   if (authError || !authData.user) {
-    throw new Error(`Failed to create auth user: ${authError?.message}`)
+    const msg = authError?.message ?? 'Unknown error'
+    const hint =
+      /not allowed/i.test(msg)
+        ? ' On the server, set SUPABASE_SERVICE_ROLE_KEY to the service_role secret from Supabase (Settings → API). The anon/public key cannot call auth.admin.createUser.'
+        : ''
+    throw new Error(`Failed to create auth user: ${msg}${hint}`)
   }
 
   // Create user record

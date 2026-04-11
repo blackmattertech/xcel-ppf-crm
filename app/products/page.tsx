@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import Image from 'next/image'
@@ -24,7 +25,29 @@ interface Product {
 interface ProductWithStats extends Product {
   leads_interested: number
   customers_bought: number
+  orders_linked?: number
+  conversion_rate?: number | null
+  estimated_pipeline_value?: number
+  margin_percent?: number | null
 }
+
+interface ProductsStatsSummary {
+  total_products: number
+  active_products: number
+  total_leads_in_system: number
+  leads_matching_at_least_one_product: number
+  total_orders: number
+  orders_with_product_assigned: number
+}
+
+type ProductSortOption =
+  | 'interested_desc'
+  | 'title_asc'
+  | 'conversion_desc'
+  | 'customers_desc'
+  | 'pipeline_desc'
+
+type ProductFilterOption = 'all' | 'active' | 'inactive' | 'high_interest_low_conversion'
 
 export default function ProductsPage() {
   const router = useRouter()
@@ -32,7 +55,6 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProduct, setEditingProduct] = useState<ProductWithStats | null>(null)
-  const [totalLeads, setTotalLeads] = useState(0)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -47,24 +69,14 @@ export default function ProductsPage() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [summary, setSummary] = useState<ProductsStatsSummary | null>(null)
+  const [sortOption, setSortOption] = useState<ProductSortOption>('interested_desc')
+  const [filterOption, setFilterOption] = useState<ProductFilterOption>('all')
 
   useEffect(() => {
     checkAuth()
     fetchProducts()
-    fetchTotalLeads()
   }, [])
-
-  async function fetchTotalLeads() {
-    try {
-      const response = await cachedFetch('/api/leads')
-      if (response.ok) {
-        const data = await response.json()
-        setTotalLeads(data.leads?.length || 0)
-      }
-    } catch (error) {
-      console.error('Failed to fetch total leads:', error)
-    }
-  }
 
   async function checkAuth() {
     const supabase = createClient()
@@ -126,14 +138,108 @@ export default function ProductsPage() {
     try {
       const response = await cachedFetch('/api/products?with_stats=true')
       if (response.ok) {
-        const data = await response.json()
-        setProducts(data || [])
+        const raw = await response.json()
+        if (raw?.products && Array.isArray(raw.products)) {
+          setProducts(raw.products)
+          setSummary(raw.summary ?? null)
+        } else if (Array.isArray(raw)) {
+          setProducts(raw)
+          setSummary(null)
+        } else {
+          setProducts([])
+          setSummary(null)
+        }
       }
     } catch (error) {
       console.error('Failed to fetch products:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  const totalPipelineEstimate = useMemo(
+    () => products.reduce((s, p) => s + (p.estimated_pipeline_value ?? p.leads_interested * p.price), 0),
+    [products]
+  )
+
+  const displayedProducts = useMemo(() => {
+    let list = [...products]
+    if (filterOption === 'active') list = list.filter((p) => p.is_active)
+    if (filterOption === 'inactive') list = list.filter((p) => !p.is_active)
+    if (filterOption === 'high_interest_low_conversion') {
+      list = list.filter(
+        (p) =>
+          p.leads_interested >= 3 &&
+          p.customers_bought < p.leads_interested &&
+          (p.conversion_rate == null || p.conversion_rate < 10)
+      )
+    }
+    list.sort((a, b) => {
+      switch (sortOption) {
+        case 'title_asc':
+          return a.title.localeCompare(b.title)
+        case 'conversion_desc': {
+          const ca = a.conversion_rate ?? -1
+          const cb = b.conversion_rate ?? -1
+          return cb - ca
+        }
+        case 'customers_desc':
+          return b.customers_bought - a.customers_bought
+        case 'pipeline_desc': {
+          const pa = a.estimated_pipeline_value ?? a.leads_interested * a.price
+          const pb = b.estimated_pipeline_value ?? b.leads_interested * b.price
+          return pb - pa
+        }
+        case 'interested_desc':
+        default:
+          return b.leads_interested - a.leads_interested
+      }
+    })
+    return list
+  }, [products, filterOption, sortOption])
+
+  function exportProductsCsv(rows: ProductWithStats[]) {
+    const headers = [
+      'Title',
+      'SKU',
+      'Active',
+      'Price',
+      'MRP',
+      'Leads interested',
+      'Orders (SKU)',
+      'Orders / buyers (max)',
+      'Conversion %',
+      'Est. pipeline INR',
+    ]
+    const esc = (v: string | number) => {
+      const s = String(v ?? '')
+      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+      return s
+    }
+    const lines = [
+      headers.join(','),
+      ...rows.map((p) =>
+        [
+          esc(p.title),
+          esc(p.sku ?? ''),
+          p.is_active ? 'yes' : 'no',
+          p.price,
+          p.mrp,
+          p.leads_interested,
+          p.orders_linked ?? 0,
+          p.customers_bought,
+          p.conversion_rate != null ? p.conversion_rate : '',
+          p.estimated_pipeline_value ?? p.leads_interested * p.price,
+        ].join(',')
+      ),
+    ]
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `products-insights-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -390,11 +496,16 @@ export default function ProductsPage() {
     <Layout>
       <div className="p-4 md:p-6 lg:p-8 w-full">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Products</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Products</h1>
+            <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+              Interest counts match lead requirement and Meta fields (fuzzy). Pipeline = interested leads × list price. Conversion uses orders vs interested leads.
+            </p>
+          </div>
           {canCreate && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shrink-0"
             >
               + Add New Product
             </button>
@@ -402,23 +513,88 @@ export default function ProductsPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500">Total Leads</h3>
-            <p className="text-2xl font-bold text-gray-900 mt-2">
-              {totalLeads}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow p-5">
+            <h3 className="text-sm font-medium text-gray-500">Catalog</h3>
+            <p className="text-2xl font-bold text-gray-900 mt-1">
+              <span className="text-indigo-600">
+                {summary?.active_products ?? products.filter((p) => p.is_active).length}
+              </span>
+              <span className="text-base font-normal text-gray-500"> active · </span>
+              <span>{summary?.total_products ?? products.length}</span>
+              <span className="text-base font-normal text-gray-500"> total</span>
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Products in CRM</p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-5">
+            <h3 className="text-sm font-medium text-gray-500">Leads with product interest</h3>
+            <p className="text-2xl font-bold text-gray-900 mt-1">
+              {summary?.leads_matching_at_least_one_product ?? '—'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {summary != null
+                ? `of ${summary.total_leads_in_system} leads (matched any product)`
+                : 'Load stats to see coverage'}
             </p>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500">Total Products</h3>
-            <p className="text-2xl font-bold text-gray-900 mt-2">
-              {products.length}
+          <div className="bg-white rounded-lg shadow p-5">
+            <h3 className="text-sm font-medium text-gray-500">Orders</h3>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{summary?.total_orders ?? '—'}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {summary != null
+                ? `${summary.orders_with_product_assigned} with product on order`
+                : '—'}
             </p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-5">
+            <h3 className="text-sm font-medium text-gray-500">Est. pipeline (all products)</h3>
+            <p className="text-2xl font-bold text-gray-900 mt-1">
+              ₹{Math.round(totalPipelineEstimate).toLocaleString('en-IN')}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Interested leads × your list price</p>
           </div>
         </div>
 
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 mb-6">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <span className="text-gray-500 shrink-0">Sort</span>
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value as ProductSortOption)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white min-w-[200px]"
+            >
+              <option value="interested_desc">Most leads interested</option>
+              <option value="pipeline_desc">Highest est. pipeline</option>
+              <option value="conversion_desc">Highest conversion %</option>
+              <option value="customers_desc">Most orders (buyers)</option>
+              <option value="title_asc">Title A–Z</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <span className="text-gray-500 shrink-0">Filter</span>
+            <select
+              value={filterOption}
+              onChange={(e) => setFilterOption(e.target.value as ProductFilterOption)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white min-w-[220px]"
+            >
+              <option value="all">All products</option>
+              <option value="active">Active only</option>
+              <option value="inactive">Inactive only</option>
+              <option value="high_interest_low_conversion">High interest, low conversion (≥3 leads, &lt;10%)</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => exportProductsCsv(displayedProducts)}
+            disabled={displayedProducts.length === 0}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Export CSV ({displayedProducts.length})
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {products.map((product) => (
+          {displayedProducts.map((product) => (
             <div
               key={product.id}
               className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow"
@@ -463,22 +639,52 @@ export default function ProductsPage() {
                   </div>
                   {product.mrp > product.price && (
                     <span className="text-xs text-green-600">
-                      {Math.round(((product.mrp - product.price) / product.mrp) * 100)}% off
+                      {product.margin_percent != null
+                        ? `${product.margin_percent}% off MRP`
+                        : `${Math.round(((product.mrp - product.price) / product.mrp) * 100)}% off`}
                     </span>
                   )}
                 </div>
 
                 {/* Statistics */}
-                <div className="grid grid-cols-2 gap-2 mb-3 pt-3 border-t">
+                <div className="grid grid-cols-2 gap-2 mb-2 pt-3 border-t">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-600">{product.leads_interested}</div>
-                    <div className="text-xs text-gray-600">Leads Interested</div>
+                    <div className="text-xs text-gray-600">Leads interested</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-green-600">{product.customers_bought}</div>
-                    <div className="text-xs text-gray-600">Customers Bought</div>
+                    <div className="text-xs text-gray-600">Orders (max of SKU + match)</div>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-2 mb-3 text-[11px] text-gray-600">
+                  <div>
+                    <span className="text-gray-500">On order (SKU):</span>{' '}
+                    <span className="font-semibold text-gray-800">{product.orders_linked ?? 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Conversion:</span>{' '}
+                    <span className="font-semibold text-gray-800">
+                      {product.conversion_rate != null ? `${product.conversion_rate}%` : '—'}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Est. pipeline:</span>{' '}
+                    <span className="font-semibold text-indigo-700">
+                      ₹
+                      {(product.estimated_pipeline_value ?? product.leads_interested * product.price).toLocaleString(
+                        'en-IN'
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/leads?q=${encodeURIComponent(product.title)}`}
+                  className="block w-full text-center text-xs text-indigo-600 hover:text-indigo-800 py-2 border border-indigo-100 rounded-lg bg-indigo-50/50 mb-2"
+                >
+                  View matching leads
+                </Link>
 
                 {/* Actions */}
                 {canCreate && (
@@ -507,6 +713,11 @@ export default function ProductsPage() {
         {products.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             No products found. {canCreate && 'Click "Add New Product" to create one.'}
+          </div>
+        )}
+        {products.length > 0 && displayedProducts.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            No products match this filter. Try &quot;All products&quot;.
           </div>
         )}
       </div>

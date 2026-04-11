@@ -120,7 +120,8 @@ export default function DashboardPage() {
           setProductsWithStats([])
           return
         }
-        const products = await r.json()
+        const raw = await r.json()
+        const products = Array.isArray(raw) ? raw : (raw?.products ?? [])
         setProductsWithStats(Array.isArray(products) ? products : [])
       } catch (error) {
         console.error('Failed to fetch products with stats:', error)

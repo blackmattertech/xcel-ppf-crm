@@ -897,6 +897,12 @@ function LeadsPageContent() {
   type QuickFilter = null | 'untouched' | 'contacted' | 'qualified' | 'hot' | 'conversions' | 'discarded'
   const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilter>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const qParam = searchParams.get('q')
+  useEffect(() => {
+    if (qParam != null && qParam !== '') {
+      setSearchQuery(decodeURIComponent(qParam.replace(/\+/g, ' ')))
+    }
+  }, [qParam])
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'grid'>('table')
   const [groupBy, setGroupBy] = useState<string>('status')
   const [groupByDropdownOpen, setGroupByDropdownOpen] = useState(false)
@@ -3132,38 +3138,41 @@ function LeadsPageContent() {
 
           {/* Filter and Search Bar */}
           <div 
-            className="rounded-lg shadow-sm p-4 mb-4 flex items-center justify-between gap-4"
+            className="rounded-xl border border-black/[0.06] shadow-sm p-3 sm:p-4 mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
             style={{
               backgroundColor: containerStyles.containerColor,
               opacity: containerStyles.opacity,
             }}
           >
-            <div className="flex items-center gap-3 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5 w-full">
+              <div className="flex flex-wrap items-center gap-2">
               {/* Advanced Filter Dropdown */}
-              <div className="relative filter-dropdown">
+              <div className="relative filter-dropdown shrink-0">
                 <button 
+                  type="button"
                   onClick={() => {
                     setFilterDropdownOpen(!filterDropdownOpen)
                     setSortDropdownOpen(false)
                   }}
-                  className={`px-4 py-2 text-base bg-white/20 border border-white/30 rounded-md hover:bg-white/30 flex items-center gap-2 ${
-                    filterConditions.length > 0 ? 'border-white' : 'border-white/30'
+                  className={`h-9 sm:h-10 px-3 sm:px-4 text-sm sm:text-base border rounded-lg hover:opacity-90 flex items-center gap-1.5 sm:gap-2 transition-all shadow-sm ${
+                    filterConditions.length > 0 ? 'ring-2 ring-[#ed1b24]/20 border-[#ed1b24]/35' : ''
                   }`}
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
                     opacity: containerStyles.opacity,
+                    borderColor: containerStyles.textColor + '30',
                   }}
                 >
-                  <span>
+                  <span className="whitespace-nowrap font-medium">
                     {filterConditions.length > 0 
                       ? `Filters (${filterConditions.length})` 
                       : 'Filter by'}
                   </span>
-                  <ChevronDown size={18} className={`transition-transform ${filterDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
+                  <ChevronDown size={18} className={`transition-transform shrink-0 ${filterDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
                 </button>
                 {filterDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[600px] max-w-[800px]">
+                  <div className="absolute top-full left-0 right-0 sm:right-auto mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 w-[min(calc(100vw-2rem),800px)] sm:min-w-[min(100vw-2rem,600px)] sm:max-w-[800px] max-h-[min(85vh,32rem)] overflow-y-auto">
                     <div className="p-4">
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="text-base font-semibold text-gray-900">Advanced Filters</h3>
@@ -3286,13 +3295,14 @@ function LeadsPageContent() {
               </div>
               
               {/* Sort Dropdown */}
-              <div className="relative sort-dropdown">
+              <div className="relative sort-dropdown shrink-0 min-w-0 max-w-[calc(100vw-3rem)] sm:max-w-none">
             <button
+                  type="button"
                   onClick={() => {
                     setSortDropdownOpen(!sortDropdownOpen)
                     setFilterDropdownOpen(false)
                   }}
-                  className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                  className="h-9 sm:h-10 px-3 sm:px-4 text-sm sm:text-base border rounded-lg hover:opacity-90 flex items-center gap-1.5 sm:gap-2 transition-all max-w-full shadow-sm"
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
@@ -3300,11 +3310,16 @@ function LeadsPageContent() {
                     borderColor: containerStyles.textColor + '30',
                   }}
                 >
-                  <span>Sort by: {sortColumn.replace(/_/g, ' ')} ({sortDirection})</span>
-                  <ChevronDown size={18} className={`transition-transform ${sortDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
+                  <span className="truncate text-left font-medium">
+                    <span className="sm:hidden">Sort</span>
+                    <span className="hidden sm:inline">
+                      Sort by: {sortColumn.replace(/_/g, ' ')} ({sortDirection})
+                    </span>
+                  </span>
+                  <ChevronDown size={18} className={`transition-transform shrink-0 ${sortDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
             </button>
                 {sortDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[250px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 w-[min(calc(100vw-2rem),280px)] sm:min-w-[250px] max-h-[min(70vh,24rem)] overflow-y-auto">
                     <div className="p-2">
                       <div className="mb-2 px-2 text-xs font-semibold text-gray-500 uppercase">Sort Column</div>
                       <div className="max-h-60 overflow-y-auto mb-2">
@@ -3364,120 +3379,138 @@ function LeadsPageContent() {
                   </div>
                 )}
               </div>
-              <div className="flex-1 max-w-md relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={18} style={{ color: containerStyles.iconColor + 'CC' }} />
+              </div>
+              <div className="w-full max-w-full sm:max-w-md lg:max-w-lg relative min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" size={18} style={{ color: containerStyles.iconColor + 'CC' }} />
                 <input
                   type="text"
-                  placeholder="Try 'Miami invoice'"
+                  placeholder="Search name, phone, product, source…"
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value)
                     goToPage(1)
                   }}
-                  className="w-full pl-10 pr-4 py-2.5 text-base border rounded-md focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all"
+                  className="w-full h-9 sm:h-10 pl-10 pr-3 sm:pr-4 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ed1b24]/25 focus:border-[#ed1b24]/40 transition-all shadow-sm"
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
                     borderColor: containerStyles.textColor + '30',
-                    '--tw-ring-color': containerStyles.textColor + '50',
-                  } as React.CSSProperties & { '--tw-ring-color'?: string }}
+                  } as React.CSSProperties}
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div
+              className="flex flex-wrap items-center gap-2 justify-start lg:justify-end w-full lg:w-auto shrink-0 border-t border-black/[0.06] pt-3 lg:border-0 lg:pt-0 lg:pl-2"
+              style={{ borderColor: containerStyles.textColor + '18' }}
+            >
+              <div
+                className="inline-flex h-9 sm:h-10 items-center gap-0.5 rounded-lg border p-0.5 shrink-0 shadow-sm bg-black/[0.02]"
+                style={{ borderColor: containerStyles.textColor + '28' }}
+              >
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'text-[#ed1b24]' : 'hover:opacity-80'}`}
+                className={`h-full aspect-square rounded-md flex items-center justify-center transition-colors ${viewMode === 'table' ? 'text-[#ed1b24] bg-white shadow-sm' : 'hover:bg-black/[0.04]'}`}
                 style={{ 
                   color: viewMode === 'table' ? '#ed1b24' : containerStyles.iconColor,
-                  backgroundColor: viewMode === 'table' ? '#ffffff' : 'transparent',
                 }}
-                title="Table View"
+                title="Table view"
+                type="button"
               >
                 <List size={18} />
               </button>
               <button
                 onClick={() => setViewMode('kanban')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'kanban' ? 'text-[#ed1b24]' : 'hover:opacity-80'}`}
+                className={`h-full aspect-square rounded-md flex items-center justify-center transition-colors ${viewMode === 'kanban' ? 'text-[#ed1b24] bg-white shadow-sm' : 'hover:bg-black/[0.04]'}`}
                 style={{ 
                   color: viewMode === 'kanban' ? '#ed1b24' : containerStyles.iconColor,
-                  backgroundColor: viewMode === 'kanban' ? '#ffffff' : 'transparent',
                 }}
-                title="Kanban View"
+                title="Kanban view"
+                type="button"
               >
                 <Columns size={18} />
               </button>
             <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'text-[#ed1b24]' : 'hover:opacity-80'}`}
+                className={`h-full aspect-square rounded-md flex items-center justify-center transition-colors ${viewMode === 'grid' ? 'text-[#ed1b24] bg-white shadow-sm' : 'hover:bg-black/[0.04]'}`}
                 style={{ 
                   color: viewMode === 'grid' ? '#ed1b24' : containerStyles.iconColor,
-                  backgroundColor: viewMode === 'grid' ? '#ffffff' : 'transparent',
                 }}
-                title="Grid View"
+                title="Grid view"
+                type="button"
               >
                 <Grid size={18} />
               </button>
+              </div>
               <Link 
                 href="/leads/upload"
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
+                title="Import leads from file"
               >
-                <Upload size={18} style={{ color: containerStyles.iconColor }} />
-                Import
+                <Upload size={18} className="shrink-0" style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Import</span>
               </Link>
               <button
                 type="button"
                 onClick={handleSyncFromMeta}
                 disabled={metaSyncLoading}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all disabled:opacity-50"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all disabled:opacity-50 shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
-                title="Sync leads from Meta (Facebook) Lead Ads"
+                title="Pull latest leads from Meta Lead Ads"
               >
-                <RefreshCw size={18} className={metaSyncLoading ? 'animate-spin' : ''} style={{ color: containerStyles.iconColor }} />
-                Sync from Meta
+                <RefreshCw size={18} className={`shrink-0 ${metaSyncLoading ? 'animate-spin' : ''}`} style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Sync</span>
               </button>
               <button
                 type="button"
                 onClick={handleExportLeads}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
+                title="Export leads"
               >
-                <Download size={18} style={{ color: containerStyles.iconColor }} />
-                Export
+                <Download size={18} className="shrink-0" style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Export</span>
               </button>
               <button 
+                type="button"
                 onClick={() => {
                   setCustomizeModalOpen(true)
                   setCustomizeMode(null)
                 }}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
+                title="Customise table columns"
               >
-                <Settings size={18} style={{ color: containerStyles.iconColor }} />
-                Customise
+                <Settings size={18} className="shrink-0" style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Customise</span>
               </button>
-              <div className="relative more-options-dropdown">
+              <div className="relative more-options-dropdown shrink-0">
                 <button 
+                  type="button"
                   onClick={() => setMoreOptionsOpen(!moreOptionsOpen)}
-                  className="p-2 hover:opacity-80 rounded-md transition-colors"
-                  style={{ color: containerStyles.iconColor }}
+                  className="h-9 sm:h-10 w-9 sm:w-10 inline-flex items-center justify-center border rounded-lg hover:opacity-90 transition-all shadow-sm"
+                  style={{ 
+                    color: containerStyles.iconColor,
+                    backgroundColor: containerStyles.backgroundColor,
+                    borderColor: containerStyles.textColor + '30',
+                  }}
+                  title="More options"
                 >
                   <MoreVertical size={18} />
                 </button>
