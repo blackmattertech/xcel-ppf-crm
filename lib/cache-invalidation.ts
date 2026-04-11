@@ -10,13 +10,23 @@ import { invalidateCachePrefix, deleteCache, CACHE_KEYS } from './cache'
 /**
  * Invalidate all lead-related caches
  * Call after creating, updating, or deleting leads
+ *
+ * @param invalidateProductsWithStats When true, also clears the heavy
+ *   `products:with_stats` aggregation cache (e.g. requirement changed or lead removed).
  */
-export async function invalidateLeadCaches(leadId?: string): Promise<void> {
-  await Promise.all([
+export async function invalidateLeadCaches(
+  leadId?: string,
+  invalidateProductsWithStats?: boolean
+): Promise<void> {
+  const prefixTasks = [
     invalidateCachePrefix(CACHE_KEYS.LEADS_LIST),
     invalidateCachePrefix(CACHE_KEYS.ANALYTICS),
     invalidateCachePrefix(CACHE_KEYS.DASHBOARD),
-  ])
+  ]
+  if (invalidateProductsWithStats) {
+    prefixTasks.push(invalidateCachePrefix(CACHE_KEYS.PRODUCTS_WITH_STATS))
+  }
+  await Promise.all(prefixTasks)
 
   // If specific lead ID provided, invalidate that lead's cache
   if (leadId) {
