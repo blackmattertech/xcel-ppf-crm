@@ -1564,6 +1564,8 @@ export default function LeadDetailPageContent({
 
   const overlayZ = embedded ? 'z-[100]' : 'z-40'
   const modalZ = embedded ? 'z-[110]' : 'z-50'
+  /** Must sit above {@link modalZ} when embedded, or dialogs open behind the lead panel. */
+  const nestedModalZ = embedded ? 'z-[120]' : 'z-50'
 
   if (loading) {
     if (embedded) {
@@ -2332,7 +2334,7 @@ export default function LeadDetailPageContent({
       {/* Modals */}
       {/* Call Outcome Modal */}
           {showCallModal && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className={`fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center ${nestedModalZ}`}>
           <div className="bg-white rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif' }}>
             {/* Red Header */}
             <div className="bg-[#de0510] text-white px-6 py-4 rounded-t-xl flex items-center justify-between">
@@ -3012,7 +3014,7 @@ export default function LeadDetailPageContent({
 
           {/* Qualification Modal */}
           {showQualifyModal && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className={`fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center ${nestedModalZ}`}>
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-semibold mb-4">Qualify Lead</h3>
                 <div className="space-y-4">
@@ -3072,7 +3074,7 @@ export default function LeadDetailPageContent({
 
           {/* Follow-up Schedule Modal */}
           {showFollowUpModal && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className={`fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center ${nestedModalZ}`}>
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-semibold mb-4">Schedule Follow-up</h3>
                 <div className="space-y-4">
@@ -3141,7 +3143,7 @@ export default function LeadDetailPageContent({
 
           {/* Payment Status Modal */}
           {showPaymentModal && (
-            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className={`fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center ${nestedModalZ}`}>
               <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
                 <h3 className="text-lg font-semibold mb-4">Update Payment Status</h3>
                 <div className="space-y-4">
@@ -3214,7 +3216,7 @@ export default function LeadDetailPageContent({
 
       {/* Status Update Modal */}
       {showStatusUpdateModal && canUpdateStatus && lead && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[60]">
+        <div className={`fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center ${nestedModalZ}`}>
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">Update Status</h3>
             <div className="space-y-4">
@@ -3282,7 +3284,7 @@ export default function LeadDetailPageContent({
 
       {/* Create Quotation Modal */}
       {showQuotationModal && lead && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto p-4">
+        <div className={`fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center ${nestedModalZ} overflow-y-auto p-4`}>
           <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif' }}>
             {/* Header */}
             <div className="sticky top-0 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 rounded-t-xl flex items-center justify-between z-10">
@@ -3679,7 +3681,7 @@ export default function LeadDetailPageContent({
 
       {/* Quotation Success Modal */}
       {showQuotationSuccessModal && createdQuotationId && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className={`fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center ${nestedModalZ}`}>
           <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif' }}>
             {/* Header */}
             <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-4 rounded-t-xl flex items-center justify-between">

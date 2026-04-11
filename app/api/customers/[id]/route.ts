@@ -40,6 +40,7 @@ function normalizeExternalRow(row: Record<string, unknown>, prefixId: string): R
     car_photo_url: row.car_photo_url != null ? String(row.car_photo_url) : null,
     chassis_photo_url: row.chassis_photo_url != null ? String(row.chassis_photo_url) : null,
     dealer_invoice_url: row.dealer_invoice_url != null ? String(row.dealer_invoice_url) : null,
+    warranty_claims: (row.warranty_claims ?? row.warrantyClaims) ?? null,
   }
 }
 

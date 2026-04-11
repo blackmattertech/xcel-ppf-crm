@@ -6,6 +6,52 @@ import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import { cachedFetch } from '@/lib/api-client'
 
+function hasWarrantyClaimsContent(v: unknown): boolean {
+  if (v == null) return false
+  if (Array.isArray(v)) return v.length > 0
+  if (typeof v === 'object') return Object.keys(v as object).length > 0
+  if (typeof v === 'string') return v.trim().length > 0
+  return true
+}
+
+function WarrantyClaimsDetails({ data }: { data: unknown }) {
+  if (data == null) return null
+  if (Array.isArray(data)) {
+    if (data.length === 0) return null
+    return (
+      <div className="space-y-3">
+        {data.map((item, i) => (
+          <div key={i} className="rounded-lg border border-gray-200 p-4 bg-gray-50/80">
+            {typeof item === 'object' && item !== null ? (
+              <pre className="text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap font-mono">
+                {JSON.stringify(item, null, 2)}
+              </pre>
+            ) : (
+              <p className="text-sm text-gray-900">{String(item)}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (typeof data === 'object') {
+    return (
+      <pre className="text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap font-mono bg-gray-50/80 p-4 rounded-lg border border-gray-200">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    )
+  }
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data) as unknown
+      return <WarrantyClaimsDetails data={parsed} />
+    } catch {
+      return <p className="text-sm text-gray-900 whitespace-pre-wrap">{data}</p>
+    }
+  }
+  return <p className="text-sm text-gray-900">{String(data)}</p>
+}
+
 interface Customer {
   id: string
   name: string
@@ -31,6 +77,8 @@ interface Customer {
   car_photo_url?: string | null
   chassis_photo_url?: string | null
   dealer_invoice_url?: string | null
+  /** From external DB: jsonb/array/text — claim line items or metadata */
+  warranty_claims?: unknown
 }
 
 interface Order {
@@ -106,6 +154,25 @@ export default function CustomerDetailPage() {
     if (tags.some((t) => t.toLowerCase().includes('individual'))) return 'Individual'
     return 'Individual'
   })()
+
+  const hasExternalCarServiceBlock =
+    customer.source === 'external' &&
+    !!(
+      customer.car_number ||
+      customer.car_name ||
+      customer.service_type ||
+      customer.dealer_name ||
+      customer.chassis_number ||
+      customer.series ||
+      customer.service_date ||
+      customer.service_location ||
+      customer.warranty_years != null ||
+      customer.ppf_warranty_years != null ||
+      customer.car_photo_url ||
+      customer.chassis_photo_url ||
+      customer.dealer_invoice_url ||
+      hasWarrantyClaimsContent(customer.warranty_claims)
+    )
 
   const totalRevenue = orders.reduce((sum, order) => {
     const isClosed = order.payment_status === 'fully_paid'
@@ -185,8 +252,19 @@ export default function CustomerDetailPage() {
           </div>
 
           {/* Car & Service (external/claims) */}
-          {(customer.source === 'external' && (customer.car_number || customer.car_name || customer.service_type || customer.dealer_name)) && (
+          {hasExternalCarServiceBlock && (
             <>
+              {hasWarrantyClaimsContent(customer.warranty_claims) && (
+                <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h2 className="text-xl font-semibold text-gray-900">Warranty claim details</h2>
+                  </div>
+                  <div className="px-6 py-4">
+                    <WarrantyClaimsDetails data={customer.warranty_claims} />
+                  </div>
+                </div>
+              )}
+              {(customer.car_number || customer.car_name || customer.chassis_number) && (
               <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h2 className="text-xl font-semibold text-gray-900">Car Details</h2>
@@ -220,6 +298,14 @@ export default function CustomerDetailPage() {
                   </div>
                 </div>
               </div>
+              )}
+              {(customer.service_type ||
+                customer.series ||
+                customer.service_date ||
+                customer.service_location ||
+                customer.dealer_name ||
+                customer.warranty_years != null ||
+                customer.ppf_warranty_years != null) && (
               <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h2 className="text-xl font-semibold text-gray-900">Service Details</h2>
@@ -271,6 +357,7 @@ export default function CustomerDetailPage() {
                   </div>
                 </div>
               </div>
+              )}
               {(customer.car_photo_url || customer.chassis_photo_url || customer.dealer_invoice_url) && (
                 <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
                   <div className="px-6 py-4 border-b border-gray-200">

@@ -52,6 +52,8 @@ function normalizeExternalRow(row: Record<string, unknown>, prefixId: string): R
     car_photo_url: row.car_photo_url != null ? String(row.car_photo_url) : null,
     chassis_photo_url: row.chassis_photo_url != null ? String(row.chassis_photo_url) : null,
     dealer_invoice_url: row.dealer_invoice_url != null ? String(row.dealer_invoice_url) : null,
+    // JSON / text from external claims DB — was omitted from normalize before, so UI never received it.
+    warranty_claims: (row.warranty_claims ?? row.warrantyClaims) ?? null,
   }
 }
 
@@ -73,7 +75,9 @@ export async function GET(request: NextRequest) {
       extClient
         ? extClient
             .from(extTable)
-            .select('id, customer_name, customer_email, customer_mobile, customer_type, tags, created_at, updated_at, car_number, chassis_number, service_type, series, service_date, service_location, dealer_name, warranty_years, ppf_warranty_years, car_name, car_model, car_photo_url, chassis_photo_url, dealer_invoice_url')
+            // Use * — not an explicit "warranty_claims" field: PostgREST treats that name as an FK embed
+            // when listed with other columns, which breaks (e.g. column warranty_claims.customer_type does not exist).
+            .select('*')
             .order('created_at', { ascending: false })
         : Promise.resolve({ data: null, error: null }),
     ])
