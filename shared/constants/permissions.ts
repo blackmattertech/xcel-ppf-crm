@@ -44,6 +44,10 @@ export const PERMISSIONS = {
   // Analytics
   ANALYTICS_READ: 'analytics.read',
   ANALYTICS_MANAGE: 'analytics.manage',
+
+  // Reports (sidebar resource `reports`)
+  REPORTS_READ: 'reports.read',
+  REPORTS_MANAGE: 'reports.manage',
   
   // Products
   PRODUCTS_CREATE: 'products.create',

@@ -17,7 +17,31 @@ export interface Product {
 
 export interface ProductWithStats extends Product {
   leads_interested: number
+  /** Orders tied to this product (max of SKU-linked orders and orders whose lead fuzzy-matches). */
   customers_bought: number
+  /** Orders with orders.product_id = this product (strict). */
+  orders_linked: number
+  /** Interested → order conversion; null if no interested leads (avoid divide-by-zero). */
+  conversion_rate: number | null
+  /** Rough demand signal: interested lead count × list price. */
+  estimated_pipeline_value: number
+  /** Discount vs MRP, percentage; null if MRP is 0. */
+  margin_percent: number | null
+}
+
+export interface ProductsStatsSummary {
+  total_products: number
+  active_products: number
+  total_leads_in_system: number
+  /** Leads whose requirement/meta matches at least one catalog product (fuzzy). */
+  leads_matching_at_least_one_product: number
+  total_orders: number
+  orders_with_product_assigned: number
+}
+
+export interface ProductsWithStatsPayload {
+  products: ProductWithStats[]
+  summary: ProductsStatsSummary
 }
 
 export interface CreateProductInput {
@@ -193,75 +217,85 @@ export async function getProductById(id: string): Promise<Product | null> {
   return data
 }
 
-export async function getProductsWithStats(): Promise<ProductWithStats[]> {
+export async function getProductsWithStats(): Promise<ProductsWithStatsPayload> {
   const supabase = createServiceClient()
-  
-  // Get all products
+
   const products = await getAllProducts()
-  
-  // Get all leads with requirement and meta_data
+
   const { data: leads, error: leadsError } = await supabase
     .from('leads')
     .select('id, requirement, meta_data')
-  
+
   if (leadsError) {
     throw new Error(`Failed to fetch leads: ${leadsError.message}`)
   }
-  
-  // Get all orders with lead information
+
   const { data: orders, error: ordersError } = await supabase
     .from('orders')
     .select('id, lead_id, product_id')
-    .not('lead_id', 'is', null)
-  
+
   if (ordersError) {
     throw new Error(`Failed to fetch orders: ${ordersError.message}`)
   }
-  
-  // Get leads for orders
-  const typedOrders = (orders || []) as { id: string; lead_id: string | null; product_id: string | null }[]
-  const leadIds = typedOrders.map(o => o.lead_id).filter(Boolean) as string[] || []
-  const { data: orderLeads, error: orderLeadsError } = leadIds.length > 0
-    ? await supabase
-        .from('leads')
-        .select('id, requirement, meta_data')
-        .in('id', leadIds)
-    : { data: [], error: null }
-  
-  if (orderLeadsError) {
-    throw new Error(`Failed to fetch order leads: ${orderLeadsError.message}`)
-  }
-  
-  // Calculate stats for each product
-  const typedLeads = (leads || []) as { id: string; requirement: string | null; meta_data: any }[]
-  const typedOrderLeads = (orderLeads || []) as { id: string; requirement: string | null; meta_data: any }[]
 
-  const productsWithStats: ProductWithStats[] = products.map(product => {
-    // Count leads interested
-    const leadsInterested = typedLeads.filter(lead => 
+  const typedLeads = (leads || []) as { id: string; requirement: string | null; meta_data: any }[]
+  const typedOrders = (orders || []) as { id: string; lead_id: string | null; product_id: string | null }[]
+
+  const leadById = new Map(typedLeads.map((l) => [l.id, l]))
+
+  const leadsMatchingAny = typedLeads.filter((lead) =>
+    products.some((p) => productMatchesLead(p.title, lead.requirement, lead.meta_data))
+  ).length
+
+  const summary: ProductsStatsSummary = {
+    total_products: products.length,
+    active_products: products.filter((p) => p.is_active).length,
+    total_leads_in_system: typedLeads.length,
+    leads_matching_at_least_one_product: leadsMatchingAny,
+    total_orders: typedOrders.length,
+    orders_with_product_assigned: typedOrders.filter((o) => o.product_id != null).length,
+  }
+
+  const productsWithStats: ProductWithStats[] = products.map((product) => {
+    const leadsInterested = typedLeads.filter((lead) =>
       productMatchesLead(product.title, lead.requirement, lead.meta_data)
     ).length
-    
-    // Count customers who bought (through orders)
-    // First check if order has product_id matching
-    const ordersWithProductId = typedOrders.filter(o => o.product_id === product.id).length
-    
-    // Then check if order's lead matches product by name
-    const ordersWithMatchingLead = typedOrderLeads.filter(lead => 
-      productMatchesLead(product.title, lead.requirement, lead.meta_data)
-    ).length
-    
-    // Total customers bought = orders with product_id OR orders with matching lead
-    const customersBought = Math.max(ordersWithProductId, ordersWithMatchingLead)
-    
+
+    const ordersLinked = typedOrders.filter((o) => o.product_id === product.id).length
+
+    const ordersByLeadMatch = typedOrders.filter((o) => {
+      if (!o.lead_id) return false
+      const lead = leadById.get(o.lead_id)
+      if (!lead) return false
+      return productMatchesLead(product.title, lead.requirement, lead.meta_data)
+    }).length
+
+    const customersBought = Math.max(ordersLinked, ordersByLeadMatch)
+
+    const conversion_rate =
+      leadsInterested > 0
+        ? Math.min(100, Math.round((customersBought / leadsInterested) * 1000) / 10)
+        : null
+
+    const estimated_pipeline_value = Math.round(leadsInterested * product.price * 100) / 100
+
+    const margin_percent =
+      product.mrp > 0
+        ? Math.round(((product.mrp - product.price) / product.mrp) * 1000) / 10
+        : null
+
     return {
       ...product,
       leads_interested: leadsInterested,
       customers_bought: customersBought,
+      orders_linked: ordersLinked,
+      conversion_rate,
+      estimated_pipeline_value,
+      margin_percent,
     }
   })
-  
-  return productsWithStats
+
+  return { products: productsWithStats, summary }
 }
 
 export async function createProduct(input: CreateProductInput): Promise<Product> {

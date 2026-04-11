@@ -137,6 +137,51 @@ interface LeadStats {
   activeLeads: number
 }
 
+/** Whole days since lead.created_at (0 = created today). */
+function getLeadAgeDays(lead: Lead): number {
+  if (!lead.created_at) return 0
+  return Math.max(0, Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 86400000))
+}
+
+/** Compact pill label for how old the lead is (by created date). */
+function formatLeadAgeTag(lead: Lead): string {
+  if (!lead.created_at) return '—'
+  const days = getLeadAgeDays(lead)
+  if (days === 0) {
+    const h = Math.floor((Date.now() - new Date(lead.created_at).getTime()) / 3600000)
+    if (h < 1) return 'New'
+    return `${h}h`
+  }
+  if (days === 1) return '1d'
+  if (days < 7) return `${days}d`
+  if (days < 30) return `${Math.floor(days / 7)}w`
+  if (days < 365) return `${Math.floor(days / 30)}mo`
+  return `${Math.floor(days / 365)}y+`
+}
+
+function parseFilterTimestamp(filterValue: string): number | null {
+  const trimmed = filterValue.trim()
+  if (!trimmed) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const t = new Date(`${trimmed}T12:00:00`).getTime()
+    return Number.isNaN(t) ? null : t
+  }
+  const t = Date.parse(trimmed)
+  return Number.isNaN(t) ? null : t
+}
+
+function isComparableDateString(v: unknown): boolean {
+  if (v == null || v === '') return false
+  const t = new Date(v as string).getTime()
+  return !Number.isNaN(t)
+}
+
+function getDaysSinceLastContact(lead: Lead): number | null {
+  const t = lead.first_contact_at || lead.updated_at
+  if (!t) return null
+  return Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 86400000))
+}
+
 // Grid View Component
 function GridView({
   leads,
@@ -280,12 +325,20 @@ function GridView({
             <div className="px-4 py-3 border-b border-[#eaecee]">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1 min-w-0 pr-2">
-                  <h3 
-                    className="text-sm font-semibold text-[#242d35] truncate"
-                    style={{ fontSize: '14px', fontWeight: 600 }}
-                  >
-                    {lead.name}
-                  </h3>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h3 
+                      className="text-sm font-semibold text-[#242d35] truncate"
+                      style={{ fontSize: '14px', fontWeight: 600 }}
+                    >
+                      {lead.name}
+                    </h3>
+                    <span
+                      className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600"
+                      title="Lead age (since created)"
+                    >
+                      {formatLeadAgeTag(lead)}
+                    </span>
+                  </div>
                   {vehicleName && (
                     <p 
                       className="text-xs text-[#717d8a] truncate mt-0.5"
@@ -813,7 +866,15 @@ function KanbanBoard({
                     >
                       {/* Name and Product */}
                       <div className="mb-2">
-                        <h4 className="text-sm font-semibold text-[#242d35] truncate mb-0.5">{lead.name}</h4>
+                        <div className="flex items-center gap-2 mb-0.5 min-w-0">
+                          <h4 className="text-sm font-semibold text-[#242d35] truncate">{lead.name}</h4>
+                          <span
+                            className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-slate-600"
+                            title="Lead age (since created)"
+                          >
+                            {formatLeadAgeTag(lead)}
+                          </span>
+                        </div>
                           {vehicleName && (
                           <p className="text-xs text-[#717d8a] truncate">{vehicleName}</p>
                         )}
@@ -897,6 +958,12 @@ function LeadsPageContent() {
   type QuickFilter = null | 'untouched' | 'contacted' | 'qualified' | 'hot' | 'conversions' | 'discarded'
   const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilter>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const qParam = searchParams.get('q')
+  useEffect(() => {
+    if (qParam != null && qParam !== '') {
+      setSearchQuery(decodeURIComponent(qParam.replace(/\+/g, ' ')))
+    }
+  }, [qParam])
   const [viewMode, setViewMode] = useState<'table' | 'kanban' | 'grid'>('table')
   const [groupBy, setGroupBy] = useState<string>('status')
   const [groupByDropdownOpen, setGroupByDropdownOpen] = useState(false)
@@ -999,7 +1066,8 @@ function LeadsPageContent() {
 
   const defaultColumns: ColumnConfig[] = [
     { key: 'date', label: 'Date', visible: true, width: 110 },
-    { key: 'name', label: 'Name', visible: true, width: 180 },
+    { key: 'last_contacted', label: 'Last contacted', visible: true, width: 140 },
+    { key: 'name', label: 'Name', visible: true, width: 200 },
     { key: 'car_model', label: 'Car model', visible: true, width: 130 },
     { key: 'interest', label: 'Interested product', visible: true, width: 170 },
     { key: 'status', label: 'Lead stage', visible: true, width: 130 },
@@ -1008,7 +1076,6 @@ function LeadsPageContent() {
     { key: 'ad_name', label: 'ad_name', visible: true, width: 160 },
     { key: 'campaign_name', label: 'campaign_name', visible: true, width: 160 },
     { key: 'assigned_to', label: 'Assigned to', visible: true, width: 180 },
-    { key: 'last_contacted', label: 'Last contacted', visible: true, width: 140 },
     { key: 'phone', label: 'Mobile number', visible: true, width: 160 },
   ]
 
@@ -1409,7 +1476,9 @@ function LeadsPageContent() {
         lead.email?.toLowerCase().includes(query) ||
         lead.requirement?.toLowerCase().includes(query) ||
         getVehicleName(lead).toLowerCase().includes(query) ||
-        getProductInterest(lead).toLowerCase().includes(query)
+        getProductInterest(lead).toLowerCase().includes(query) ||
+        (lead.campaign_name ?? '').toLowerCase().includes(query) ||
+        (lead.ad_name ?? '').toLowerCase().includes(query)
       )
     }
     
@@ -1461,16 +1530,35 @@ function LeadsPageContent() {
       if (bValue === null || bValue === undefined) return sortDirection === 'asc' ? 1 : -1
       
       // Handle dates
-      if (sortColumn === 'date' || sortColumn.includes('_at') || sortColumn === 'created_at' || sortColumn === 'updated_at' || sortColumn === 'first_contact_at' || sortColumn === 'converted_at') {
-        const aDate = new Date(aValue as string).getTime()
-        const bDate = new Date(bValue as string).getTime()
+      if (
+        sortColumn === 'date' ||
+        sortColumn === 'last_contacted' ||
+        sortColumn.includes('_at') ||
+        sortColumn === 'created_at' ||
+        sortColumn === 'updated_at' ||
+        sortColumn === 'first_contact_at' ||
+        sortColumn === 'converted_at'
+      ) {
+        const aDate = aValue != null ? new Date(aValue as string).getTime() : NaN
+        const bDate = bValue != null ? new Date(bValue as string).getTime() : NaN
+        if (Number.isNaN(aDate)) return sortDirection === 'asc' ? -1 : 1
+        if (Number.isNaN(bDate)) return sortDirection === 'asc' ? 1 : -1
         return sortDirection === 'asc' ? aDate - bDate : bDate - aDate
       }
-      
+
       // Handle numbers
-      if (sortColumn === 'payment_amount' || sortColumn === 'advance_amount') {
-        const aNum = Number(aValue) || 0
-        const bNum = Number(bValue) || 0
+      if (
+        sortColumn === 'payment_amount' ||
+        sortColumn === 'advance_amount' ||
+        sortColumn === 'lead_age_days' ||
+        sortColumn === 'days_since_last_contact'
+      ) {
+        const aNum = aValue == null || aValue === '' ? NaN : Number(aValue)
+        const bNum = bValue == null || bValue === '' ? NaN : Number(bValue)
+        const aOk = !Number.isNaN(aNum)
+        const bOk = !Number.isNaN(bNum)
+        if (!aOk) return sortDirection === 'asc' ? -1 : 1
+        if (!bOk) return sortDirection === 'asc' ? 1 : -1
         return sortDirection === 'asc' ? aNum - bNum : bNum - aNum
       }
       
@@ -1515,6 +1603,8 @@ function LeadsPageContent() {
       case 'updated_at': return lead.updated_at
       case 'first_contact_at': return lead.first_contact_at
       case 'last_contacted': return getLastContactedTime(lead)
+      case 'lead_age_days': return getLeadAgeDays(lead)
+      case 'days_since_last_contact': return getDaysSinceLastContact(lead)
       case 'lead_id': return lead.lead_id
       case 'budget_range': return lead.meta_data?.budget_range || null
       case 'timeline': return lead.meta_data?.timeline || null
@@ -1551,14 +1641,54 @@ function LeadsPageContent() {
         return valueStr === '' || columnValue === null || columnValue === undefined
       case 'is_not_empty':
         return valueStr !== '' && columnValue !== null && columnValue !== undefined
-      case 'greater_than':
-        return Number(columnValue) > Number(filterValue)
-      case 'less_than':
-        return Number(columnValue) < Number(filterValue)
-      case 'greater_equal':
-        return Number(columnValue) >= Number(filterValue)
-      case 'less_equal':
-        return Number(columnValue) <= Number(filterValue)
+      case 'greater_than': {
+        if (isComparableDateString(columnValue)) {
+          const cv = new Date(columnValue as string).getTime()
+          const fv = parseFilterTimestamp(filterValue)
+          if (fv != null) return cv > fv
+          return false
+        }
+        const cn = Number(columnValue)
+        const fn = Number(filterValue)
+        if (!Number.isNaN(cn) && !Number.isNaN(fn)) return cn > fn
+        return false
+      }
+      case 'less_than': {
+        if (isComparableDateString(columnValue)) {
+          const cv = new Date(columnValue as string).getTime()
+          const fv = parseFilterTimestamp(filterValue)
+          if (fv != null) return cv < fv
+          return false
+        }
+        const cn = Number(columnValue)
+        const fn = Number(filterValue)
+        if (!Number.isNaN(cn) && !Number.isNaN(fn)) return cn < fn
+        return false
+      }
+      case 'greater_equal': {
+        if (isComparableDateString(columnValue)) {
+          const cv = new Date(columnValue as string).getTime()
+          const fv = parseFilterTimestamp(filterValue)
+          if (fv != null) return cv >= fv
+          return false
+        }
+        const cn = Number(columnValue)
+        const fn = Number(filterValue)
+        if (!Number.isNaN(cn) && !Number.isNaN(fn)) return cn >= fn
+        return false
+      }
+      case 'less_equal': {
+        if (isComparableDateString(columnValue)) {
+          const cv = new Date(columnValue as string).getTime()
+          const fv = parseFilterTimestamp(filterValue)
+          if (fv != null) return cv <= fv
+          return false
+        }
+        const cn = Number(columnValue)
+        const fn = Number(filterValue)
+        if (!Number.isNaN(cn) && !Number.isNaN(fn)) return cn <= fn
+        return false
+      }
       default:
         return true
     }
@@ -1613,7 +1743,9 @@ function LeadsPageContent() {
         lead.email?.toLowerCase().includes(query) ||
         lead.requirement?.toLowerCase().includes(query) ||
         getVehicleName(lead).toLowerCase().includes(query) ||
-        getProductInterest(lead).toLowerCase().includes(query)
+        getProductInterest(lead).toLowerCase().includes(query) ||
+        (lead.campaign_name ?? '').toLowerCase().includes(query) ||
+        (lead.ad_name ?? '').toLowerCase().includes(query)
       )
     }
 
@@ -1656,20 +1788,32 @@ function LeadsPageContent() {
 
       if (
         sortColumn === 'date' ||
+        sortColumn === 'last_contacted' ||
         sortColumn.includes('_at') ||
         sortColumn === 'created_at' ||
         sortColumn === 'updated_at' ||
         sortColumn === 'first_contact_at' ||
         sortColumn === 'converted_at'
       ) {
-        const aDate = new Date(aValue as string).getTime()
-        const bDate = new Date(bValue as string).getTime()
+        const aDate = aValue != null ? new Date(aValue as string).getTime() : NaN
+        const bDate = bValue != null ? new Date(bValue as string).getTime() : NaN
+        if (Number.isNaN(aDate)) return sortDirection === 'asc' ? -1 : 1
+        if (Number.isNaN(bDate)) return sortDirection === 'asc' ? 1 : -1
         return sortDirection === 'asc' ? aDate - bDate : bDate - aDate
       }
 
-      if (sortColumn === 'payment_amount' || sortColumn === 'advance_amount') {
-        const aNum = Number(aValue) || 0
-        const bNum = Number(bValue) || 0
+      if (
+        sortColumn === 'payment_amount' ||
+        sortColumn === 'advance_amount' ||
+        sortColumn === 'lead_age_days' ||
+        sortColumn === 'days_since_last_contact'
+      ) {
+        const aNum = aValue == null || aValue === '' ? NaN : Number(aValue)
+        const bNum = bValue == null || bValue === '' ? NaN : Number(bValue)
+        const aOk = !Number.isNaN(aNum)
+        const bOk = !Number.isNaN(bNum)
+        if (!aOk) return sortDirection === 'asc' ? -1 : 1
+        if (!bOk) return sortDirection === 'asc' ? 1 : -1
         return sortDirection === 'asc' ? aNum - bNum : bNum - aNum
       }
 
@@ -1771,8 +1915,8 @@ function LeadsPageContent() {
   
   // Get available operators for a column
   function getOperatorsForColumn(column: string): Array<{ key: string; label: string }> {
-    const dateColumns = ['date', 'created_at', 'updated_at', 'first_contact_at', 'converted_at']
-    const numberColumns = ['payment_amount', 'advance_amount']
+    const dateColumns = ['date', 'created_at', 'updated_at', 'first_contact_at', 'converted_at', 'last_contacted']
+    const numberColumns = ['payment_amount', 'advance_amount', 'lead_age_days', 'days_since_last_contact']
     
     if (dateColumns.includes(column)) {
       return [
@@ -1913,19 +2057,26 @@ function LeadsPageContent() {
     return lead.first_contact_at || lead.updated_at
   }
 
-  // Format time ago
+  // Format time ago (last contact)
   function getTimeAgo(dateString: string | null): string {
     if (!dateString) return 'Never'
     const date = new Date(dateString)
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / (1000 * 60))
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
     const diffDays = Math.floor(diffHours / 24)
-    
-    if (diffHours < 1) return 'Just now'
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+    const diffWeeks = Math.floor(diffDays / 7)
+    const diffMonths = Math.floor(diffDays / 30)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
     if (diffDays === 1) return '1 day ago'
-    return `${diffDays} days ago`
+    if (diffDays < 7) return `${diffDays} days ago`
+    if (diffDays < 30) return `${diffWeeks} wk${diffWeeks !== 1 ? 's' : ''} ago`
+    if (diffDays < 365) return `${diffMonths} mo ago`
+    return `${Math.floor(diffDays / 365)} yr+ ago`
   }
 
   // Mask contact info
@@ -2277,6 +2428,8 @@ function LeadsPageContent() {
         const phone = (lead.phone || '').toString()
         const email = (lead.email || '').toLowerCase()
         const requirement = (lead.requirement || '').toLowerCase()
+        const campaign = (lead.campaign_name || '').toLowerCase()
+        const ad = (lead.ad_name || '').toLowerCase()
         
         return (
           name.includes(q) ||
@@ -2284,7 +2437,9 @@ function LeadsPageContent() {
           email.includes(q) ||
           requirement.includes(q) ||
           vehicleName.includes(q) ||
-          productInterest.includes(q)
+          productInterest.includes(q) ||
+          campaign.includes(q) ||
+          ad.includes(q)
         )
       } catch (error) {
         // Fallback if helper functions fail
@@ -2292,12 +2447,16 @@ function LeadsPageContent() {
         const phone = (lead.phone || '').toString()
         const email = (lead.email || '').toLowerCase()
         const requirement = (lead.requirement || '').toLowerCase()
+        const campaign = (lead.campaign_name || '').toLowerCase()
+        const ad = (lead.ad_name || '').toLowerCase()
         
         return (
           name.includes(q) ||
           phone.includes(q) ||
           email.includes(q) ||
-          requirement.includes(q)
+          requirement.includes(q) ||
+          campaign.includes(q) ||
+          ad.includes(q)
         )
       }
     })
@@ -2523,7 +2682,15 @@ function LeadsPageContent() {
                 {/* Header with name, vehicle, date, and icons */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1 min-w-0 pr-2">
-                    <h3 className="text-base font-bold text-black mb-1 leading-tight">{lead.name}</h3>
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <h3 className="text-base font-bold text-black leading-tight">{lead.name}</h3>
+                      <span
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-600"
+                        title="Lead age (since created)"
+                      >
+                        {formatLeadAgeTag(lead)}
+                      </span>
+                    </div>
                     {vehicleName && (
                       <p className="text-sm text-[#717d8a] leading-tight">{vehicleName}</p>
                     )}
@@ -2686,8 +2853,32 @@ function LeadsPageContent() {
                       <select
                         value={condition.column}
                         onChange={(e) => {
+                          const newColumn = e.target.value
+                          let defaultOperator = 'contains'
+                          if (['interest_level', 'status', 'source'].includes(newColumn)) {
+                            defaultOperator = 'equals'
+                          } else if (
+                            [
+                              'date',
+                              'payment_amount',
+                              'advance_amount',
+                              'created_at',
+                              'updated_at',
+                              'first_contact_at',
+                              'last_contacted',
+                              'lead_age_days',
+                              'days_since_last_contact',
+                            ].includes(newColumn)
+                          ) {
+                            defaultOperator = 'greater_than'
+                          }
                           const updated = [...filterConditions]
-                          updated[index].column = e.target.value
+                          updated[index] = {
+                            ...updated[index],
+                            column: newColumn,
+                            operator: defaultOperator,
+                            value: '',
+                          }
                           setFilterConditions(updated)
                         }}
                         className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -2696,6 +2887,12 @@ function LeadsPageContent() {
                         <option value="status">Lead Stage</option>
                         <option value="interest_level">Lead Type</option>
                         <option value="source">Source</option>
+                        <option value="campaign_name">Campaign</option>
+                        <option value="ad_name">Ad</option>
+                        <option value="date">Lead date</option>
+                        <option value="last_contacted">Last contacted</option>
+                        <option value="lead_age_days">Lead age (days)</option>
+                        <option value="days_since_last_contact">Days since contact</option>
                         <option value="assigned_to">Assigned To</option>
                         <option value="phone">Phone</option>
                         <option value="email">Email</option>
@@ -2709,15 +2906,25 @@ function LeadsPageContent() {
                         }}
                         className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                       >
-                        <option value="equals">Equals</option>
-                        <option value="contains">Contains</option>
-                        <option value="starts_with">Starts With</option>
-                        <option value="is_empty">Is Empty</option>
-                        <option value="is_not_empty">Is Not Empty</option>
+                        {getOperatorsForColumn(condition.column).map((op) => (
+                          <option key={op.key} value={op.key}>
+                            {op.label}
+                          </option>
+                        ))}
                       </select>
                       {condition.operator !== 'is_empty' && condition.operator !== 'is_not_empty' && (
                         <input
-                          type="text"
+                          type={
+                            ['date', 'created_at', 'updated_at', 'first_contact_at', 'last_contacted', 'converted_at'].includes(
+                              condition.column
+                            )
+                              ? 'date'
+                              : ['payment_amount', 'advance_amount', 'lead_age_days', 'days_since_last_contact'].includes(
+                                    condition.column
+                                  )
+                                ? 'number'
+                                : 'text'
+                          }
                           value={condition.value}
                           onChange={(e) => {
                             const updated = [...filterConditions]
@@ -2788,11 +2995,13 @@ function LeadsPageContent() {
               <div className="p-4 space-y-2">
                 {[
                   { key: 'date', label: 'Date' },
+                  { key: 'last_contacted', label: 'Last contacted' },
+                  { key: 'lead_age_days', label: 'Lead age (days)' },
+                  { key: 'days_since_last_contact', label: 'Days since contact' },
                   { key: 'name', label: 'Name' },
                   { key: 'status', label: 'Lead Stage' },
                   { key: 'ad_name', label: 'Ad Name' },
                   { key: 'campaign_name', label: 'Campaign Name' },
-                  { key: 'last_contacted', label: 'Last Contacted' },
                   { key: 'phone', label: 'Phone' },
                 ].map((col) => (
                   <button
@@ -3132,38 +3341,41 @@ function LeadsPageContent() {
 
           {/* Filter and Search Bar */}
           <div 
-            className="rounded-lg shadow-sm p-4 mb-4 flex items-center justify-between gap-4"
+            className="rounded-xl border border-black/[0.06] shadow-sm p-3 sm:p-4 mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
             style={{
               backgroundColor: containerStyles.containerColor,
               opacity: containerStyles.opacity,
             }}
           >
-            <div className="flex items-center gap-3 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5 w-full">
+              <div className="flex flex-wrap items-center gap-2">
               {/* Advanced Filter Dropdown */}
-              <div className="relative filter-dropdown">
+              <div className="relative filter-dropdown shrink-0">
                 <button 
+                  type="button"
                   onClick={() => {
                     setFilterDropdownOpen(!filterDropdownOpen)
                     setSortDropdownOpen(false)
                   }}
-                  className={`px-4 py-2 text-base bg-white/20 border border-white/30 rounded-md hover:bg-white/30 flex items-center gap-2 ${
-                    filterConditions.length > 0 ? 'border-white' : 'border-white/30'
+                  className={`h-9 sm:h-10 px-3 sm:px-4 text-sm sm:text-base border rounded-lg hover:opacity-90 flex items-center gap-1.5 sm:gap-2 transition-all shadow-sm ${
+                    filterConditions.length > 0 ? 'ring-2 ring-[#ed1b24]/20 border-[#ed1b24]/35' : ''
                   }`}
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
                     opacity: containerStyles.opacity,
+                    borderColor: containerStyles.textColor + '30',
                   }}
                 >
-                  <span>
+                  <span className="whitespace-nowrap font-medium">
                     {filterConditions.length > 0 
                       ? `Filters (${filterConditions.length})` 
                       : 'Filter by'}
                   </span>
-                  <ChevronDown size={18} className={`transition-transform ${filterDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
+                  <ChevronDown size={18} className={`transition-transform shrink-0 ${filterDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
                 </button>
                 {filterDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[600px] max-w-[800px]">
+                  <div className="absolute top-full left-0 right-0 sm:right-auto mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 w-[min(calc(100vw-2rem),800px)] sm:min-w-[min(100vw-2rem,600px)] sm:max-w-[800px] max-h-[min(85vh,32rem)] overflow-y-auto">
                     <div className="p-4">
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="text-base font-semibold text-gray-900">Advanced Filters</h3>
@@ -3216,7 +3428,19 @@ function LeadsPageContent() {
                                   let defaultOperator = 'contains'
                                   if (newColumn === 'interest_level' || newColumn === 'status' || newColumn === 'source') {
                                     defaultOperator = 'equals'
-                                  } else if (['date', 'payment_amount', 'advance_amount', 'created_at', 'updated_at', 'first_contact_at'].includes(newColumn)) {
+                                  } else if (
+                                    [
+                                      'date',
+                                      'payment_amount',
+                                      'advance_amount',
+                                      'created_at',
+                                      'updated_at',
+                                      'first_contact_at',
+                                      'last_contacted',
+                                      'lead_age_days',
+                                      'days_since_last_contact',
+                                    ].includes(newColumn)
+                                  ) {
                                     defaultOperator = 'greater_than'
                                   }
                                   updateFilterCondition(condition.id, { column: newColumn, operator: defaultOperator })
@@ -3229,6 +3453,8 @@ function LeadsPageContent() {
                                   { key: 'phone', label: 'Phone' },
                                   { key: 'email', label: 'Email' },
                                   { key: 'source', label: 'Source' },
+                                  { key: 'campaign_name', label: 'Campaign' },
+                                  { key: 'ad_name', label: 'Ad' },
                                   { key: 'status', label: 'Status' },
                                   { key: 'interest_level', label: 'Lead Type' },
                                   { key: 'requirement', label: 'Requirement/Vehicle' },
@@ -3242,6 +3468,9 @@ function LeadsPageContent() {
                                   { key: 'created_at', label: 'Created At' },
                                   { key: 'updated_at', label: 'Updated At' },
                                   { key: 'first_contact_at', label: 'First Contact At' },
+                                  { key: 'last_contacted', label: 'Last contacted (date)' },
+                                  { key: 'lead_age_days', label: 'Lead age (days since created)' },
+                                  { key: 'days_since_last_contact', label: 'Days since last contact' },
                                 ].map((col) => (
                                   <option key={col.key} value={col.key}>{col.label}</option>
                                 ))}
@@ -3259,9 +3488,17 @@ function LeadsPageContent() {
                               
                               {(condition.operator !== 'is_empty' && condition.operator !== 'is_not_empty') && (
                                 <input
-                                  type={['date', 'payment_amount', 'advance_amount', 'created_at', 'updated_at', 'first_contact_at'].includes(condition.column) 
-                                    ? (condition.column === 'date' || condition.column.includes('_at') ? 'date' : 'number')
-                                    : 'text'}
+                                  type={
+                                    ['date', 'created_at', 'updated_at', 'first_contact_at', 'last_contacted', 'converted_at'].includes(
+                                      condition.column
+                                    )
+                                      ? 'date'
+                                      : ['payment_amount', 'advance_amount', 'lead_age_days', 'days_since_last_contact'].includes(
+                                            condition.column
+                                          )
+                                        ? 'number'
+                                        : 'text'
+                                  }
                                   value={condition.value}
                                   onChange={(e) => updateFilterCondition(condition.id, { value: e.target.value })}
                                   placeholder="Value"
@@ -3286,13 +3523,14 @@ function LeadsPageContent() {
               </div>
               
               {/* Sort Dropdown */}
-              <div className="relative sort-dropdown">
+              <div className="relative sort-dropdown shrink-0 min-w-0 max-w-[calc(100vw-3rem)] sm:max-w-none">
             <button
+                  type="button"
                   onClick={() => {
                     setSortDropdownOpen(!sortDropdownOpen)
                     setFilterDropdownOpen(false)
                   }}
-                  className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                  className="h-9 sm:h-10 px-3 sm:px-4 text-sm sm:text-base border rounded-lg hover:opacity-90 flex items-center gap-1.5 sm:gap-2 transition-all max-w-full shadow-sm"
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
@@ -3300,15 +3538,24 @@ function LeadsPageContent() {
                     borderColor: containerStyles.textColor + '30',
                   }}
                 >
-                  <span>Sort by: {sortColumn.replace(/_/g, ' ')} ({sortDirection})</span>
-                  <ChevronDown size={18} className={`transition-transform ${sortDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
+                  <span className="truncate text-left font-medium">
+                    <span className="sm:hidden">Sort</span>
+                    <span className="hidden sm:inline">
+                      Sort by: {sortColumn.replace(/_/g, ' ')} ({sortDirection})
+                    </span>
+                  </span>
+                  <ChevronDown size={18} className={`transition-transform shrink-0 ${sortDropdownOpen ? 'transform rotate-180' : ''}`} style={{ color: containerStyles.iconColor }} />
             </button>
                 {sortDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[250px]">
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 w-[min(calc(100vw-2rem),280px)] sm:min-w-[250px] max-h-[min(70vh,24rem)] overflow-y-auto">
                     <div className="p-2">
                       <div className="mb-2 px-2 text-xs font-semibold text-gray-500 uppercase">Sort Column</div>
                       <div className="max-h-60 overflow-y-auto mb-2">
                         {[
+                          { key: 'date', label: 'Lead date (created)' },
+                          { key: 'last_contacted', label: 'Last contacted' },
+                          { key: 'lead_age_days', label: 'Lead age (days)' },
+                          { key: 'days_since_last_contact', label: 'Days since last contact' },
                           { key: 'created_at', label: 'Created At' },
                           { key: 'updated_at', label: 'Updated At' },
                           { key: 'first_contact_at', label: 'First Contact At' },
@@ -3364,120 +3611,138 @@ function LeadsPageContent() {
                   </div>
                 )}
               </div>
-              <div className="flex-1 max-w-md relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" size={18} style={{ color: containerStyles.iconColor + 'CC' }} />
+              </div>
+              <div className="w-full max-w-full sm:max-w-md lg:max-w-lg relative min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" size={18} style={{ color: containerStyles.iconColor + 'CC' }} />
                 <input
                   type="text"
-                  placeholder="Try 'Miami invoice'"
+                  placeholder="Search name, phone, product, source…"
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value)
                     goToPage(1)
                   }}
-                  className="w-full pl-10 pr-4 py-2.5 text-base border rounded-md focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all"
+                  className="w-full h-9 sm:h-10 pl-10 pr-3 sm:pr-4 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ed1b24]/25 focus:border-[#ed1b24]/40 transition-all shadow-sm"
                   style={{ 
                     color: containerStyles.textColor,
                     backgroundColor: containerStyles.backgroundColor,
                     borderColor: containerStyles.textColor + '30',
-                    '--tw-ring-color': containerStyles.textColor + '50',
-                  } as React.CSSProperties & { '--tw-ring-color'?: string }}
+                  } as React.CSSProperties}
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div
+              className="flex flex-wrap items-center gap-2 justify-start lg:justify-end w-full lg:w-auto shrink-0 border-t border-black/[0.06] pt-3 lg:border-0 lg:pt-0 lg:pl-2"
+              style={{ borderColor: containerStyles.textColor + '18' }}
+            >
+              <div
+                className="inline-flex h-9 sm:h-10 items-center gap-0.5 rounded-lg border p-0.5 shrink-0 shadow-sm bg-black/[0.02]"
+                style={{ borderColor: containerStyles.textColor + '28' }}
+              >
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'text-[#ed1b24]' : 'hover:opacity-80'}`}
+                className={`h-full aspect-square rounded-md flex items-center justify-center transition-colors ${viewMode === 'table' ? 'text-[#ed1b24] bg-white shadow-sm' : 'hover:bg-black/[0.04]'}`}
                 style={{ 
                   color: viewMode === 'table' ? '#ed1b24' : containerStyles.iconColor,
-                  backgroundColor: viewMode === 'table' ? '#ffffff' : 'transparent',
                 }}
-                title="Table View"
+                title="Table view"
+                type="button"
               >
                 <List size={18} />
               </button>
               <button
                 onClick={() => setViewMode('kanban')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'kanban' ? 'text-[#ed1b24]' : 'hover:opacity-80'}`}
+                className={`h-full aspect-square rounded-md flex items-center justify-center transition-colors ${viewMode === 'kanban' ? 'text-[#ed1b24] bg-white shadow-sm' : 'hover:bg-black/[0.04]'}`}
                 style={{ 
                   color: viewMode === 'kanban' ? '#ed1b24' : containerStyles.iconColor,
-                  backgroundColor: viewMode === 'kanban' ? '#ffffff' : 'transparent',
                 }}
-                title="Kanban View"
+                title="Kanban view"
+                type="button"
               >
                 <Columns size={18} />
               </button>
             <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'text-[#ed1b24]' : 'hover:opacity-80'}`}
+                className={`h-full aspect-square rounded-md flex items-center justify-center transition-colors ${viewMode === 'grid' ? 'text-[#ed1b24] bg-white shadow-sm' : 'hover:bg-black/[0.04]'}`}
                 style={{ 
                   color: viewMode === 'grid' ? '#ed1b24' : containerStyles.iconColor,
-                  backgroundColor: viewMode === 'grid' ? '#ffffff' : 'transparent',
                 }}
-                title="Grid View"
+                title="Grid view"
+                type="button"
               >
                 <Grid size={18} />
               </button>
+              </div>
               <Link 
                 href="/leads/upload"
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
+                title="Import leads from file"
               >
-                <Upload size={18} style={{ color: containerStyles.iconColor }} />
-                Import
+                <Upload size={18} className="shrink-0" style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Import</span>
               </Link>
               <button
                 type="button"
                 onClick={handleSyncFromMeta}
                 disabled={metaSyncLoading}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all disabled:opacity-50"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all disabled:opacity-50 shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
-                title="Sync leads from Meta (Facebook) Lead Ads"
+                title="Pull latest leads from Meta Lead Ads"
               >
-                <RefreshCw size={18} className={metaSyncLoading ? 'animate-spin' : ''} style={{ color: containerStyles.iconColor }} />
-                Sync from Meta
+                <RefreshCw size={18} className={`shrink-0 ${metaSyncLoading ? 'animate-spin' : ''}`} style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Sync</span>
               </button>
               <button
                 type="button"
                 onClick={handleExportLeads}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
+                title="Export leads"
               >
-                <Download size={18} style={{ color: containerStyles.iconColor }} />
-                Export
+                <Download size={18} className="shrink-0" style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Export</span>
               </button>
               <button 
+                type="button"
                 onClick={() => {
                   setCustomizeModalOpen(true)
                   setCustomizeMode(null)
                 }}
-                className="px-4 py-2 text-base border rounded-md hover:opacity-80 flex items-center gap-2 transition-all"
+                className="h-9 sm:h-10 px-3 sm:px-3.5 text-sm font-medium border rounded-lg hover:opacity-90 flex items-center justify-center gap-2 transition-all shrink-0 shadow-sm"
                 style={{ 
                   color: containerStyles.textColor,
                   backgroundColor: containerStyles.backgroundColor,
                   borderColor: containerStyles.textColor + '30',
                 }}
+                title="Customise table columns"
               >
-                <Settings size={18} style={{ color: containerStyles.iconColor }} />
-                Customise
+                <Settings size={18} className="shrink-0" style={{ color: containerStyles.iconColor }} />
+                <span className="hidden sm:inline">Customise</span>
               </button>
-              <div className="relative more-options-dropdown">
+              <div className="relative more-options-dropdown shrink-0">
                 <button 
+                  type="button"
                   onClick={() => setMoreOptionsOpen(!moreOptionsOpen)}
-                  className="p-2 hover:opacity-80 rounded-md transition-colors"
-                  style={{ color: containerStyles.iconColor }}
+                  className="h-9 sm:h-10 w-9 sm:w-10 inline-flex items-center justify-center border rounded-lg hover:opacity-90 transition-all shadow-sm"
+                  style={{ 
+                    color: containerStyles.iconColor,
+                    backgroundColor: containerStyles.backgroundColor,
+                    borderColor: containerStyles.textColor + '30',
+                  }}
+                  title="More options"
                 >
                   <MoreVertical size={18} />
                 </button>
@@ -3633,8 +3898,14 @@ function LeadsPageContent() {
                         )
                       case 'name':
                         return (
-                          <div className="text-base font-medium text-gray-900 truncate">
-                            {lead.name}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-base font-medium text-gray-900 truncate">{lead.name}</span>
+                            <span
+                              className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600"
+                              title="Lead age (since created)"
+                            >
+                              {formatLeadAgeTag(lead)}
+                            </span>
                           </div>
                         )
                       case 'car_model':

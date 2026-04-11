@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import { createExternalServiceClient, getExternalCustomersTable } from '@/lib/supabase/service-ext'
+import { normalizeExternalCustomerRow } from '@/lib/external-customer-normalize'
 import { z } from 'zod'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 
@@ -13,49 +14,6 @@ const createCustomerSchema = z.object({
   customer_type: z.enum(['new', 'repeat', 'high_value']).default('new'),
   tags: z.array(z.string()).nullable().optional(),
 })
-
-/** Normalize external DB row (claims schema: customer_name, customer_email, customer_mobile, car_*, service_*, etc.) to customer shape. */
-function normalizeExternalRow(row: Record<string, unknown>, prefixId: string): Record<string, unknown> {
-  const id = row.id != null ? String(row.id) : ''
-  const name = (row.customer_name ?? row.name ?? row.full_name ?? '').toString().trim() || '—'
-  const phone = (row.customer_mobile ?? row.phone ?? row.mobile ?? row.phone_number ?? row.alternate_mobile ?? '').toString().trim() || '—'
-  const email = (row.customer_email ?? row.email ?? row.store_email) != null ? String(row.customer_email ?? row.email ?? row.store_email) : null
-  const customer_type = (row.customer_type ?? row.type ?? 'new') as string
-  const validType = ['new', 'repeat', 'high_value'].includes(customer_type) ? customer_type : 'new'
-  let tags: string[] | null = null
-  if (Array.isArray(row.tags)) tags = row.tags.map(String)
-  else if (row.tags != null && typeof row.tags === 'string') tags = [row.tags]
-  const created_at = (row.created_at ?? row.createdAt ?? new Date().toISOString()).toString()
-  const updated_at = (row.updated_at ?? row.updatedAt ?? created_at).toString()
-  return {
-    id: prefixId + id,
-    lead_id: null,
-    name,
-    phone,
-    email,
-    customer_type: validType,
-    tags,
-    created_at,
-    updated_at,
-    source: 'external' as const,
-    car_number: row.car_number != null ? String(row.car_number) : null,
-    chassis_number: row.chassis_number != null ? String(row.chassis_number) : null,
-    service_type: row.service_type != null ? String(row.service_type) : null,
-    series: row.series != null ? String(row.series) : null,
-    service_date: row.service_date != null ? String(row.service_date) : null,
-    service_location: row.service_location != null ? String(row.service_location) : null,
-    dealer_name: row.dealer_name != null ? String(row.dealer_name) : null,
-    warranty_years: row.warranty_years != null ? Number(row.warranty_years) : null,
-    ppf_warranty_years: row.ppf_warranty_years != null ? Number(row.ppf_warranty_years) : null,
-    car_name: row.car_name != null ? String(row.car_name) : null,
-    car_model: row.car_model != null ? String(row.car_model) : null,
-    car_photo_url: row.car_photo_url != null ? String(row.car_photo_url) : null,
-    chassis_photo_url: row.chassis_photo_url != null ? String(row.chassis_photo_url) : null,
-    dealer_invoice_url: row.dealer_invoice_url != null ? String(row.dealer_invoice_url) : null,
-    // JSON / text from external claims DB — was omitted from normalize before, so UI never received it.
-    warranty_claims: (row.warranty_claims ?? row.warrantyClaims) ?? null,
-  }
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -119,10 +77,11 @@ export async function GET(request: NextRequest) {
       ...c,
       total_revenue: revenueMap.get(c.id) || 0,
     }))
-    const externalNormalized = externalRows.map((row) => ({
-      ...normalizeExternalRow(row, 'ext_'),
-      total_revenue: 0,
-    }))
+    const externalNormalized = externalRows.map((row) => {
+      const normalized = normalizeExternalCustomerRow(row, 'ext_') as Record<string, unknown>
+      const { warranty_claims: _wc, ...listFields } = normalized
+      return { ...listFields, total_revenue: 0 }
+    })
 
     const combined = [...primaryWithRevenue, ...externalNormalized].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()

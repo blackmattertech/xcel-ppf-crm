@@ -45,8 +45,8 @@ export async function GET(request: NextRequest) {
     const withStats = searchParams.get('with_stats') === 'true'
 
     if (withStats) {
-      const products = await getProductsWithStats()
-      return NextResponse.json(products)
+      const payload = await getProductsWithStats()
+      return NextResponse.json(payload)
     }
 
     const products = await getAllProducts()

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import { cachedFetch } from '@/lib/api-client'
+import { extractDealerFromWarrantyClaims } from '@/lib/external-customer-normalize'
 
 function hasWarrantyClaimsContent(v: unknown): boolean {
   if (v == null) return false
@@ -20,25 +21,44 @@ function WarrantyClaimsDetails({ data }: { data: unknown }) {
     if (data.length === 0) return null
     return (
       <div className="space-y-3">
-        {data.map((item, i) => (
-          <div key={i} className="rounded-lg border border-gray-200 p-4 bg-gray-50/80">
-            {typeof item === 'object' && item !== null ? (
-              <pre className="text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap font-mono">
-                {JSON.stringify(item, null, 2)}
-              </pre>
-            ) : (
-              <p className="text-sm text-gray-900">{String(item)}</p>
-            )}
-          </div>
-        ))}
+        {data.map((item, i) => {
+          const claimDealer =
+            typeof item === 'object' && item !== null
+              ? extractDealerFromWarrantyClaims([item])
+              : null
+          return (
+            <div key={i} className="rounded-lg border border-gray-200 p-4 bg-gray-50/80">
+              {typeof item === 'object' && item !== null ? (
+                <>
+                  {claimDealer && (
+                    <p className="text-sm font-semibold text-gray-900 mb-2">
+                      Dealer: {claimDealer}
+                    </p>
+                  )}
+                  <pre className="text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap font-mono">
+                    {JSON.stringify(item, null, 2)}
+                  </pre>
+                </>
+              ) : (
+                <p className="text-sm text-gray-900">{String(item)}</p>
+              )}
+            </div>
+          )
+        })}
       </div>
     )
   }
   if (typeof data === 'object') {
+    const dealer = extractDealerFromWarrantyClaims(data)
     return (
-      <pre className="text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap font-mono bg-gray-50/80 p-4 rounded-lg border border-gray-200">
-        {JSON.stringify(data, null, 2)}
-      </pre>
+      <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 space-y-2">
+        {dealer && (
+          <p className="text-sm font-semibold text-gray-900">Dealer: {dealer}</p>
+        )}
+        <pre className="text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap font-mono">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      </div>
     )
   }
   if (typeof data === 'string') {

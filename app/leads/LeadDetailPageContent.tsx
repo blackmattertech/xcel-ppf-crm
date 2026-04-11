@@ -48,6 +48,18 @@ import {
 } from 'lucide-react'
 import { cachedFetch } from '@/lib/api-client'
 import { useQuery } from '@tanstack/react-query'
+import { differenceInCalendarDays, format, isToday, isYesterday } from 'date-fns'
+
+/** Recent Activity: human labels for recent days, then explicit date + time. */
+function formatActivityListWhen(dateInput: Date | string): string {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput)
+  if (Number.isNaN(date.getTime())) return '—'
+  if (isToday(date)) return `Today, ${format(date, 'h:mm a')}`
+  if (isYesterday(date)) return `Yesterday, ${format(date, 'h:mm a')}`
+  const daysAgo = differenceInCalendarDays(new Date(), date)
+  if (daysAgo >= 2 && daysAgo < 7) return format(date, 'EEEE, MMM d · h:mm a')
+  return format(date, 'MMM d, yyyy · h:mm a')
+}
 
 // Interactive Time Picker Component
 function TimePicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
@@ -2168,10 +2180,7 @@ export default function LeadDetailPageContent({
             </h2>
             <div className="space-y-3 text-[11px] pr-1">
               {lead?.status_history && lead.status_history.length > 0 && lead.status_history.slice(0, 8).map((history) => {
-                const date = new Date(history.created_at)
-                const timeStr = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)) === 0
-                  ? `Today, ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                  : `${Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60))} hours ago`
+                const timeStr = formatActivityListWhen(history.created_at)
                 return (
                   <div key={history.id}>
                     <p className="text-[#717d8a] leading-[1.3]">{timeStr}</p>
@@ -2180,7 +2189,7 @@ export default function LeadDetailPageContent({
                 )
               })}
               {lead?.calls && lead.calls.length > 0 && lead.calls.slice(0, 15).map((call) => {
-                const timeStr = `${Math.floor((Date.now() - new Date(call.created_at).getTime()) / (1000 * 60 * 60))} hours ago`
+                const timeStr = formatActivityListWhen(call.created_at)
                 const dur =
                   call.call_duration != null
                     ? `${Math.floor(call.call_duration / 60)}:${String(call.call_duration % 60).padStart(2, '0')}`
