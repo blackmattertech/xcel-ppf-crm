@@ -111,6 +111,15 @@ export default function CustomersPage() {
     fetchCustomers()
   }, [isAuthenticated])
 
+  // Deep link from dashboard (e.g. /customers?origin=warranty_claim)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const origin = new URLSearchParams(window.location.search).get('origin')
+    if (origin === 'warranty_claim') {
+      setRecordOrigin('warranty_claim')
+    }
+  }, [])
+
   async function checkAuth() {
     const supabase = createClient()
     const {

@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Users, TrendingUp, CheckCircle, AlertTriangle } from 'lucide-react'
+import { Users, TrendingUp, CheckCircle, AlertTriangle, ShieldCheck, ChevronRight } from 'lucide-react'
 import Layout from '@/components/Layout'
 import { useAuthContext } from '@/components/AuthProvider'
 import { isAssignedOnlyFollowUpsRole } from '@/shared/constants/roles'
@@ -68,6 +68,13 @@ export default function DashboardPage() {
     upcoming: number
     adminNotifications?: number
   } | null>(null)
+  /** Warranty claims = external customer rows; hidden if user lacks customers.read */
+  const [warrantyClaimsSummary, setWarrantyClaimsSummary] = useState<{
+    count: number
+    externalConfigured: boolean
+  } | null>(null)
+  const [warrantySummaryLoading, setWarrantySummaryLoading] = useState(true)
+  const [warrantySummaryForbidden, setWarrantySummaryForbidden] = useState(false)
 
   // View mode per section: line | table for time, chart | table for source/status, bar | table for rep
   const [viewTime, setViewTime] = useState<ViewMode>('line')
@@ -98,6 +105,8 @@ export default function DashboardPage() {
 
     setAnalyticsLoading(true)
     setProductsLoading(true)
+    setWarrantySummaryLoading(true)
+    setWarrantySummaryForbidden(false)
 
     void (async () => {
       try {
@@ -127,6 +136,32 @@ export default function DashboardPage() {
         console.error('Failed to fetch products with stats:', error)
       } finally {
         if (!cancelled) setProductsLoading(false)
+      }
+    })()
+
+    void (async () => {
+      try {
+        const r = await cachedFetch('/api/customers/warranty-summary', undefined, 60_000)
+        if (cancelled) return
+        if (r.status === 403) {
+          setWarrantySummaryForbidden(true)
+          setWarrantyClaimsSummary(null)
+          return
+        }
+        if (!r.ok) {
+          setWarrantyClaimsSummary({ count: 0, externalConfigured: false })
+          return
+        }
+        const data = (await r.json()) as { count?: number; externalConfigured?: boolean }
+        setWarrantyClaimsSummary({
+          count: typeof data.count === 'number' ? data.count : 0,
+          externalConfigured: Boolean(data.externalConfigured),
+        })
+      } catch (error) {
+        console.error('Failed to fetch warranty summary:', error)
+        if (!cancelled) setWarrantyClaimsSummary({ count: 0, externalConfigured: false })
+      } finally {
+        if (!cancelled) setWarrantySummaryLoading(false)
       }
     })()
 
@@ -315,6 +350,48 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {/* Warranty claims — count + link to Customers (same source as external / warranty rows) */}
+          {!warrantySummaryForbidden && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+              className="mb-8"
+            >
+              {warrantySummaryLoading ? (
+                <div className="h-24 animate-pulse rounded-2xl border border-gray-200/80 bg-gray-100/60" />
+              ) : (
+                <Link
+                  href="/customers?origin=warranty_claim"
+                  className="group flex items-center justify-between gap-4 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50/90 to-white px-5 py-4 shadow-sm transition-all hover:border-amber-300 hover:shadow-md md:px-6 md:py-5"
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 md:h-14 md:w-14">
+                      <ShieldCheck className="h-7 w-7 md:h-8 md:w-8" strokeWidth={1.75} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-800/80">
+                        Warranty claims
+                      </p>
+                      <p className="mt-0.5 text-3xl font-bold tabular-nums text-gray-900 md:text-4xl">
+                        {warrantyClaimsSummary?.count ?? 0}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-600">
+                        {warrantyClaimsSummary?.externalConfigured
+                          ? 'Imported warranty records — click to open Customers with the warranty filter applied.'
+                          : 'External warranty database not configured, or no rows yet.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 text-sm font-semibold text-amber-900 group-hover:text-amber-950">
+                    <span className="hidden sm:inline">Customers</span>
+                    <ChevronRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </Link>
+              )}
             </motion.div>
           )}
 
