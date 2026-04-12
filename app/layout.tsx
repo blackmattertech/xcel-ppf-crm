@@ -3,8 +3,8 @@ import "./globals.css";
 import { ClientProviders } from "@/components/ClientProviders";
 
 export const metadata: Metadata = {
-  title: "Xcel CRM",
-  description: "Customer Relationship Management System",
+  title: "Ultrakool CRM",
+  description: "Ultrakool Customer Relationship Management System",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Xcel CRM',
+    title: 'Ultrakool CRM',
   },
   formatDetection: {
     telephone: false,
@@ -50,7 +50,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#000000" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Xcel CRM" />
+        <meta name="apple-mobile-web-app-title" content="Ultrakool CRM" />
         {/* Favicon for browser tabs */}
         <link rel="icon" type="image/png" href="/icon-192x192.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192x192.png" />

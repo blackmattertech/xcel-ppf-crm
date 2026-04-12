@@ -74,7 +74,8 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     requiresPermissions: true,
     children: [
       { name: 'Dashboard', href: '/marketing/dashboard', icon: '📊', resource: 'marketing_dashboard', requiresPermissions: true },
-      { name: 'WhatsApp', href: '/marketing/whatsapp', icon: '💬', resource: 'marketing_whatsapp', requiresPermissions: true },
+      // WhatsApp marketing UI disabled — see proxy.ts + app/whatsapp-ui-disabled/page.tsx
+      // { name: 'WhatsApp', href: '/marketing/whatsapp', icon: '💬', resource: 'marketing_whatsapp', requiresPermissions: true },
     ],
   },
   {

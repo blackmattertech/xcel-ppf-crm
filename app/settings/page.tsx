@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Layout from '@/components/Layout'
 import FacebookIntegration from '@/components/FacebookIntegration'
-import WhatsAppIntegration from '@/components/WhatsAppIntegration'
 import McubeSettings from '@/components/McubeSettings'
 import { useAuthContext } from '@/components/AuthProvider'
 import { CheckCircle2, XCircle } from 'lucide-react'
@@ -34,14 +33,6 @@ function SettingsContent() {
         })
       }, 0)
       router.replace('/settings', { scroll: false })
-    } else if (success && integration === 'whatsapp') {
-      setTimeout(() => {
-        setNotification({
-          type: 'success',
-          message: 'WhatsApp Business account linked successfully!',
-        })
-      }, 0)
-      router.replace('/settings', { scroll: false })
     } else if (error && integration === 'facebook') {
       const errorMessages: Record<string, string> = {
         token_exchange_failed: 'Failed to exchange authorization code. Please try again.',
@@ -58,18 +49,6 @@ function SettingsContent() {
         setNotification({ type: 'error', message })
       }, 0)
       // Clear URL params
-      router.replace('/settings', { scroll: false })
-    } else if (error && integration === 'whatsapp') {
-      const errorMessages: Record<string, string> = {
-        save_failed: 'Failed to save WhatsApp connection. Please try again.',
-        update_failed: 'Failed to update WhatsApp connection. Please try again.',
-      }
-      setTimeout(() => {
-        setNotification({
-          type: 'error',
-          message: errorMessages[error] || 'An error occurred while linking WhatsApp.',
-        })
-      }, 0)
       router.replace('/settings', { scroll: false })
     }
   }, [isAuthenticated, authLoading, router, searchParams])
@@ -132,7 +111,6 @@ function SettingsContent() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Integrations</h2>
             <div className="space-y-4">
               <FacebookIntegration />
-              <WhatsAppIntegration />
             </div>
           </div>
           {(role?.name === 'admin' || role?.name === 'super_admin') && (

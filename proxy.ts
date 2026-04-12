@@ -1,7 +1,19 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+function isWhatsAppUiPath(pathname: string): boolean {
+  const bases = ['/marketing/whatsapp', '/marketing/bulk-whatsapp', '/marketing/chat', '/marketing/templates'] as const
+  for (const base of bases) {
+    if (pathname === base || pathname.startsWith(`${base}/`)) return true
+  }
+  return false
+}
+
 export async function proxy(request: NextRequest) {
+  if (isWhatsAppUiPath(request.nextUrl.pathname)) {
+    return NextResponse.rewrite(new URL('/whatsapp-ui-disabled', request.url))
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,

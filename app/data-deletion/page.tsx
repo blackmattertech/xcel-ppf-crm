@@ -15,7 +15,7 @@ export default function DataDeletionPage() {
             User Data Deletion Instructions
           </h1>
           <p className="text-sm text-gray-500 mb-8">
-            Xcel CRM / Xcel PPF — Last updated: February 2025
+            Ultrakool CRM — Last updated: February 2025
           </p>
 
           <section className="prose prose-gray max-w-none">
@@ -23,7 +23,7 @@ export default function DataDeletionPage() {
               How to request deletion of your data
             </h2>
             <p className="text-gray-700 mb-4">
-              If you have used our services (including WhatsApp messaging via Xcel CRM) and want to
+              If you have used our services (including WhatsApp messaging via Ultrakool CRM) and want to
               request deletion of your personal data that we hold, you can do so in the following
               ways:
             </p>
@@ -32,10 +32,10 @@ export default function DataDeletionPage() {
               <li>
                 <strong>Email:</strong> Send a data deletion request to{' '}
                 <a
-                  href="mailto:info@xcelppf.com"
+                  href="mailto:info@ultrakool.com"
                   className="text-blue-600 hover:underline"
                 >
-                  info@xcelppf.com
+                  info@ultrakool.com
                 </a>{' '}
                 with the subject line &quot;Data Deletion Request&quot;. Please include the phone
                 number and/or email address associated with your account so we can identify your
@@ -45,12 +45,12 @@ export default function DataDeletionPage() {
                 <strong>Contact form:</strong> You may also submit a request through our main
                 website at{' '}
                 <a
-                  href="https://xcelppf.com"
+                  href="https://ultrakool.com"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:underline"
                 >
-                  https://xcelppf.com
+                  https://ultrakool.com
                 </a>{' '}
                 and specify that you are requesting deletion of your personal data.
               </li>
@@ -81,7 +81,7 @@ export default function DataDeletionPage() {
             <p className="text-gray-600 text-sm mt-8">
               For more information about how we collect and use data, please see our{' '}
               <a
-                href="https://xcelppf.com/about-us-xcel-premium-car-detailing-ppf-ceramic-coating-tints-in-bangalore/"
+                href="https://ultrakool.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline"

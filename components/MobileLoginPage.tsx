@@ -158,8 +158,8 @@ export default function MobileLoginPage() {
               {/* Logo - Centered */}
               <div className="mb-2 self-center flex justify-center">
                 <Image
-                  src="/image.png"
-                  alt="XCEL Logo"
+                  src="/ultrakool-logo.png"
+                  alt="Ultrakool"
                   width={280}
                   height={172}
                   className="w-48 h-auto sm:w-56"
