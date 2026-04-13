@@ -8,7 +8,7 @@ import { useAuthContext } from '@/components/AuthProvider'
 import { cachedFetch } from '@/lib/api-client'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { PERMISSIONS } from '@/shared/constants/permissions'
-import { Phone, User, Calendar, BarChart3, Headphones, ChevronRight } from 'lucide-react'
+import { Phone, User, Calendar, BarChart3, ChevronRight } from 'lucide-react'
 
 function todayLocalYmd(): string {
   const d = new Date()
@@ -78,7 +78,6 @@ export default function ReportsPage() {
   const [summary, setSummary] = useState<{
     totalCalls: number
     connected: number
-    withRecording: number
     byUser: SummaryByUser[]
   } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -234,7 +233,7 @@ export default function ReportsPage() {
         ) : null}
 
         {summary ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wide">
                 <Phone className="w-4 h-4" />
@@ -248,14 +247,6 @@ export default function ReportsPage() {
                 Connected
               </div>
               <p className="text-2xl font-bold text-gray-900 mt-1">{summary.connected}</p>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm col-span-2 lg:col-span-2">
-              <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wide">
-                <Headphones className="w-4 h-4" />
-                With recording
-              </div>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{summary.withRecording}</p>
-              <p className="text-xs text-gray-500 mt-1">Manual logs usually have no recording; MCUBE calls may include audio.</p>
             </div>
           </div>
         ) : null}

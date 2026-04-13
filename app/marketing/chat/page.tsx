@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef, type ChangeEvent } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, type ChangeEvent } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   Search,
   Loader2,
@@ -123,7 +124,9 @@ function buildThreadMessagesUrl(phone: string, conversationKey: string | undefin
   return `/api/marketing/whatsapp/chat?${qs.toString()}`
 }
 
-export default function ChatWithLeadsPage() {
+function ChatWithLeadsPageInner() {
+  const searchParams = useSearchParams()
+  const deepLinkHandledRef = useRef(false)
   const [contacts, setContacts] = useState<Array<LeadRecipient | CustomerRecipient>>([])
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -171,7 +174,7 @@ export default function ChatWithLeadsPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [sendingTemplate, setSendingTemplate] = useState(false)
   /** Numbers started from "New chat" (not in leads/customers API). */
-  const [manualContacts, setManualContacts] = useState<CustomerRecipient[]>([])
+  const [manualContacts, setManualContacts] = useState<Array<LeadRecipient | CustomerRecipient>>([])
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatPhone, setNewChatPhone] = useState('')
   const [newChatName, setNewChatName] = useState('')
@@ -544,27 +547,11 @@ export default function ChatWithLeadsPage() {
     return Array.from(map.values())
   }, [contacts, manualContacts])
 
-  const filteredContacts = useMemo(() => {
-    if (!search.trim()) return mergedContacts
-    const q = search.toLowerCase()
-    return mergedContacts.filter((l) => l.name.toLowerCase().includes(q) || l.phone.includes(q))
-  }, [mergedContacts, search])
-
-  const filteredConversations = useMemo(() => {
-    if (!search.trim()) return conversations
-    const q = search.toLowerCase()
-    return conversations.filter((c) =>
-      c.phone.includes(q) ||
-      (c.lead_name || '').toLowerCase().includes(q) ||
-      (c.last_message?.body || '').toLowerCase().includes(q)
-    )
-  }, [conversations, search])
-
   /**
-   * Same flow as template header media: signed Supabase upload URL → PUT file (bypasses Vercel ~4.5MB
-   * serverless body limit on multipart POST), then JSON to upload-media for Meta + public URL.
+   * Signed Supabase URL → PUT file → upload-media for Meta public URL (same as paperclip flow).
+   * @returns whether the attachment was attached and ready to send
    */
-  const uploadAttachment = async (file: File) => {
+  const uploadFileForSend = useCallback(async (file: File): Promise<boolean> => {
     setUploadingAttachment(true)
     try {
       const signRes = await cachedFetch(
@@ -631,12 +618,174 @@ export default function ChatWithLeadsPage() {
       })
       setSendStatus('idle')
       setSendError(null)
+      return true
     } catch (e) {
       setSendStatus('error')
       setSendError(e instanceof Error ? e.message : 'Attachment upload failed')
+      return false
     } finally {
       setUploadingAttachment(false)
     }
+  }, [])
+
+  /** Open correct thread + optional composer draft from /marketing/chat?leadId=&phone=&name=&draft=&quotationId= */
+  useEffect(() => {
+    if (loading) return
+    if (deepLinkHandledRef.current) return
+    const leadIdParam = searchParams.get('leadId')?.trim() ?? ''
+    const phoneParam = searchParams.get('phone')?.trim() ?? ''
+    if (!leadIdParam && !phoneParam) return
+
+    const normalizedPhone = phoneParam ? normalizePhoneForStorage(phoneParam) : ''
+    const nameParam = searchParams.get('name')?.trim() || 'Lead'
+    const draftParam = searchParams.get('draft') ?? ''
+    const quotationIdParam = searchParams.get('quotationId')?.trim() ?? ''
+
+    let contact: LeadRecipient | CustomerRecipient | null = null
+    let convKey: string | null = null
+
+    if (leadIdParam && /^[0-9a-f-]{36}$/i.test(leadIdParam)) {
+      const hit = mergedContacts.find((c) => c.type === 'lead' && c.id === leadIdParam)
+      if (hit) {
+        contact = hit
+        convKey = normalizePhoneForStorage(hit.phone)
+      }
+    }
+    if (!contact && phoneParam && normalizePhoneForChat(phoneParam).length >= 10) {
+      const hit = mergedContacts.find((c) => normalizePhoneForStorage(c.phone) === normalizedPhone)
+      if (hit) {
+        contact = hit
+        convKey = normalizePhoneForStorage(hit.phone)
+      }
+    }
+    if (!contact && phoneParam && normalizePhoneForChat(phoneParam).length >= 10) {
+      if (leadIdParam && /^[0-9a-f-]{36}$/i.test(leadIdParam)) {
+        contact = {
+          id: leadIdParam,
+          name: nameParam,
+          phone: phoneParam,
+          type: 'lead',
+        }
+      } else {
+        contact = {
+          id: `inbox-direct-${normalizedPhone}`,
+          name: nameParam,
+          phone: phoneParam,
+          type: 'customer',
+        }
+      }
+      convKey = normalizedPhone
+      setManualContacts((prev) => {
+        const next = prev.filter((p) => normalizePhoneForStorage(p.phone) !== normalizedPhone)
+        return [...next, contact!]
+      })
+    }
+
+    if (!contact) return
+
+    const conv =
+      conversations.find(
+        (c) =>
+          (leadIdParam && c.lead_id === leadIdParam) ||
+          (normalizedPhone && normalizePhoneForStorage(c.phone) === normalizedPhone)
+      ) ?? null
+    if (conv?.conversation_key) convKey = conv.conversation_key
+
+    deepLinkHandledRef.current = true
+    setSelectedContact(contact)
+    setSelectedConversationKey(convKey || normalizePhoneForStorage(contact.phone))
+    setSendStatus('idle')
+    setSendError(null)
+    setMessagesError(null)
+    setSaveError(null)
+
+    let draft = draftParam
+    try {
+      draft = draft ? decodeURIComponent(draft) : ''
+    } catch {
+      /* use raw */
+    }
+
+    const greetingFirst =
+      nameParam && nameParam !== 'Lead' ? nameParam.split(/\s+/)[0] : ''
+    const shouldAttachQuotationPdf =
+      !draft.trim() && quotationIdParam && typeof window !== 'undefined'
+
+    if (shouldAttachQuotationPdf) {
+      setMessage(
+        `Hi${greetingFirst ? ` ${greetingFirst}` : ''}, please find your quotation attached.`
+      )
+      void (async () => {
+        setUploadingAttachment(true)
+        setSendError(null)
+        let ok = false
+        try {
+          const prep = await fetch(
+            `/api/quotations/${encodeURIComponent(quotationIdParam)}/prepare-whatsapp-pdf`,
+            { method: 'POST', credentials: 'include' }
+          )
+          const data = (await prep.json().catch(() => ({}))) as {
+            url?: string
+            fileName?: string
+            mimeType?: string
+            sizeBytes?: number
+            error?: string
+          }
+          if (!prep.ok || !data.url) {
+            throw new Error(data.error || 'Could not prepare quotation PDF')
+          }
+          setAttachment({
+            url: data.url,
+            mimeType: data.mimeType || 'application/pdf',
+            fileName: data.fileName || 'quotation.pdf',
+            sizeBytes: data.sizeBytes,
+            messageType: 'document',
+          })
+          setSendStatus('idle')
+          ok = true
+        } catch {
+          ok = false
+        } finally {
+          setUploadingAttachment(false)
+        }
+        if (!ok && typeof window !== 'undefined') {
+          const origin = window.location.origin
+          setMessage(
+            `Hi${greetingFirst ? ` ${greetingFirst}` : ''}, please review your quotation: ${origin}/quotations/${quotationIdParam}`
+          )
+        }
+      })()
+    } else if (draft.trim()) {
+      setMessage(draft.trim())
+    }
+
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href)
+      if (u.searchParams.toString()) {
+        u.search = ''
+        window.history.replaceState({}, '', `${u.pathname}${u.hash}`)
+      }
+    }
+  }, [loading, mergedContacts, conversations, searchParams])
+
+  const filteredContacts = useMemo(() => {
+    if (!search.trim()) return mergedContacts
+    const q = search.toLowerCase()
+    return mergedContacts.filter((l) => l.name.toLowerCase().includes(q) || l.phone.includes(q))
+  }, [mergedContacts, search])
+
+  const filteredConversations = useMemo(() => {
+    if (!search.trim()) return conversations
+    const q = search.toLowerCase()
+    return conversations.filter((c) =>
+      c.phone.includes(q) ||
+      (c.lead_name || '').toLowerCase().includes(q) ||
+      (c.last_message?.body || '').toLowerCase().includes(q)
+    )
+  }, [conversations, search])
+
+  const uploadAttachment = async (file: File) => {
+    await uploadFileForSend(file)
   }
 
   const handleFileSelected = async (evt: ChangeEvent<HTMLInputElement>) => {
@@ -1810,5 +1959,20 @@ export default function ChatWithLeadsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ChatWithLeadsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin text-[#25D366]" />
+          Loading inbox…
+        </div>
+      }
+    >
+      <ChatWithLeadsPageInner />
+    </Suspense>
   )
 }

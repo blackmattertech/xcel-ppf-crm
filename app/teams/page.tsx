@@ -8,6 +8,7 @@ import Layout from '@/components/Layout'
 import Image from 'next/image'
 import { Plus, Table2, LayoutGrid, Phone, Mail, Calendar, Star, Users, UserCheck, Wifi, Award, X, ArrowLeft, DollarSign, Clock, Play, Download, Trash2 } from 'lucide-react'
 import { cachedFetch } from '@/lib/api-client'
+import { isAssignableLeadRole } from '@/shared/constants/roles'
 
 interface Role {
   id: string
@@ -26,6 +27,7 @@ interface User {
   doj: string | null
   role: Role
   role_id?: string
+  receives_new_lead_assignments?: boolean
   created_at: string
 }
 
@@ -101,6 +103,7 @@ export default function TeamsPage() {
     dob: '',
     doj: '',
     languagesKnown: [] as string[],
+    receivesNewLeadAssignments: true,
   })
   const [detailProfileImage, setDetailProfileImage] = useState<File | null>(null)
   const [detailProfileImagePreview, setDetailProfileImagePreview] = useState<string | null>(null)
@@ -386,6 +389,7 @@ export default function TeamsPage() {
       dob: user.dob || '',
       doj: user.doj || '',
       languagesKnown: languages,
+      receivesNewLeadAssignments: user.receives_new_lead_assignments !== false,
     })
     setShowLanguagePicker(languages.length === 0)
     if (user.profile_image_url) {
@@ -417,6 +421,7 @@ export default function TeamsPage() {
           dob: fullUser.dob || '',
           doj: fullUser.doj || '',
           languagesKnown: updatedLanguages,
+          receivesNewLeadAssignments: fullUser.receives_new_lead_assignments !== false,
         })
         if (fullUser.profile_image_url) {
           setDetailProfileImagePreview(fullUser.profile_image_url)
@@ -571,6 +576,7 @@ export default function TeamsPage() {
         setUploadingImage(false)
       }
 
+      const selectedRoleName = roles.find((r) => r.id === detailFormData.roleId)?.name
       const updatePayload: Record<string, unknown> = {
         name: detailFormData.name,
         phone: detailFormData.phone || null,
@@ -580,6 +586,9 @@ export default function TeamsPage() {
         doj: detailFormData.doj || null,
         languagesKnown: detailFormData.languagesKnown,
         roleId: detailFormData.roleId,
+      }
+      if (isAssignableLeadRole(selectedRoleName)) {
+        updatePayload.receivesNewLeadAssignments = detailFormData.receivesNewLeadAssignments
       }
 
       if (canManageUserLogin) {
@@ -611,6 +620,8 @@ export default function TeamsPage() {
             ...selectedUser,
             ...updated,
             role: updated.role ?? selectedUser.role,
+            receives_new_lead_assignments:
+              updated.receives_new_lead_assignments ?? detailFormData.receivesNewLeadAssignments,
           })
         }
         setDetailFormData((prev) => ({ ...prev, newPassword: '' }))
@@ -1477,6 +1488,30 @@ export default function TeamsPage() {
                                   ))}
                                 </select>
                               </div>
+                              {isAssignableLeadRole(roles.find((r) => r.id === detailFormData.roleId)?.name) ? (
+                                <div className="md:col-span-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50/80 px-4 py-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-gray-900">Receive new lead assignments</p>
+                                    <p className="text-xs text-gray-600 mt-1 max-w-xl">
+                                      When off, this user keeps their current leads but is skipped by automatic round-robin until you turn this back on.
+                                    </p>
+                                  </div>
+                                  <label className="inline-flex items-center gap-2 cursor-pointer shrink-0">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 rounded border-gray-300 text-[#de0510] focus:ring-[#de0510]"
+                                      checked={detailFormData.receivesNewLeadAssignments}
+                                      onChange={(e) =>
+                                        setDetailFormData({
+                                          ...detailFormData,
+                                          receivesNewLeadAssignments: e.target.checked,
+                                        })
+                                      }
+                                    />
+                                    <span className="text-sm text-gray-800">Active for new leads</span>
+                                  </label>
+                                </div>
+                              ) : null}
                               <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
                                 <textarea

@@ -112,7 +112,7 @@ export async function PUT(
       )
     }
 
-    const lead = await updateLead(id, updates as any)
+    const lead = await updateLead(id, updates as any, userId)
 
     // Only wipe the expensive product_stats cache when requirement changed
     await invalidateLeadCaches(id, 'requirement' in updates)

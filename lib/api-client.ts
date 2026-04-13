@@ -126,6 +126,26 @@ export function invalidateApiCache(urlOrPrefix: string): void {
   }
 }
 
+/** Drop cached GETs for one lead (minimal, relations, any query) so refetch after PUT sees fresh data. */
+export function invalidateLeadGetCache(leadId: string): void {
+  const prefix = `GET:/api/leads/${leadId}`
+  for (const key of cache.keys()) {
+    if (key === prefix || key.startsWith(`${prefix}?`) || key.startsWith(`${prefix}/`)) {
+      cache.delete(key)
+    }
+  }
+}
+
+/** Invalidate list endpoint cache only (not /api/leads/[id] or /api/leads/other-routes). */
+export function invalidateLeadsListGetCache(): void {
+  const exact = 'GET:/api/leads'
+  for (const key of cache.keys()) {
+    if (key === exact || key.startsWith(`${exact}?`)) {
+      cache.delete(key)
+    }
+  }
+}
+
 /**
  * Clear all frontend API cache (e.g. on logout).
  */

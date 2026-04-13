@@ -1040,6 +1040,15 @@ function LeadsPageContent() {
   // Pagination: current page is derived from URL so closing lead detail always shows the right page
   const pageParam = searchParams.get('page')
   const detailLeadId = searchParams.get('detail')
+  const [retainedDetailLeadId, setRetainedDetailLeadId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (detailLeadId) setRetainedDetailLeadId(detailLeadId)
+  }, [detailLeadId])
+
+  /** Keep detail component mounted after close so reopen is instant (state + warm refetch). */
+  const panelLeadId = detailLeadId ?? retainedDetailLeadId
+
   const currentPage = !pageParam ? 1 : Math.max(1, parseInt(pageParam, 10) || 1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const PAGINATION_STORAGE_KEY = 'leads-list-pagination'
@@ -4794,9 +4803,10 @@ function LeadsPageContent() {
         </div>
       )}
 
-      {detailLeadId && (
+      {panelLeadId && (
         <LeadDetailPageContent
-          leadId={detailLeadId}
+          leadId={panelLeadId}
+          open={Boolean(detailLeadId)}
           onClose={closeLeadDetail}
           embedded
           onLeadDeleted={() => {

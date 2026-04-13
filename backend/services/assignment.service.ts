@@ -7,11 +7,21 @@ type LeadSource = (typeof LEAD_SOURCES)[number]
 
 const EPOCH_DATE = new Date(1970, 0, 1).toISOString()
 
+type GetAssignableUserIdsOptions = {
+  /** When false, include tele_caller/sales users who opted out of new auto-assignments (for “already owned” checks). Default true. */
+  requireReceivesNewLeads?: boolean
+}
+
 /**
- * Get user IDs that are eligible for lead assignment (tele_caller and sales-type roles only).
- * Excludes admin, marketing, etc.
+ * Get user IDs in assignable roles. By default only users with `receives_new_lead_assignments` (round-robin pool).
  */
-async function getAssignableUserIds(supabase: ReturnType<typeof createServiceClient>, excludeUserId?: string): Promise<string[]> {
+async function getAssignableUserIds(
+  supabase: ReturnType<typeof createServiceClient>,
+  excludeUserId?: string,
+  options?: GetAssignableUserIdsOptions
+): Promise<string[]> {
+  const requireReceives = options?.requireReceivesNewLeads !== false
+
   const { data: roles, error: rolesError } = await supabase
     .from('roles')
     .select('id')
@@ -22,10 +32,11 @@ async function getAssignableUserIds(supabase: ReturnType<typeof createServiceCli
   }
 
   const roleIds = (roles as { id: string }[]).map((r) => r.id)
-  let query = supabase
-    .from('users')
-    .select('id')
-    .in('role_id', roleIds)
+  let query = supabase.from('users').select('id').in('role_id', roleIds)
+
+  if (requireReceives) {
+    query = query.eq('receives_new_lead_assignments', true)
+  }
 
   if (excludeUserId) {
     query = query.neq('id', excludeUserId)
@@ -197,11 +208,8 @@ async function applyRoundRobinReassignments(
 }
 
 /**
- * Redistribute existing leads with status "new" among assignable users (tele_caller + sales) in round-robin.
- * Call this when a new assignable user is added, or to fix leads assigned to non-assignable roles.
- * - Leads already assigned to an assignable user: redistributed when there are >= 2 assignable users.
- * - Leads with assigned_to = NULL: assigned to assignable users in round-robin.
- * - Leads assigned to a different role (e.g. admin, marketing): reassigned to assignable users in round-robin.
+ * Fix-up for NEW leads that are unassigned or assigned to non-assignable users.
+ * Does not move leads already assigned to tele_caller/sales (preserves ownership when team changes).
  * @param triggeredByUserId - Optional; if provided, used as changed_by for lead_status_history entries
  * @returns Number of leads reassigned
  */
@@ -218,31 +226,7 @@ export async function redistributeNewLeadsAmongTeleCallers(
 
   let reassigned = 0
 
-  // 1) Redistribute NEW leads already assigned to an assignable user (only when >= 2 assignable users)
-  if (assignableUserIds.length >= 2) {
-    const { data: leads, error: leadsError } = await supabase
-      .from('leads')
-      .select('id, assigned_to, status')
-      .eq('status', LEAD_STATUS.NEW)
-      .not('assigned_to', 'is', null)
-      .in('assigned_to', assignableUserIds)
-      .order('created_at', { ascending: true })
-
-    if (!leadsError && leads && leads.length > 0) {
-      const leadRows = leads as { id: string; assigned_to: string; status: string }[]
-      const n = assignableUserIds.length
-      const updates: ReassignUpdate[] = []
-      for (let i = 0; i < leadRows.length; i++) {
-        const lead = leadRows[i]
-        const newAssigneeId = assignableUserIds[i % n]
-        if (lead.assigned_to === newAssigneeId) continue
-        updates.push({ id: lead.id, status: lead.status, newAssignee: newAssigneeId })
-      }
-      reassigned += await applyRoundRobinReassignments(supabase, updates, triggeredByUserId)
-    }
-  }
-
-  // 2) Assign NEW leads that have no assignee to assignable users (tele_caller/sales) in round-robin
+  // 1) Assign NEW leads that have no assignee to assignable users (tele_caller/sales) in round-robin
   const { data: unassignedLeads, error: unassignedError } = await supabase
     .from('leads')
     .select('id, status')
@@ -261,8 +245,10 @@ export async function redistributeNewLeadsAmongTeleCallers(
     reassigned += await applyRoundRobinReassignments(supabase, updates, triggeredByUserId)
   }
 
-  // 3) Reassign NEW leads assigned to a non-assignable role (e.g. admin, marketing) to assignable users (tele_caller/sales) in round-robin
-  const assignableIdSet = new Set(assignableUserIds)
+  // 2) Reassign NEW leads assigned to a non-assignable role (e.g. admin, marketing) to the receiving pool only.
+  // Use all assignable-role user IDs here so leads owned by a paused rep are not stripped.
+  const assignableRoleUserIds = await getAssignableUserIds(supabase, undefined, { requireReceivesNewLeads: false })
+  const assignableRoleIdSet = new Set(assignableRoleUserIds)
   const { data: newLeadsAssignedToOthers, error: othersError } = await supabase
     .from('leads')
     .select('id, assigned_to, status')
@@ -271,7 +257,7 @@ export async function redistributeNewLeadsAmongTeleCallers(
 
   if (!othersError && newLeadsAssignedToOthers && newLeadsAssignedToOthers.length > 0 && assignableUserIds.length >= 1) {
     const toReassign = (newLeadsAssignedToOthers as { id: string; assigned_to: string; status: string }[]).filter(
-      (row) => !assignableIdSet.has(row.assigned_to)
+      (row) => !assignableRoleIdSet.has(row.assigned_to)
     )
     const n = Math.max(1, assignableUserIds.length)
     const updates: ReassignUpdate[] = toReassign.map((lead, i) => ({

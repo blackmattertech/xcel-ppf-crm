@@ -25,6 +25,11 @@ export const ASSIGNABLE_LEAD_ROLES = [
   'sales_executive',
 ] as const
 
+export function isAssignableLeadRole(roleName: string | null | undefined): boolean {
+  if (!roleName) return false
+  return (ASSIGNABLE_LEAD_ROLES as readonly string[]).includes(roleName)
+}
+
 /**
  * Roles that only see follow-ups assigned to them (not all follow-ups in the system).
  * Used for Tasks & Followups page and notifications.

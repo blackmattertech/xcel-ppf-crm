@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
+  ensureTemplateMediaBucket,
+  TEMPLATE_MEDIA_BUCKET,
+} from '@/lib/supabase/ensure-template-media-bucket'
+import {
   ALLOWED_TYPES,
   normalizeMime,
   resolveUploadMime,
   getExtensionForSignedUrl,
 } from '@/app/marketing/_lib/whatsapp-upload-mime'
-
-const BUCKET_TEMPLATE_MEDIA = 'template-media'
 
 export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request)
@@ -33,7 +35,15 @@ export async function POST(request: NextRequest) {
   const path = `${userId}/${crypto.randomUUID()}.${getExtensionForSignedUrl(mimeType, fileName)}`
 
   const supabase = createServiceClient()
-  const { data, error } = await supabase.storage.from(BUCKET_TEMPLATE_MEDIA).createSignedUploadUrl(path)
+  const ensured = await ensureTemplateMediaBucket(supabase)
+  if (!ensured.ok) {
+    return NextResponse.json(
+      { error: ensured.error || 'WhatsApp media storage bucket is not available' },
+      { status: 503 }
+    )
+  }
+
+  const { data, error } = await supabase.storage.from(TEMPLATE_MEDIA_BUCKET).createSignedUploadUrl(path)
 
   if (error || !data) {
     return NextResponse.json(

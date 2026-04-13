@@ -562,7 +562,12 @@ export async function createLeadsBatch(
   return results
 }
 
-export async function updateLead(id: string, updates: Partial<LeadInsert>) {
+export async function updateLead(
+  id: string,
+  updates: Partial<LeadInsert>,
+  /** When the DB trigger skips history (unassigned lead), record who changed status */
+  changedByUserId?: string | null
+) {
   const supabase = createServiceClient()
 
   // Get current lead to check status change
@@ -571,6 +576,9 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
     .select('status, assigned_to')
     .eq('id', id)
     .single()
+
+  const currentLeadData = currentLead as { status: string; assigned_to: string | null } | null
+  const oldStatus = currentLeadData?.status
 
   const { data, error } = await supabase
     .from('leads')
@@ -595,16 +603,24 @@ export async function updateLead(id: string, updates: Partial<LeadInsert>) {
     throw new Error(`Failed to update lead: ${error.message}`)
   }
 
-  // Log status change if status was updated
-  if (currentLead && updates.status) {
-    const currentLeadData = currentLead as { status: string; assigned_to: string | null }
-    if (currentLeadData.status !== updates.status) {
-    await supabase.from('lead_status_history').insert({
+  const updated = data as { status: string; assigned_to: string | null }
+
+  // Trigger logs status when assigned_to is set; for unassigned leads log the acting user (not lead id — invalid FK).
+  if (
+    updates.status !== undefined &&
+    oldStatus !== undefined &&
+    oldStatus !== updates.status &&
+    !updated.assigned_to &&
+    changedByUserId
+  ) {
+    const { error: histErr } = await supabase.from('lead_status_history').insert({
       lead_id: id,
-      old_status: currentLeadData.status,
+      old_status: oldStatus,
       new_status: updates.status,
-      changed_by: currentLeadData.assigned_to || id,
+      changed_by: changedByUserId,
     } as any)
+    if (histErr) {
+      console.error('Failed to insert lead_status_history:', histErr.message)
     }
   }
 

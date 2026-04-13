@@ -4,13 +4,14 @@ import { uploadMediaBufferToMeta } from '@/backend/services/whatsapp.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
+  ensureTemplateMediaBucket,
+  TEMPLATE_MEDIA_BUCKET,
+} from '@/lib/supabase/ensure-template-media-bucket'
+import {
   normalizeMime,
   resolveUploadMime,
   getExtensionForSignedUrl,
 } from '@/app/marketing/_lib/whatsapp-upload-mime'
-
-/** Create in Supabase Dashboard → Storage → New bucket → name "template-media" → Public bucket. */
-const BUCKET_TEMPLATE_MEDIA = 'template-media'
 /** WhatsApp Cloud API document limit is 100 MB; keep same cap for inbox uploads. */
 const MAX_FILE_SIZE = 100 * 1024 * 1024
 
@@ -56,6 +57,15 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const supabase = createServiceClient()
+  const ensured = await ensureTemplateMediaBucket(supabase)
+  if (!ensured.ok) {
+    return NextResponse.json(
+      { error: ensured.error || 'WhatsApp media storage bucket is not available' },
+      { status: 503 }
+    )
+  }
+
   let buffer: ArrayBuffer
   let mime = ''
   let fileName: string | undefined
@@ -81,9 +91,8 @@ export async function POST(request: NextRequest) {
       )
     }
     storagePath = safePath
-    const supabase = createServiceClient()
     const { data: signed, error: signedErr } = await supabase.storage
-      .from(BUCKET_TEMPLATE_MEDIA)
+      .from(TEMPLATE_MEDIA_BUCKET)
       .createSignedUrl(storagePath, 60)
     if (signedErr || !signed?.signedUrl) {
       return NextResponse.json(
@@ -160,17 +169,16 @@ export async function POST(request: NextRequest) {
 
   let publicUrl: string | null = null
   try {
-    const supabase = createServiceClient()
     const path = storagePath ?? `${user.id}/${crypto.randomUUID()}.${getExtension(mime, fileName)}`
     if (!storagePath) {
       await supabase.storage
-        .from(BUCKET_TEMPLATE_MEDIA)
+        .from(TEMPLATE_MEDIA_BUCKET)
         .upload(path, buffer, {
           contentType: mime,
           upsert: false,
         })
     }
-    const { data: urlData } = supabase.storage.from(BUCKET_TEMPLATE_MEDIA).getPublicUrl(path)
+    const { data: urlData } = supabase.storage.from(TEMPLATE_MEDIA_BUCKET).getPublicUrl(path)
     if (urlData?.publicUrl) {
       publicUrl = urlData.publicUrl
     }

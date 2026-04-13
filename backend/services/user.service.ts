@@ -171,7 +171,8 @@ export async function updateUser(
   address?: string | null,
   dob?: string | null,
   doj?: string | null,
-  languagesKnown?: string[] | null
+  languagesKnown?: string[] | null,
+  receivesNewLeadAssignments?: boolean | null
 ) {
   const supabase = createServiceClient()
 
@@ -198,6 +199,9 @@ export async function updateUser(
   }
   if (languagesKnown !== undefined) {
     updateData.languages_known = languagesKnown
+  }
+  if (receivesNewLeadAssignments !== undefined && receivesNewLeadAssignments !== null) {
+    updateData.receives_new_lead_assignments = receivesNewLeadAssignments
   }
 
   const { data, error } = await supabase

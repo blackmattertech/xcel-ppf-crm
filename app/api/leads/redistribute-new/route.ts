@@ -5,9 +5,8 @@ import { PERMISSIONS } from '@/shared/constants/permissions'
 
 /**
  * POST /api/leads/redistribute-new
- * Redistribute NEW leads among tele_callers (unassigned and those assigned to non-tele_callers).
- * Use after deleting the only tele_caller and adding a new one, to assign those leads to the new tele_caller.
- * Requires leads.manage or admin.
+ * Assigns unassigned NEW leads and NEW leads on non-sales roles to users who are in the auto-assignment pool
+ * (tele_caller/sales with receives_new_lead_assignments). Does not move leads already owned by a rep.
  */
 export async function POST(request: NextRequest) {
   try {

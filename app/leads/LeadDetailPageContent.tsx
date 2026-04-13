@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -44,9 +44,11 @@ import {
   Eye,
   Share2,
   CheckCircle,
-  Pencil
+  Pencil,
+  MessageCircle,
+  ChevronDown,
 } from 'lucide-react'
-import { cachedFetch } from '@/lib/api-client'
+import { cachedFetch, invalidateLeadGetCache, invalidateLeadsListGetCache } from '@/lib/api-client'
 import { useQuery } from '@tanstack/react-query'
 import { differenceInCalendarDays, format, isToday, isYesterday } from 'date-fns'
 
@@ -492,6 +494,8 @@ export type LeadDetailPageContentProps = {
   onClose: () => void
   /** Overlay on /leads — real list stays visible underneath */
   embedded?: boolean
+  /** When false, embedded panel stays mounted but hidden (instant reopen). Full-page view ignores this. */
+  open?: boolean
   /** After successful delete so the list can update without full remount */
   onLeadDeleted?: () => void
 }
@@ -500,9 +504,15 @@ export default function LeadDetailPageContent({
   leadId,
   onClose,
   embedded = false,
+  open = true,
   onLeadDeleted,
 }: LeadDetailPageContentProps) {
   const router = useRouter()
+  /** Last lead id we fully loaded — used to background-refresh when reopening embedded panel */
+  const warmLeadIdRef = useRef<string | null>(null)
+  const leadIdRef = useRef(leadId)
+  leadIdRef.current = leadId
+
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -571,6 +581,7 @@ export default function LeadDetailPageContent({
   const [markingQuotationShared, setMarkingQuotationShared] = useState(false)
   const [hideConnectedWhenLastMcubeNotConnected, setHideConnectedWhenLastMcubeNotConnected] = useState(true)
   const [syncingInboundCalls, setSyncingInboundCalls] = useState(false)
+  const [savingInterestedProduct, setSavingInterestedProduct] = useState(false)
   // Quotation shared / negotiation: call outcome (accepted | not_accepted | negotiation)
   const [quotationCallOutcome, setQuotationCallOutcome] = useState<'accepted' | 'not_accepted' | 'negotiation' | ''>('')
   // Order created after "Accepted" → used to update order payment when user submits payment modal
@@ -605,27 +616,105 @@ export default function LeadDetailPageContent({
     }
   }, [mcubeSettingsPayload])
 
+  // Embedded list view already authenticated — hydrate role once instead of every open.
   useEffect(() => {
-    checkAuth()
-    fetchLead()
-  }, [leadId])
+    if (!embedded) return
+    void checkAuth()
+  }, [embedded])
 
   useEffect(() => {
-    if (leadId && (lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED)) {
+    if (embedded && !open) {
+      setLoading(false)
+    }
+  }, [embedded, open])
+
+  useEffect(() => {
+    if (!leadId) return
+    if (embedded && !open) return
+
+    if (!embedded) {
+      void checkAuth()
+    }
+
+    if (embedded && warmLeadIdRef.current === leadId) {
+      void fetchLead({ silent: true })
+      return
+    }
+
+    setError('')
+    setLoading(true)
+    void fetchLead({ silent: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchLead is stable per render; warm ref tracks embedded reopen
+  }, [leadId, open, embedded])
+
+  useEffect(() => {
+    if (!open || !leadId) {
+      setLeadQuotations([])
+      return
+    }
+    if (
+      lead?.status === LEAD_STATUS.QUALIFIED ||
+      lead?.status === LEAD_STATUS.NEGOTIATION ||
+      lead?.status === LEAD_STATUS.QUOTATION_SHARED ||
+      lead?.status === LEAD_STATUS.QUOTATION_VIEWED ||
+      lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED ||
+      lead?.status === LEAD_STATUS.QUOTATION_EXPIRED
+    ) {
       fetchLeadQuotations()
     } else {
       setLeadQuotations([])
     }
-  }, [leadId, lead?.status])
+  }, [leadId, lead?.status, open])
 
   useEffect(() => {
-    if (!leadId) return
+    if (!leadId || !open) return
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
       void fetchLeadLive()
-    }, 4000)
+    }, 12000)
     return () => clearInterval(interval)
-  }, [leadId, showStatusUpdateModal])
+  }, [leadId, showStatusUpdateModal, open])
+
+  /** Must run before any conditional return — same logic as getLeadProductInterest + catalog match */
+  const matchedInterestedProductId = useMemo(() => {
+    if (!lead) return ''
+    const raw = lead.requirement
+      ? lead.requirement.replace(/_/g, ' ')
+      : getInterestedProductFromMeta(lead.meta_data ?? null)
+    const interest = raw
+      .replace(/\|\s*Car Model:\s*[^|]+/gi, '')
+      .replace(/Car Model:\s*[^|]+/gi, '')
+      .trim()
+    const active = products.filter((p) => p.is_active)
+    const norm = (s: string) => s.toLowerCase().replace(/_/g, ' ').trim()
+    const i = norm(interest)
+    if (!i) return ''
+    const exact = active.find((p) => norm(p.title) === i)
+    if (exact) return exact.id
+    const fuzzy = active.find(
+      (p) =>
+        norm(p.title).length >= 3 && (i.includes(norm(p.title)) || norm(p.title).includes(i))
+    )
+    return fuzzy?.id ?? ''
+  }, [products, lead?.requirement, lead?.meta_data])
+
+  const goMarketingInbox = useCallback(
+    (opts?: { quotationId?: string; draft?: string }) => {
+      const phone = (lead?.phone || '').replace(/^(p|tel|phone|mobile):/i, '').trim()
+      if (!leadId || !phone || phone.replace(/\D/g, '').length < 10) {
+        alert('Add a valid phone number on this lead to use WhatsApp inbox.')
+        return
+      }
+      const qs = new URLSearchParams()
+      qs.set('leadId', leadId)
+      qs.set('phone', phone)
+      qs.set('name', (lead?.name || 'Lead').slice(0, 80))
+      if (opts?.quotationId) qs.set('quotationId', opts.quotationId)
+      if (opts?.draft) qs.set('draft', opts.draft)
+      router.push(`/marketing/chat?${qs.toString()}`)
+    },
+    [leadId, lead?.phone, lead?.name, router]
+  )
 
   async function checkAuth() {
     const supabase = createClient()
@@ -667,20 +756,30 @@ export default function LeadDetailPageContent({
     }
   }
 
-  async function fetchLead() {
+  async function fetchLead(opts?: { silent?: boolean; bypassCache?: boolean }) {
+    const silent = opts?.silent ?? false
+    const requestedId = leadId
+    if (opts?.bypassCache) {
+      invalidateLeadGetCache(requestedId)
+    }
     try {
       const [minRes, relRes] = await Promise.all([
-        cachedFetch(`/api/leads/${leadId}?include=minimal`),
-        cachedFetch(`/api/leads/${leadId}/relations`),
+        cachedFetch(`/api/leads/${requestedId}?include=minimal`),
+        cachedFetch(`/api/leads/${requestedId}/relations`),
       ])
+      if (leadIdRef.current !== requestedId) return
+
       if (minRes.ok) {
         const min = await minRes.json()
+        if (leadIdRef.current !== requestedId) return
+
         let statusHistory: unknown[] = []
         let calls: unknown[] = []
         let followUps: unknown[] = []
         let leadNotes: unknown[] = []
         if (relRes.ok) {
           const r = await relRes.json()
+          if (leadIdRef.current !== requestedId) return
           const payload = r.relations ?? r
           statusHistory = Array.isArray(payload.status_history)
             ? payload.status_history
@@ -696,9 +795,11 @@ export default function LeadDetailPageContent({
           follow_ups: followUps,
           lead_notes: leadNotes,
         }
+        warmLeadIdRef.current = requestedId
         setLead(merged)
         setNewStatus(min.lead.status)
       } else {
+        warmLeadIdRef.current = null
         const errorData = await minRes.json().catch(() => ({}))
         setError(errorData.error || 'Failed to fetch lead')
         if (minRes.status === 404) {
@@ -708,19 +809,22 @@ export default function LeadDetailPageContent({
         }
       }
     } catch (error) {
+      warmLeadIdRef.current = null
       console.error('Failed to fetch lead:', error)
       setError('Failed to fetch lead')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   async function fetchLeadLive() {
+    const requestedId = leadId
     try {
       // Bypass in-memory cache so webhook updates appear seamlessly.
-      const response = await cachedFetch(`/api/leads/${leadId}?live=${Date.now()}`, undefined, 0)
+      const response = await cachedFetch(`/api/leads/${requestedId}?live=${Date.now()}`, undefined, 0)
       if (!response.ok) return
       const data = await response.json()
+      if (leadIdRef.current !== requestedId) return
       if (!data?.lead) return
       setLead(data.lead)
       if (!showStatusUpdateModal) {
@@ -1240,8 +1344,10 @@ export default function LeadDetailPageContent({
       }
 
       if (interestedProductInterest) {
-        // Store product interest in requirement or meta_data
-        updates.requirement = interestedProductInterest
+        const car = getLeadCarModel()
+        updates.requirement = car
+          ? `${interestedProductInterest} | Car Model: ${car}`
+          : interestedProductInterest
       }
 
       if (interestedBudget) {
@@ -1261,7 +1367,12 @@ export default function LeadDetailPageContent({
       })
 
       if (!updateResponse.ok) {
-        throw new Error('Failed to update lead')
+        const errBody = await updateResponse.json().catch(() => ({}))
+        const msg =
+          typeof (errBody as { error?: unknown }).error === 'string'
+            ? (errBody as { error: string }).error
+            : 'Failed to update lead'
+        throw new Error(msg)
       }
 
       const trimmedInterestedNotes = interestedNotes.trim()
@@ -1277,7 +1388,8 @@ export default function LeadDetailPageContent({
         }),
       })
 
-      await fetchLead()
+      invalidateLeadsListGetCache()
+      await fetchLead({ silent: true, bypassCache: true })
       setShowCallModal(false)
       resetCallForm()
       alert('Lead qualified successfully!')
@@ -1574,6 +1686,8 @@ export default function LeadDetailPageContent({
     }
   }
 
+  if (embedded && !open) return null
+
   const overlayZ = embedded ? 'z-[100]' : 'z-40'
   const modalZ = embedded ? 'z-[110]' : 'z-50'
   /** Must sit above {@link modalZ} when embedded, or dialogs open behind the lead panel. */
@@ -1683,6 +1797,39 @@ export default function LeadDetailPageContent({
   // Interested product only (car model shown separately)
   function getLeadProductInterest(): string {
     return stripCarModelFromProductString(getRawProductInterest())
+  }
+
+  async function saveInterestedProduct(selectedProductId: string) {
+    if (!canUpdateStatus) return
+    setSavingInterestedProduct(true)
+    try {
+      let requirement: string | null
+      if (!selectedProductId) {
+        requirement = null
+      } else {
+        const p = products.find((x) => x.id === selectedProductId)
+        if (!p) return
+        const car = getLeadCarModel()
+        requirement = car ? `${p.title} | Car Model: ${car}` : p.title
+      }
+      const res = await cachedFetch(`/api/leads/${leadId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirement }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(typeof err.error === 'string' ? err.error : 'Failed to update interested product')
+        return
+      }
+      invalidateLeadsListGetCache()
+      await fetchLead({ silent: true, bypassCache: true })
+    } catch (e) {
+      console.error(e)
+      alert('Failed to update interested product')
+    } finally {
+      setSavingInterestedProduct(false)
+    }
   }
 
   // Get vehicle name from meta_data or product string
@@ -2079,8 +2226,32 @@ export default function LeadDetailPageContent({
                     <p className="text-[12px] font-semibold text-black leading-[1.3]">{getLeadCarModel() || '—'}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-[#717d8a] leading-[1.3]">Interested product</p>
-                    <p className="text-[12px] font-semibold text-black leading-[1.3]">{getLeadProductInterest() || '—'}</p>
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-1">Interested product</p>
+                    <select
+                      value={matchedInterestedProductId}
+                      onChange={(e) => void saveInterestedProduct(e.target.value)}
+                      disabled={!canUpdateStatus || savingInterestedProduct}
+                      className="w-full text-[12px] font-semibold text-black leading-[1.3] border border-[#e0e0e0] rounded-[4px] px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#dd3f3c]/30 focus:border-[#dd3f3c] disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <option value="">— Not set —</option>
+                      {products
+                        .filter((p) => p.is_active)
+                        .map((product) => (
+                          <option key={product.id} value={product.id}>
+                            {product.title}
+                            {typeof product.price === 'number' ? ` · ₹${product.price}` : ''}
+                          </option>
+                        ))}
+                    </select>
+                    {savingInterestedProduct && (
+                      <p className="text-[10px] text-[#717d8a] mt-1">Saving…</p>
+                    )}
+                    {getLeadProductInterest() && !matchedInterestedProductId && (
+                      <p className="text-[10px] text-[#717d8a] mt-1 leading-[1.3]">
+                        Custom value: <span className="text-black font-medium">{getLeadProductInterest()}</span>
+                        {' '}(pick a catalog product above to replace)
+                      </p>
+                    )}
                   </div>
                   {getInterests().length === 0 && !getLeadCarModel() && !getLeadProductInterest() && (
                     <p className="text-[11px] text-[#717d8a]">No interests recorded</p>
@@ -2287,7 +2458,80 @@ export default function LeadDetailPageContent({
             <Phone size={16} />
             {mcubeCalling ? 'Calling…' : 'Call via MCUBE'}
           </button>
-          {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.QUOTATION_SHARED || lead?.status === LEAD_STATUS.QUOTATION_VIEWED || lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED || lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) && leadQuotations.length > 0 && (
+          {lead?.phone && lead.phone.replace(/\D/g, '').length >= 10 && (
+            <button
+              type="button"
+              onClick={() => goMarketingInbox()}
+              className="h-10 px-5 rounded-[6px] bg-[#25D366] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px] hover:bg-[#20bd5a]"
+              style={{ fontFamily: 'Roboto, sans-serif' }}
+            >
+              <MessageCircle size={18} />
+              WhatsApp inbox
+            </button>
+          )}
+          {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.NEGOTIATION) &&
+            leadQuotations.length > 0 &&
+            lead?.phone &&
+            lead.phone.replace(/\D/g, '').length >= 10 && (
+              <details className="relative group/inboxq">
+                <summary className="list-none cursor-pointer h-10 px-5 rounded-[6px] bg-emerald-700 text-white font-bold text-[15px] flex items-center justify-center gap-2 min-w-[140px] hover:bg-emerald-800 [&::-webkit-details-marker]:hidden">
+                  <Share2 size={18} />
+                  Quotation on WhatsApp
+                  <ChevronDown size={16} className="opacity-90" />
+                </summary>
+                <div className="absolute bottom-full left-0 z-[130] mb-1 min-w-[260px] rounded-lg border border-gray-200 bg-white py-1 shadow-xl">
+                  <button
+                    type="button"
+                    disabled={markingQuotationShared}
+                    className="block w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                    onClick={async (e) => {
+                      const d = (e.currentTarget as HTMLElement).closest('details')
+                      if (d) d.open = false
+                      if (lead?.status === LEAD_STATUS.NEGOTIATION) {
+                        goMarketingInbox({ quotationId: leadQuotations[0].id })
+                        return
+                      }
+                      setMarkingQuotationShared(true)
+                      try {
+                        const res = await cachedFetch(`/api/leads/${leadId}/status`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            status: LEAD_STATUS.QUOTATION_SHARED,
+                            notes: 'Quotation shared with lead (WhatsApp)',
+                          }),
+                        })
+                        if (!res.ok) {
+                          const err = await res.json().catch(() => ({}))
+                          alert(typeof err.error === 'string' ? err.error : 'Failed to update status')
+                          return
+                        }
+                        await fetchLead({ silent: true })
+                        goMarketingInbox({ quotationId: leadQuotations[0].id })
+                      } catch (err) {
+                        console.error(err)
+                        alert('Failed to update status')
+                      } finally {
+                        setMarkingQuotationShared(false)
+                      }
+                    }}
+                  >
+                    {markingQuotationShared
+                      ? 'Updating…'
+                      : lead?.status === LEAD_STATUS.NEGOTIATION
+                        ? 'Open WhatsApp with quotation PDF'
+                        : 'Mark shared & open inbox'}
+                  </button>
+                </div>
+              </details>
+            )}
+          {(lead?.status === LEAD_STATUS.QUALIFIED ||
+            lead?.status === LEAD_STATUS.NEGOTIATION ||
+            lead?.status === LEAD_STATUS.QUOTATION_SHARED ||
+            lead?.status === LEAD_STATUS.QUOTATION_VIEWED ||
+            lead?.status === LEAD_STATUS.QUOTATION_ACCEPTED ||
+            lead?.status === LEAD_STATUS.QUOTATION_EXPIRED) &&
+            leadQuotations.length > 0 && (
             <Link href={`/quotations/${leadQuotations[0].id}`} className="h-10 px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] leading-5 tracking-[0.3px] flex items-center justify-center gap-2 min-w-[140px]" style={{ fontFamily: 'Roboto, sans-serif' }}>
               <Eye size={18} />
               View Quotation
@@ -2315,7 +2559,7 @@ export default function LeadDetailPageContent({
               {markingQuotationShared ? 'Updating...' : 'Mark as Quotation Shared'}
             </button>
           )}
-          {lead?.status === LEAD_STATUS.QUALIFIED && (
+          {(lead?.status === LEAD_STATUS.QUALIFIED || lead?.status === LEAD_STATUS.NEGOTIATION) && (
             <button
               onClick={() => setShowQuotationModal(true)}
               className="h-[37px] px-5 rounded-[6px] bg-[#4eb159] text-white font-bold text-[15px] hover:bg-[#45a050] flex items-center justify-center gap-2"
@@ -2566,7 +2810,15 @@ export default function LeadDetailPageContent({
                             {/* Interested */}
                             <button
                               type="button"
-                              onClick={() => setConnectedSubOption('interested')}
+                              onClick={() => {
+                                setConnectedSubOption('interested')
+                                const fromCatalog = matchedInterestedProductId
+                                  ? products.find((p) => p.id === matchedInterestedProductId)?.title
+                                  : ''
+                                setInterestedProductInterest(
+                                  fromCatalog || getLeadProductInterest() || ''
+                                )
+                              }}
                               className={`w-full text-left px-6 py-4 rounded-xl border-2 transition-all ${
                                 (connectedSubOption as 'interested' | 'not_interested' | 'call_later' | '') === 'interested'
                                   ? 'border-green-500 bg-green-50'
@@ -2814,15 +3066,32 @@ export default function LeadDetailPageContent({
                           {/* Product Interested In */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Product Interested In
+                              Product interested in
                     </label>
-                            <input
-                              type="text"
-                              value={interestedProductInterest}
-                              onChange={(e) => setInterestedProductInterest(e.target.value)}
+                            <select
+                              value={products.find((p) => p.title === interestedProductInterest)?.id ?? ''}
+                              onChange={(e) => {
+                                const p = products.find((x) => x.id === e.target.value)
+                                setInterestedProductInterest(p?.title ?? '')
+                              }}
                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
-                              placeholder="e.g., BMW X5, Luxury SUV"
-                            />
+                            >
+                              <option value="">Select a product (optional)</option>
+                              {products
+                                .filter((p) => p.is_active)
+                                .map((product) => (
+                                  <option key={product.id} value={product.id}>
+                                    {product.title}
+                                    {typeof product.price === 'number' ? ` — ₹${product.price}` : ''}
+                                  </option>
+                                ))}
+                            </select>
+                            {interestedProductInterest &&
+                              !products.some((p) => p.title === interestedProductInterest) && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Other: {interestedProductInterest}
+                                </p>
+                              )}
                           </div>
 
                           {/* Budget Range */}
@@ -3629,7 +3898,12 @@ export default function LeadDetailPageContent({
                   type="button"
                   onClick={async () => {
                     // Validate items
-                    const validItems = quotationItems.filter(item => item.productId && item.name && item.quantity > 0 && item.unitPrice > 0)
+                    const validItems = quotationItems.filter(
+                      (item) =>
+                        item.name?.trim() &&
+                        item.quantity > 0 &&
+                        item.unitPrice > 0
+                    )
                     if (validItems.length === 0) {
                       alert('Please add at least one valid item to the quotation')
                       return
@@ -3677,7 +3951,15 @@ export default function LeadDetailPageContent({
                       setSubmittingQuotation(false)
                     }
                   }}
-                  disabled={submittingQuotation || quotationItems.filter(item => item.productId && item.name).length === 0}
+                  disabled={
+                    submittingQuotation ||
+                    quotationItems.filter(
+                      (item) =>
+                        item.name?.trim() &&
+                        item.quantity > 0 &&
+                        item.unitPrice > 0
+                    ).length === 0
+                  }
                   className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                 >
                   {submittingQuotation ? 'Creating...' : 'Create Quotation'}

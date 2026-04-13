@@ -21,6 +21,7 @@ export interface Database {
           address: string | null
           dob: string | null
           doj: string | null
+          receives_new_lead_assignments: boolean
           created_at: string
           updated_at: string
         }
@@ -35,6 +36,7 @@ export interface Database {
           address?: string | null
           dob?: string | null
           doj?: string | null
+          receives_new_lead_assignments?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -49,6 +51,7 @@ export interface Database {
           address?: string | null
           dob?: string | null
           doj?: string | null
+          receives_new_lead_assignments?: boolean
           created_at?: string
           updated_at?: string
         }

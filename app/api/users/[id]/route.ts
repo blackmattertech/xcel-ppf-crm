@@ -18,6 +18,7 @@ const updateUserSchema = z.object({
   languagesKnown: z.array(z.string()).nullable().optional(),
   email: z.string().email().optional(),
   password: z.union([z.string().min(6), z.literal('')]).optional(),
+  receivesNewLeadAssignments: z.boolean().optional(),
 })
 
 export async function GET(
@@ -92,6 +93,7 @@ export async function PUT(
       languagesKnown,
       email: nextEmail,
       password: nextPassword,
+      receivesNewLeadAssignments,
     } = updateUserSchema.parse(body)
 
     const credentialEmailRequested = nextEmail !== undefined
@@ -141,6 +143,7 @@ export async function PUT(
       if (ownRoleId) {
         roleId = ownRoleId
       }
+      receivesNewLeadAssignments = undefined
     }
 
     const user = await updateUser(
@@ -153,7 +156,8 @@ export async function PUT(
       address || null,
       dob || null,
       doj || null,
-      languagesKnown || null
+      languagesKnown || null,
+      receivesNewLeadAssignments
     )
 
     // When a user's role is updated to tele_caller or sales, redistribute existing "new" leads in round-robin
