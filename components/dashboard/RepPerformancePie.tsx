@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 const COLORS = [
   '#6366f1', '#8b5cf6', '#a855f7', '#22c55e', '#14b8a6', '#f59e0b', '#ec4899', '#06b6d4',
@@ -76,7 +77,7 @@ export default function RepPerformancePie({ data, hideTitle, variant = 'leads' }
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number | undefined) => [value ?? 0, label]}
+              formatter={(value) => [rechartsTooltipNumber(value), label]}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',

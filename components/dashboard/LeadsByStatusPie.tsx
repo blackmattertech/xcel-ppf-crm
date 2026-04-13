@@ -9,6 +9,7 @@ import {
   Legend,
   Tooltip,
 } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 const STATUS_COLORS: Record<string, string> = {
   new: '#6366f1',
@@ -94,7 +95,7 @@ export default function LeadsByStatusPie({ data, hideTitle }: LeadsByStatusPiePr
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number | undefined) => [value ?? 0, 'Leads']}
+              formatter={(value) => [rechartsTooltipNumber(value), 'Leads']}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',

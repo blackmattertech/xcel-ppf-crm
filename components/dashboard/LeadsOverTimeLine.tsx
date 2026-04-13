@@ -13,6 +13,7 @@ import {
   Area,
   AreaChart,
 } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 interface DayPoint {
   date: string
@@ -91,9 +92,9 @@ export default function LeadsOverTimeLine({ data, hideTitle }: LeadsOverTimeLine
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
               }}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.date && new Date(payload[0].payload.date).toLocaleDateString()}
-              formatter={(value: number | undefined, name: string | undefined) => [
-                value ?? 0,
-                (name === 'leads' ? 'Leads' : 'Converted'),
+              formatter={(value, name) => [
+                rechartsTooltipNumber(value),
+                String(name) === 'leads' ? 'Leads' : 'Converted',
               ]}
             />
             <Area

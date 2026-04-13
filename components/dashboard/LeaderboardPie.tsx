@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 const COLORS = [
   '#f59e0b', '#94a3b8', '#b45309', '#22c55e', '#14b8a6', '#6366f1', '#8b5cf6', '#ec4899',
@@ -75,7 +76,7 @@ export default function LeaderboardPie({ data, maxItems = 8, hideTitle }: Leader
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number | undefined) => [value ?? 0, 'Converted']}
+              formatter={(value) => [rechartsTooltipNumber(value), 'Converted']}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',

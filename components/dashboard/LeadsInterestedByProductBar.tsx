@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 const BAR_COLORS = ['#6366f1', '#8b5cf6', '#22c55e', '#14b8a6', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16']
 
@@ -71,7 +72,7 @@ export default function LeadsInterestedByProductBar({ data, hideTitle }: LeadsIn
                 border: '1px solid rgb(226 232 240)',
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
               }}
-              formatter={(value: number | undefined) => [value ?? 0, 'Leads interested']}
+              formatter={(value) => [rechartsTooltipNumber(value), 'Leads interested']}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName}
             />
             <Bar

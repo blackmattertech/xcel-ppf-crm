@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 const COLORS = [
   '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
@@ -66,7 +67,7 @@ export default function LeadsOverTimePie({ data, hideTitle }: LeadsOverTimePiePr
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number | undefined) => [value ?? 0, 'Leads']}
+              formatter={(value) => [rechartsTooltipNumber(value), 'Leads']}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',

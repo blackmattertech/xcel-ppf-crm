@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 const BAR_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#22c55e', '#14b8a6', '#f59e0b', '#ec4899']
 
@@ -77,10 +78,14 @@ export default function RepPerformanceBar({ data, hideTitle }: RepPerformanceBar
                 border: '1px solid rgb(226 232 240)',
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
               }}
-              formatter={(value: number | undefined, name: string | undefined) => [
-                value ?? 0,
-                (name === 'leads' ? 'Total leads' : name === 'converted' ? 'Converted' : 'Rate'),
-              ]}
+              formatter={(value, name) => {
+                const v = rechartsTooltipNumber(value)
+                const n = String(name ?? '')
+                return [
+                  n === 'rate' ? `${v}%` : v,
+                  n === 'leads' ? 'Total leads' : n === 'converted' ? 'Converted' : 'Rate',
+                ]
+              }}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName}
             />
             <Bar

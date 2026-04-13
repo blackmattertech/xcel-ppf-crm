@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 
 const BAR_COLORS = ['#f59e0b', '#94a3b8', '#b45309', '#22c55e', '#14b8a6', '#6366f1', '#8b5cf6', '#ec4899']
 
@@ -82,10 +83,11 @@ export default function LeaderboardBar({ data, maxItems = 8, hideTitle }: Leader
                 border: '1px solid rgb(226 232 240)',
                 boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
               }}
-              formatter={(value: number | undefined, name: string | undefined) => {
-                const n = name ?? ''
+              formatter={(value, name) => {
+                const v = rechartsTooltipNumber(value)
+                const n = String(name ?? '')
                 return [
-                  n === 'rate' ? `${value ?? 0}%` : (value ?? 0),
+                  n === 'rate' ? `${v}%` : v,
                   n === 'rate' ? 'Conversion rate' : n === 'converted' ? 'Converted' : 'Total leads',
                 ]
               }}

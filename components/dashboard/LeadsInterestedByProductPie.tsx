@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import { rechartsTooltipNumber } from '@/components/dashboard/recharts-tooltip-value'
 import type { LeadsInterestedByProductEntry } from './LeadsInterestedByProductBar'
 
 const COLORS = [
@@ -68,7 +69,7 @@ export default function LeadsInterestedByProductPie({
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number | undefined) => [value ?? 0, countLabel]}
+              formatter={(value) => [rechartsTooltipNumber(value), countLabel]}
               contentStyle={{
                 borderRadius: '12px',
                 border: '1px solid rgb(226 232 240)',
