@@ -81,6 +81,27 @@ export async function POST(request: NextRequest) {
   const exenumber = formatPhoneForMcubeDial(forcedExec && forcedExec.length > 0 ? forcedExec : agentPhone)
   const custnumber = formatPhoneForMcubeDial(lead.phone)
 
+  if (custnumber.length < 10) {
+    await supabase.from('mcube_outbound_sessions').delete().eq('id', sessionId)
+    return NextResponse.json(
+      {
+        error:
+          'Lead has no valid phone number (need at least 10 digits for MCUBE). Update the lead phone and try again.',
+      },
+      { status: 400 }
+    )
+  }
+  if (exenumber.length < 10) {
+    await supabase.from('mcube_outbound_sessions').delete().eq('id', sessionId)
+    return NextResponse.json(
+      {
+        error:
+          'Executive number sent to MCUBE is invalid (need 10 digits). Set your user phone in profile or configure MCUBE_EXECUTIVE_NUMBER.',
+      },
+      { status: 400 }
+    )
+  }
+
   const result = await triggerMcubeOutbound({
     token,
     exenumber,
