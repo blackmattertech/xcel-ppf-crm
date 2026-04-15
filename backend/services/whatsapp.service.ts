@@ -514,6 +514,7 @@ const MIME_EXT: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/x-m4v': 'm4v',
   'video/3gpp': '3gp',
+  'video/quicktime': 'mov',
   'application/pdf': 'pdf',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',

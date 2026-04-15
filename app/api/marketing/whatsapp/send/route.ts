@@ -78,7 +78,10 @@ export async function POST(request: NextRequest) {
   }
   if (messageType !== 'text' && !attachmentsEnabled) {
     return NextResponse.json(
-      { error: 'Attachments are currently disabled by feature flag' },
+      {
+        error:
+          'Attachments are disabled. Set INBOX_ATTACHMENTS_ENABLED=true on the server and NEXT_PUBLIC_INBOX_ATTACHMENTS_ENABLED=true for the UI, then redeploy.',
+      },
       { status: 403 }
     )
   }

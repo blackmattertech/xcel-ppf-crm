@@ -28,7 +28,7 @@ import type { CustomerRecipient } from '../_lib/types'
 import type { ChatMessage } from '../_lib/types'
 import type { ConversationSummary } from '../_lib/types'
 import { normalizePhoneForChat, normalizePhoneForStorage } from '../_lib/utils'
-import { resolveUploadMime } from '../_lib/whatsapp-upload-mime'
+import { ALLOWED_TYPES, normalizeMime, resolveUploadMime } from '../_lib/whatsapp-upload-mime'
 import { cachedFetch, invalidateApiCache } from '@/lib/api-client'
 import { ForwardMessageDialog } from './forward-message-dialog'
 
@@ -791,6 +791,15 @@ function ChatWithLeadsPageInner() {
   const handleFileSelected = async (evt: ChangeEvent<HTMLInputElement>) => {
     const file = evt.target.files?.[0]
     if (!file) return
+    const resolved = resolveUploadMime(normalizeMime(file.type), file.name)
+    if (!resolved) {
+      setSendStatus('error')
+      setSendError(
+        'This file type is not supported for WhatsApp. Use MP4, MOV, M4V, or 3GP for video, or a supported image or document format.'
+      )
+      evt.target.value = ''
+      return
+    }
     await uploadAttachment(file)
     evt.target.value = ''
   }
@@ -1820,7 +1829,13 @@ function ChatWithLeadsPageInner() {
                 </div>
                 {ENABLE_ATTACHMENTS && (
                   <div className="mt-2 flex items-center gap-2">
-                    <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      accept={ALLOWED_TYPES.join(',')}
+                      onChange={handleFileSelected}
+                    />
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}

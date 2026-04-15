@@ -47,13 +47,6 @@ const pwaConfig = withPWA({
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development', // Disable PWA in development
   runtimeCaching: [
-    // Supabase Storage (e.g. WhatsApp chat video previews): must not go through the
-    // global NetworkFirst cache — <video> uses Range requests / 206 responses; Workbox
-    // caching that path surfaces as "Blocked" in Firefox and breaks playback.
-    {
-      urlPattern: /^https:\/\/[^/]+\.supabase\.co\/storage\//i,
-      handler: 'NetworkOnly',
-    },
     {
       urlPattern: /^https?.*/,
       handler: 'NetworkFirst',
