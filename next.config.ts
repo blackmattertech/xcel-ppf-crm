@@ -6,6 +6,12 @@ import withPWA from "next-pwa";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseHostname = supabaseUrl ? new URL(supabaseUrl).hostname : null;
 
+/** PWA: do not let Workbox intercept this host's /storage/* (see runtimeCaching). */
+const supabaseStorageBypassPattern =
+  supabaseHostname != null
+    ? new RegExp(`^https://${supabaseHostname.replace(/\./g, "\\.")}/storage/`)
+    : /^https:\/\/[^/]+\.supabase\.co\/storage\//i;
+
 const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
@@ -47,6 +53,12 @@ const pwaConfig = withPWA({
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development', // Disable PWA in development
   runtimeCaching: [
+    // Supabase Storage must bypass Workbox: <video> uses Range requests (206). The catch-all rule below
+    // intercepts all HTTPS URLs and can break or "Block" some media loads (opaque/CORS + partial content).
+    {
+      urlPattern: supabaseStorageBypassPattern,
+      handler: 'NetworkOnly',
+    },
     {
       urlPattern: /^https?.*/,
       handler: 'NetworkFirst',

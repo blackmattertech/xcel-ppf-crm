@@ -1678,8 +1678,18 @@ function ChatWithLeadsPageInner() {
                             </a>
                           )}
                           {msg.message_type === 'video' && msg.attachment_url && (
-                            <video controls className="max-h-52 rounded-md mb-2">
-                              <source src={msg.attachment_url} />
+                            <video
+                              controls
+                              playsInline
+                              preload="metadata"
+                              className="max-h-52 rounded-md mb-2"
+                            >
+                              <source
+                                src={msg.attachment_url}
+                                {...(msg.attachment_mime_type?.trim()
+                                  ? { type: msg.attachment_mime_type.trim() }
+                                  : {})}
+                              />
                             </video>
                           )}
                           {msg.message_type === 'document' && msg.attachment_url && (
