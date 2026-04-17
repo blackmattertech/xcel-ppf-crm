@@ -119,6 +119,7 @@ export async function GET(request: NextRequest) {
         )
       `
       )
+      .eq('integration', 'mcube')
       .gte('created_at', startIso)
       .lte('created_at', endIso)
       .order('created_at', { ascending: false })
