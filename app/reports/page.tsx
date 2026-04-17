@@ -174,7 +174,7 @@ export default function ReportsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Call reports</h1>
           <p className="text-gray-600 mt-1 text-sm md:text-base">
-            Daily call activity, leads contacted, and recordings (when available from MCUBE or sync).
+            MCUBE-dialed calls only: activity, leads contacted, and recordings when available from MCUBE or sync.
           </p>
         </div>
 
