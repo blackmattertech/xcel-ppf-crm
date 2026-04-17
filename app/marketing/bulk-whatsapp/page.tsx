@@ -447,32 +447,50 @@ function BulkWhatsAppPageContent() {
           scheduleMessage,
         })
       } else {
-        const BATCH_SIZE = 100
-        const payload = { ...basePayload, recipients: [] as typeof recipients }
-        let totalSent = 0
-        let totalFailed = 0
-        const allResults: SendResult['results'] = []
-        for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-          const batch = recipients.slice(i, i + BATCH_SIZE)
-          payload.recipients = batch
-          const res = await cachedFetch('/api/marketing/whatsapp/send-template', {
+        const SCHEDULE_CHUNK = 5000
+        const scheduledAtIso = new Date().toISOString()
+        const processorHint =
+          'Your GitHub Actions workflow (every 5 minutes, UTC) or "Process scheduled broadcasts now" will send it.'
+        const chunks: typeof recipients[] = []
+        for (let i = 0; i < recipients.length; i += SCHEDULE_CHUNK) {
+          chunks.push(recipients.slice(i, i + SCHEDULE_CHUNK))
+        }
+        for (let c = 0; c < chunks.length; c++) {
+          const res = await cachedFetch('/api/marketing/whatsapp/schedule', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+              ...basePayload,
+              scheduledAt: scheduledAtIso,
+              recipients: chunks[c],
+            }),
           })
-          const data = await res.json()
+          const data = await res.json().catch(() => ({}))
           if (!res.ok) {
-            batch.forEach((r) => {
-              allResults.push({ phone: r.phone, success: false, error: data?.error ?? `HTTP ${res.status}` })
-              totalFailed++
+            setSendResult({
+              sent: 0,
+              failed: count,
+              results: [],
+              scheduleError:
+                (data as { error?: string })?.error ??
+                `HTTP ${res.status}` +
+                  (chunks.length > 1 ? ` (queued batch ${c + 1} of ${chunks.length})` : ''),
             })
-          } else {
-            totalSent += data.sent ?? 0
-            totalFailed += data.failed ?? 0
-            if (Array.isArray(data.results)) allResults.push(...data.results)
+            return
           }
         }
-        setSendResult({ sent: totalSent, failed: totalFailed, results: allResults })
+        const scheduleMessage =
+          chunks.length > 1
+            ? `Queued ${chunks.length} jobs for ${count.toLocaleString()} recipients. ${processorHint}`
+            : `Queued to send in the background (${count.toLocaleString()} recipients). ${processorHint}`
+        setSendResult({
+          sent: 0,
+          failed: 0,
+          results: [],
+          scheduled: true,
+          scheduledAt: scheduledAtIso,
+          scheduleMessage,
+        })
       }
     } catch (e) {
       setSendResult({
@@ -506,7 +524,7 @@ function BulkWhatsAppPageContent() {
         </Link>
         <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Bulk broadcast</h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
-          Pick recipients, choose an approved template, then send now or schedule. Messages use your connected WhatsApp Business API.
+          Pick recipients, choose an approved template, then queue delivery (immediate or scheduled). Sends run in the background via your WhatsApp Business API.
         </p>
       </div>
 
@@ -771,7 +789,9 @@ function BulkWhatsAppPageContent() {
                   onChange={(e) => setScheduleAt(e.target.value)}
                   className={fieldInput}
                 />
-                <p className="mt-1.5 text-xs text-slate-500">Leave empty to send now</p>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Leave empty to queue for immediate delivery (GitHub Actions cron or &quot;Process scheduled now&quot; below).
+                </p>
               </div>
             </div>
             <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50/80 p-4">
@@ -838,7 +858,7 @@ function BulkWhatsAppPageContent() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             {sendResult.scheduled ? (
               <p className="text-sm leading-relaxed text-slate-700">
-                <span className="font-bold text-emerald-600">Scheduled</span>
+                <span className="font-bold text-emerald-600">Queued</span>
                 {sendResult.scheduleMessage && <span className="ml-2 text-slate-600">{sendResult.scheduleMessage}</span>}
               </p>
             ) : sendResult.scheduleError ? (
@@ -917,7 +937,13 @@ function BulkWhatsAppPageContent() {
               className={btnPrimaryWa}
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : scheduleAt.trim() ? <Clock className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-              {sending ? (scheduleAt.trim() ? 'Scheduling…' : 'Sending…') : scheduleAt.trim() ? 'Schedule broadcast' : 'Send template broadcast'}
+              {sending
+                ? scheduleAt.trim()
+                  ? 'Scheduling…'
+                  : 'Queuing…'
+                : scheduleAt.trim()
+                  ? 'Schedule broadcast'
+                  : 'Queue broadcast'}
             </button>
           ) : (
             <span className="text-sm text-slate-500">Configure WhatsApp API to send.</span>

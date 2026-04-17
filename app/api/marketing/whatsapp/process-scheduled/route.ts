@@ -5,8 +5,11 @@ import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.se
 import { saveOutgoingMessagesBatch } from '@/backend/services/whatsapp-chat.service'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { ResolvedBroadcastPayload } from '@/backend/services/whatsapp-broadcast-resolve'
-
-const CRON_SECRET = process.env.WHATSAPP_PROCESS_SCHEDULED_SECRET || process.env.CRON_SECRET
+function processScheduledSecrets(): string[] {
+  const a = process.env.WHATSAPP_PROCESS_SCHEDULED_SECRET?.trim()
+  const b = process.env.CRON_SECRET?.trim()
+  return [a, b].filter(Boolean) as string[]
+}
 
 /**
  * Process due scheduled broadcasts (status=pending, scheduled_at <= now).
@@ -18,7 +21,9 @@ const CRON_SECRET = process.env.WHATSAPP_PROCESS_SCHEDULED_SECRET || process.env
 export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const secret = url.searchParams.get('secret')
-  const allowedBySecret = !!CRON_SECRET && secret === CRON_SECRET
+  const secrets = processScheduledSecrets()
+  const allowedBySecret =
+    !!secret && secrets.length > 0 && secrets.includes(secret.trim())
 
   if (!allowedBySecret) {
     const authResult = await requireAuth(request)
