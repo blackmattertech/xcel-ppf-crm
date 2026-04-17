@@ -48,11 +48,15 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get('startDate') ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const endDate = searchParams.get('endDate') ?? new Date().toISOString()
+    const skipCache = searchParams.get('live') === '1' || searchParams.get('live') === 'true'
+    const userId = authResult.user.id
 
-    // Cache key scoped to date range so different ranges don't collide
-    const cacheKey = `wa:analytics:${startDate.slice(0, 10)}:${endDate.slice(0, 10)}`
-    const cached = await getCache<WhatsAppAnalyticsResponse>(cacheKey)
-    if (cached) return NextResponse.json(cached)
+    // Per-user key + short TTL so dashboards stay fresh (was shared across users and LONG TTL).
+    const cacheKey = `wa:analytics:${userId}:${startDate.slice(0, 13)}:${endDate.slice(0, 13)}`
+    if (!skipCache) {
+      const cached = await getCache<WhatsAppAnalyticsResponse>(cacheKey)
+      if (cached) return NextResponse.json(cached)
+    }
 
     const { data: rows, error } = await supabase
       .from('whatsapp_messages')
@@ -158,7 +162,9 @@ export async function GET(request: NextRequest) {
       period: { startDate, endDate },
     }
 
-    await setCache(cacheKey, result, CACHE_TTL.LONG)
+    if (!skipCache) {
+      await setCache(cacheKey, result, CACHE_TTL.SHORT)
+    }
     return NextResponse.json(result)
   } catch (e) {
     return NextResponse.json(

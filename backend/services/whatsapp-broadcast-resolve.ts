@@ -21,7 +21,7 @@ export interface BroadcastPayloadInput {
 export interface ResolvedBroadcastPayload {
   templateName: string
   templateLanguage: string
-  recipients: Array<{ phone: string; bodyParameters?: string[] }>
+  recipients: Array<{ phone: string; bodyParameters?: string[]; name?: string }>
   delayMs: number
   defaultCountryCode: string
   headerParameters?: string[]
@@ -149,6 +149,7 @@ export async function resolveBroadcastPayload(
   const recipients = data.recipients.map((r) => ({
     phone: r.phone,
     bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
+    ...(r.name != null && String(r.name).trim() ? { name: String(r.name).trim() } : {}),
   }))
 
   const headerFormat = dbTemplate?.header_format ?? metaTemplate?.header_format ?? undefined

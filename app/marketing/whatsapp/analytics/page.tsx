@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, type ComponentType, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, useRef, type ComponentType, type ReactNode } from 'react'
 import Link from 'next/link'
 import {
   Loader2,
@@ -21,6 +21,8 @@ import {
   Hash,
   Zap,
   Target,
+  Megaphone,
+  User,
 } from 'lucide-react'
 import {
   PieChart,
@@ -77,6 +79,44 @@ const PERIOD_OPTIONS = [
   { label: '30d', full: 'Last 30 days', days: 30 },
   { label: '90d', full: 'Last 90 days', days: 90 },
 ] as const
+
+function toDatetimeLocalValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+interface CampaignSummaryRow {
+  id: string
+  templateName: string
+  templateLanguage: string
+  scheduledAt: string
+  startedAt: string | null
+  completedAt: string | null
+  status: string
+  recipientCount: number
+  sent: number
+  failed: number
+  repliedCount: number
+  errorMessage: string | null
+}
+
+interface CampaignFailedItem {
+  phone: string
+  name: string | null
+  error: string
+}
+
+interface CampaignRepliedItem {
+  phone: string
+  name: string | null
+  firstReplyAt: string
+  preview: string
+}
+
+interface CampaignDetail extends CampaignSummaryRow {
+  failedRecipients: CampaignFailedItem[]
+  repliedRecipients: CampaignRepliedItem[]
+}
 
 interface DeliveryStatusItem {
   phone: string
@@ -245,22 +285,42 @@ export default function WhatsAppAnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<WhatsAppAnalyticsData | null>(null)
   const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatusResponse | null>(null)
+  const [campaigns, setCampaigns] = useState<CampaignSummaryRow[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [periodDays, setPeriodDays] = useState<number>(30)
   const [expandedStatus, setExpandedStatus] = useState<string | null>(null)
+  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null)
+  const [campaignDetail, setCampaignDetail] = useState<CampaignDetail | null>(null)
+  const [campaignDetailLoading, setCampaignDetailLoading] = useState(false)
+  const campaignDetailRequestRef = useRef(0)
+
+  const [draftStartLocal, setDraftStartLocal] = useState(() => {
+    const t = new Date()
+    t.setDate(t.getDate() - 30)
+    return toDatetimeLocalValue(t)
+  })
+  const [draftEndLocal, setDraftEndLocal] = useState(() => toDatetimeLocalValue(new Date()))
+  const [committedRange, setCommittedRange] = useState(() => {
+    const end = new Date()
+    const start = new Date()
+    start.setDate(start.getDate() - 30)
+    return { start: start.toISOString(), end: end.toISOString() }
+  })
+  const [activePresetDays, setActivePresetDays] = useState<number | null>(30)
+
+  const periodDays = useMemo(() => {
+    const ms = new Date(committedRange.end).getTime() - new Date(committedRange.start).getTime()
+    return Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000)))
+  }, [committedRange])
 
   useEffect(() => {
     setLoading(true)
     setError(null)
-    const end = new Date()
-    const start = new Date()
-    start.setDate(start.getDate() - periodDays)
-    const startDate = start.toISOString()
-    const endDate = end.toISOString()
+    const startDate = committedRange.start
+    const endDate = committedRange.end
 
     Promise.all([
       fetch(
-        `/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+        `/api/marketing/whatsapp/analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&live=1`,
         { credentials: 'include' }
       ).then(async (res) => {
         if (!res.ok) throw new Error('Failed to load analytics')
@@ -276,14 +336,71 @@ export default function WhatsAppAnalyticsPage() {
           ? res.json()
           : { byStatus: {}, summary: { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, notDelivered: 0, notRead: 0 } }
       ),
+      fetch(
+        `/api/marketing/whatsapp/campaign-analytics?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
+        { credentials: 'include' }
+      ).then(async (res) => {
+        if (!res.ok) return { campaigns: [] as CampaignSummaryRow[] }
+        const j = await res.json()
+        return { campaigns: Array.isArray(j.campaigns) ? j.campaigns : [] }
+      }),
     ])
-      .then(([analyticsData, deliveryData]) => {
+      .then(([analyticsData, deliveryData, campaignPayload]) => {
         setData(analyticsData)
         setDeliveryStatus(deliveryData)
+        setCampaigns(campaignPayload.campaigns)
+        setExpandedCampaignId(null)
+        setCampaignDetail(null)
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
-  }, [periodDays])
+  }, [committedRange])
+
+  const applyPreset = (days: number) => {
+    const end = new Date()
+    const start = new Date()
+    start.setDate(start.getDate() - days)
+    setCommittedRange({ start: start.toISOString(), end: end.toISOString() })
+    setDraftStartLocal(toDatetimeLocalValue(start))
+    setDraftEndLocal(toDatetimeLocalValue(end))
+    setActivePresetDays(days)
+  }
+
+  const applyCustomRange = () => {
+    const s = new Date(draftStartLocal)
+    const e = new Date(draftEndLocal)
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) {
+      setError('Invalid date range')
+      return
+    }
+    setError(null)
+    setCommittedRange({ start: s.toISOString(), end: e.toISOString() })
+    setActivePresetDays(null)
+  }
+
+  const toggleCampaign = async (row: CampaignSummaryRow) => {
+    if (expandedCampaignId === row.id) {
+      setExpandedCampaignId(null)
+      setCampaignDetail(null)
+      campaignDetailRequestRef.current += 1
+      return
+    }
+    setExpandedCampaignId(row.id)
+    const reqId = ++campaignDetailRequestRef.current
+    setCampaignDetailLoading(true)
+    setCampaignDetail(null)
+    try {
+      const res = await fetch(
+        `/api/marketing/whatsapp/campaign-analytics?campaignId=${encodeURIComponent(row.id)}&endDate=${encodeURIComponent(committedRange.end)}`,
+        { credentials: 'include' }
+      )
+      const j = await res.json().catch(() => ({}))
+      if (reqId !== campaignDetailRequestRef.current) return
+      if (res.ok && j.campaign?.id === row.id) setCampaignDetail(j.campaign as CampaignDetail)
+    } finally {
+      if (reqId === campaignDetailRequestRef.current) setCampaignDetailLoading(false)
+    }
+  }
 
   const directionPieData = useMemo(() => {
     if (!data?.messagesByDirection) return []
@@ -423,10 +540,6 @@ export default function WhatsAppAnalyticsPage() {
     )
   }
 
-  const periodLabel =
-    data &&
-    `${new Date(data.period.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(data.period.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
-
   return (
     <div className="space-y-8 pb-10">
       {/* Hero */}
@@ -447,30 +560,77 @@ export default function WhatsAppAnalyticsPage() {
               <p className="mt-2 max-w-xl text-sm text-slate-300">
                 Volume, delivery funnel, templates, and lead-level status — all in one dashboard.
               </p>
-              {periodLabel && (
-                <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
-                  <Calendar className="h-3.5 w-3.5 text-emerald-300" />
-                  {periodLabel}
-                </p>
-              )}
+              <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
+                <Calendar className="h-3.5 w-3.5 text-emerald-300" />
+                {new Date(committedRange.start).toLocaleString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}{' '}
+                –{' '}
+                {new Date(committedRange.end).toLocaleString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {PERIOD_OPTIONS.map((opt) => (
+          <div className="flex w-full max-w-xl flex-col gap-3 lg:max-w-none lg:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              {PERIOD_OPTIONS.map((opt) => (
+                <button
+                  key={opt.days}
+                  type="button"
+                  title={opt.full}
+                  onClick={() => applyPreset(opt.days)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    activePresetDays === opt.days
+                      ? 'bg-[#25D366] text-white shadow-lg shadow-emerald-900/40'
+                      : 'border border-white/20 bg-white/10 text-slate-200 hover:bg-white/15'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-2 rounded-xl border border-white/15 bg-white/5 p-3 sm:flex-row sm:flex-wrap sm:items-end">
+              <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                From
+                <input
+                  type="datetime-local"
+                  value={draftStartLocal}
+                  onChange={(e) => {
+                    setDraftStartLocal(e.target.value)
+                    setActivePresetDays(null)
+                  }}
+                  className="rounded-lg border border-white/20 bg-slate-900/40 px-2 py-2 text-sm text-white"
+                />
+              </label>
+              <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                To
+                <input
+                  type="datetime-local"
+                  value={draftEndLocal}
+                  onChange={(e) => {
+                    setDraftEndLocal(e.target.value)
+                    setActivePresetDays(null)
+                  }}
+                  className="rounded-lg border border-white/20 bg-slate-900/40 px-2 py-2 text-sm text-white"
+                />
+              </label>
               <button
-                key={opt.days}
                 type="button"
-                title={opt.full}
-                onClick={() => setPeriodDays(opt.days)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  periodDays === opt.days
-                    ? 'bg-[#25D366] text-white shadow-lg shadow-emerald-900/40'
-                    : 'border border-white/20 bg-white/10 text-slate-200 hover:bg-white/15'
-                }`}
+                onClick={applyCustomRange}
+                className="rounded-full bg-white/15 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25"
               >
-                {opt.label}
+                Apply range
               </button>
-            ))}
+            </div>
           </div>
         </div>
       </div>
@@ -785,6 +945,134 @@ export default function WhatsAppAnalyticsPage() {
             )}
           </ChartCard>
 
+          <ChartCard
+            title="Broadcast campaigns"
+            subtitle="Template broadcasts you scheduled or queued (replies = first inbound message per recipient in the selected period, after send started)"
+            icon={Megaphone}
+          >
+            {campaigns.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-500">
+                No campaigns in this range. Sends appear here after you use Bulk broadcast or scheduled jobs.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {campaigns.map((c) => {
+                  const expanded = expandedCampaignId === c.id
+                  return (
+                    <div key={c.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => toggleCampaign(c)}
+                        className="flex w-full flex-col gap-2 px-4 py-3 text-left transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <span className="flex items-start gap-2">
+                          {expanded ? (
+                            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                          ) : (
+                            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                          )}
+                          <span>
+                            <span className="font-semibold text-slate-900">{c.templateName}</span>
+                            <span className="ml-2 text-xs font-normal text-slate-500">{c.templateLanguage}</span>
+                            <span className="mt-0.5 block text-xs text-slate-500">
+                              {new Date(c.scheduledAt).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}{' '}
+                              · {c.status}
+                              {c.errorMessage ? ` · ${c.errorMessage}` : ''}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="flex flex-wrap gap-2 pl-7 sm:pl-0">
+                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                            {formatInt(c.recipientCount)} recipients
+                          </span>
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                            {formatInt(c.sent)} sent
+                          </span>
+                          <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-800">
+                            {formatInt(c.failed)} failed
+                          </span>
+                          <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-800">
+                            {formatInt(c.repliedCount)} replied
+                          </span>
+                        </span>
+                      </button>
+                      {expanded && (
+                        <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4">
+                          {campaignDetailLoading && (
+                            <div className="flex items-center gap-2 text-sm text-slate-600">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading details…
+                            </div>
+                          )}
+                          {!campaignDetailLoading && campaignDetail && campaignDetail.id === c.id && (
+                            <div className="grid gap-6 lg:grid-cols-2">
+                              <div>
+                                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-rose-700">
+                                  Failed ({formatInt(campaignDetail.failedRecipients.length)})
+                                </p>
+                                {campaignDetail.failedRecipients.length === 0 ? (
+                                  <p className="text-sm text-slate-500">None recorded for this job.</p>
+                                ) : (
+                                  <ul className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-sm">
+                                    {campaignDetail.failedRecipients.map((f, i) => (
+                                      <li key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-2 last:border-0">
+                                        <span className="flex items-center justify-between gap-2">
+                                          <span className="truncate font-medium text-slate-800">{f.name || '—'}</span>
+                                          <span className="shrink-0 font-mono text-xs text-slate-500">{f.phone}</span>
+                                        </span>
+                                        <span className="text-xs text-rose-700">{f.error}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                              <div>
+                                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-sky-700">
+                                  Replied ({formatInt(campaignDetail.repliedRecipients.length)})
+                                </p>
+                                {campaignDetail.repliedRecipients.length === 0 ? (
+                                  <p className="text-sm text-slate-500">No inbound replies in range after send started.</p>
+                                ) : (
+                                  <ul className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-sm">
+                                    {campaignDetail.repliedRecipients.map((r, i) => (
+                                      <li key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-2 last:border-0">
+                                        <span className="flex items-center justify-between gap-2">
+                                          <span className="flex items-center gap-1.5 truncate font-medium text-slate-800">
+                                            <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                            {r.name || '—'}
+                                          </span>
+                                          <span className="shrink-0 font-mono text-xs text-slate-500">{r.phone}</span>
+                                        </span>
+                                        <span className="text-[11px] text-slate-500">
+                                          {new Date(r.firstReplyAt).toLocaleString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })}
+                                        </span>
+                                        <span className="text-xs text-slate-600">&ldquo;{r.preview}&rdquo;</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </ChartCard>
+
           {/* Delivery + leads */}
           {deliveryStatus && (
             <ChartCard title="Delivery & leads" subtitle="Distinct leads / numbers by Meta delivery state (outgoing)" icon={AlertCircle}>
@@ -909,7 +1197,8 @@ export default function WhatsAppAnalyticsPage() {
           )}
 
           <footer className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 text-center text-xs text-slate-500">
-            Outgoing from send-template &amp; chat; incoming from webhook. Times use your browser locale.
+            Charts use live <code className="rounded bg-slate-100 px-1">whatsapp_messages</code> in your range. Campaigns list your{' '}
+            <code className="rounded bg-slate-100 px-1">scheduled_broadcasts</code>. Reply matching uses the last 10 digits of the phone.
           </footer>
         </>
       )}
