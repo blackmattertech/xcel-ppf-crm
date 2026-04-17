@@ -153,6 +153,75 @@ export function isHangupEvent(payload: McubeWebhookPayload): boolean {
   return false
 }
 
+/** CRM manual call may be logged before MCUBE hangup; merge into that row instead of inserting twice. */
+export const MCUBE_MANUAL_MERGE_BEFORE_MS = 3 * 60 * 60 * 1000
+export const MCUBE_MANUAL_MERGE_AFTER_MS = 2 * 60 * 60 * 1000
+
+/** Bounds on `calls.created_at` for a manual row that belongs to this MCUBE event. */
+export function getMcubeManualMergeCreatedAtBounds(params: {
+  endtime?: string | null
+  starttime?: string | null
+}): { fromIso: string; toIso: string } {
+  const end = parseMcubeTimestamp(params.endtime ?? null)
+  const start = parseMcubeTimestamp(params.starttime ?? null)
+  const anchorIso = end ?? start ?? new Date().toISOString()
+  const anchorMs = new Date(anchorIso).getTime()
+  const fromIso = new Date(anchorMs - MCUBE_MANUAL_MERGE_BEFORE_MS).toISOString()
+  const toIso = new Date(anchorMs + MCUBE_MANUAL_MERGE_AFTER_MS).toISOString()
+  return { fromIso, toIso }
+}
+
+/** Append MCUBE audit line to CRM notes without duplicating if webhook retries. */
+export function mergeMcubeDetailIntoManualNotes(
+  manualNotes: string | null | undefined,
+  mcubeLine: string
+): string {
+  const m = String(manualNotes ?? '').trim()
+  const mc = String(mcubeLine).trim()
+  if (!m) return mc
+  if (!mc) return m
+  if (m.includes(mc)) return m
+  return `${m}\n\n${mc}`
+}
+
+export type ManualCallRowForMcubeMerge = {
+  id: string
+  notes: string | null
+  disposition: string | null
+  outcome: string
+}
+
+/**
+ * Latest CRM-only call for this lead/agent in the time window, not yet linked to MCUBE.
+ */
+export async function findRecentManualCallToEnrichWithMcube(
+  supabase: SupabaseClient,
+  params: {
+    leadId: string
+    calledById: string
+    createdAtFromInclusive: string
+    createdAtToInclusive: string
+  }
+): Promise<ManualCallRowForMcubeMerge | null> {
+  const { data } = await supabase
+    .from('calls')
+    .select('id, notes, disposition, outcome')
+    .eq('lead_id', params.leadId)
+    .eq('called_by', params.calledById)
+    .eq('integration', 'manual')
+    .is('mcube_call_id', null)
+    .gte('created_at', params.createdAtFromInclusive)
+    .lte('created_at', params.createdAtToInclusive)
+    .order('created_at', { ascending: false })
+    .limit(2)
+
+  const rows = (data ?? []) as ManualCallRowForMcubeMerge[]
+  if (rows.length !== 1) {
+    return null
+  }
+  return rows[0] ?? null
+}
+
 export async function triggerMcubeOutbound(params: {
   token: string
   exenumber: string

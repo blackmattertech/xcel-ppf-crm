@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyLeadJourneyAfterCall } from '@/backend/services/call-lead-journey.service'
+import { mergeMcubeDetailIntoManualNotes } from '@/backend/services/mcube.service'
 import { z } from 'zod'
+
+/** Webhook may insert the MCUBE row before the agent submits the CRM call modal — enrich that row instead of duplicating. */
+const RECENT_MCUBE_CALL_ENRICH_WINDOW_MS = 8 * 60 * 1000
 
 const createCallSchema = z.object({
   lead_id: z.string().uuid(),
@@ -24,6 +28,65 @@ export async function POST(request: NextRequest) {
     const { lead_id, outcome, disposition, notes, call_duration } = createCallSchema.parse(body)
 
     const supabase = createServiceClient()
+
+    const { data: latestCall } = await supabase
+      .from('calls')
+      .select('id, mcube_call_id, integration, created_at, outcome, notes')
+      .eq('lead_id', lead_id)
+      .eq('called_by', authResult.user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const latest = latestCall as {
+      id: string
+      mcube_call_id: string | null
+      integration: string
+      created_at: string
+      outcome: string
+      notes: string | null
+    } | null
+
+    const shouldEnrichRecentMcube =
+      latest?.mcube_call_id &&
+      latest.integration === 'mcube' &&
+      latest.outcome === outcome &&
+      Date.now() - new Date(latest.created_at).getTime() < RECENT_MCUBE_CALL_ENRICH_WINDOW_MS
+
+    if (shouldEnrichRecentMcube) {
+      const userNotes = typeof notes === 'string' ? notes.trim() : ''
+      const mergedNotes = userNotes
+        ? mergeMcubeDetailIntoManualNotes(latest.notes, userNotes)
+        : latest.notes
+
+      const { data, error } = await supabase
+        .from('calls')
+        .update({
+          disposition: disposition ?? null,
+          notes: mergedNotes ?? null,
+          call_duration: call_duration ?? null,
+        } as never)
+        .eq('id', latest.id)
+        .select(`
+        *,
+        called_by_user:users!calls_called_by_fkey (
+          id,
+          name
+        ),
+        lead:leads (
+          id,
+          name,
+          phone
+        )
+      `)
+        .single()
+
+      if (error) {
+        throw new Error(`Failed to update call: ${error.message}`)
+      }
+
+      return NextResponse.json({ call: data }, { status: 200 })
+    }
 
     const { data, error } = await supabase
       .from('calls')

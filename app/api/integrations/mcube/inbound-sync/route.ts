@@ -8,6 +8,9 @@ import {
   parseAnsweredTimeToSeconds,
   parseMcubeTimestamp,
   findUserIdByAgentPhone,
+  getMcubeManualMergeCreatedAtBounds,
+  findRecentManualCallToEnrichWithMcube,
+  mergeMcubeDetailIntoManualNotes,
   type McubeWebhookPayload,
 } from '@/backend/services/mcube.service'
 
@@ -52,6 +55,44 @@ async function upsertCallFromMcubePayload(params: {
       } as never)
       .eq('mcube_call_id', payload.callid)
     return true
+  }
+
+  const { fromIso, toIso } = getMcubeManualMergeCreatedAtBounds({
+    endtime: payload.endtime,
+    starttime: payload.starttime,
+  })
+  const manualCall = await findRecentManualCallToEnrichWithMcube(supabase, {
+    leadId,
+    calledById: calledBy,
+    createdAtFromInclusive: fromIso,
+    createdAtToInclusive: toIso,
+  })
+
+  if (manualCall) {
+    const inboundLine = 'MCUBE inbound sync'
+    const mergedNotes = mergeMcubeDetailIntoManualNotes(manualCall.notes, inboundLine)
+    const { error: enrichError } = await supabase
+      .from('calls')
+      .update({
+        outcome: manualCall.outcome,
+        notes: mergedNotes,
+        disposition: manualCall.disposition,
+        call_duration: duration,
+        mcube_call_id: payload.callid,
+        recording_url: payload.filename?.trim() || null,
+        started_at: parseMcubeTimestamp(payload.starttime ?? null),
+        ended_at: parseMcubeTimestamp(payload.endtime ?? null),
+        answered_duration_seconds: duration,
+        dial_status: payload.dialstatus ?? null,
+        direction,
+        disconnected_by: payload.disconnectedby?.trim() || null,
+        mcube_group_name: payload.groupname?.trim() || null,
+        mcube_agent_name: payload.agentname?.trim() || null,
+        integration: 'mcube',
+      } as never)
+      .eq('id', manualCall.id)
+
+    return !enrichError
   }
 
   const { error } = await supabase.from('calls').insert({
