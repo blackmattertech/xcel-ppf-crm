@@ -43,6 +43,8 @@ export const CACHE_KEYS = {
  * Default TTL values (in seconds)
  */
 export const CACHE_TTL = {
+  /** Leads list: shorter than SHORT so Edge-ingested / webhook leads show up quickly without Redis invalidation from Supabase. */
+  LEADS_LIST: 20,
   SHORT: 60,       // 1 minute  - frequently changing data
   MEDIUM: 180,     // 3 minutes - moderately stable data
   LONG: 300,       // 5 minutes - relatively stable data

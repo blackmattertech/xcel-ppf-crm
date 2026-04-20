@@ -12,7 +12,7 @@ export interface SidebarMenuItem {
   resource: string // The resource name for permissions (e.g., 'leads', 'products')
   roles?: string[] // If specified, only show for these roles
   requiresPermissions?: boolean // If true, will generate permissions for this item
-  /** Child items for dropdown (e.g. Marketing → Dashboard, WhatsApp) */
+  /** Child items for dropdown (e.g. Marketing sub-pages) */
   children?: SidebarMenuItem[]
 }
 
@@ -74,6 +74,7 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     requiresPermissions: true,
     children: [
       { name: 'Dashboard', href: '/marketing/dashboard', icon: '📊', resource: 'marketing_dashboard', requiresPermissions: true },
+      // WhatsApp (sidebar): disabled — uncomment to show Marketing → WhatsApp again
       // { name: 'WhatsApp', href: '/marketing/whatsapp', icon: '💬', resource: 'marketing_whatsapp', requiresPermissions: true },
     ],
   },

@@ -7,6 +7,8 @@ export function getInterestedProductFromMeta(metaData: Record<string, any> | nul
 
   // Direct keys (various naming conventions)
   const directKeys = [
+    "what_services_you're_looking_for?",
+    "what_services_you're_looking_for",
     'what_services_are_you_looking_for?',
     'what_services_are_you_looking_for',
     'What services are you looking for?',
@@ -30,6 +32,8 @@ export function getInterestedProductFromMeta(metaData: Record<string, any> | nul
       'what services are you looking for',
       'what service you are looking for',
       'what_service_are_you_looking_for',
+      "what_services_you're_looking_for",
+      "what services you're looking for",
       'product_interest',
       'service',
       'service',

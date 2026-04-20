@@ -67,8 +67,8 @@ export async function GET(request: NextRequest) {
     const leads = await getAllLeads(filters)
     const result = { leads }
     
-    // Cache result for 30 seconds (leads list changes frequently)
-    await setCache(cacheKey, result, CACHE_TTL.SHORT)
+    // Shorter TTL: leads can be inserted via Supabase Edge (Sheets sync) without Next cache invalidation.
+    await setCache(cacheKey, result, CACHE_TTL.LEADS_LIST)
 
     logRouteTiming('GET /api/leads', t0, { leadCount: result.leads?.length })
     return NextResponse.json(result)

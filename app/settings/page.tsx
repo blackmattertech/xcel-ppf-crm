@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Layout from '@/components/Layout'
 import FacebookIntegration from '@/components/FacebookIntegration'
+// WhatsApp (Settings → Integrations): UI disabled — uncomment import + component + URL param handlers below to re-enable.
 // import WhatsAppIntegration from '@/components/WhatsAppIntegration'
 import McubeSettings from '@/components/McubeSettings'
 import { useAuthContext } from '@/components/AuthProvider'
@@ -132,7 +133,9 @@ function SettingsContent() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Integrations</h2>
             <div className="space-y-4">
               <FacebookIntegration />
-              {/* <WhatsAppIntegration /> */}
+              {/* WhatsApp integration (disabled)
+              <WhatsAppIntegration />
+              */}
             </div>
           </div>
           {(role?.name === 'admin' || role?.name === 'super_admin') && (
