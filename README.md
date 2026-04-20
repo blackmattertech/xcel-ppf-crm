@@ -1,4 +1,4 @@
-# Xcel CRM System
+# Ultrakool CRM System
 
 A comprehensive Customer Relationship Management system with role-based access control, lead management, and analytics.
 
@@ -33,12 +33,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 # Production custom domain (required for password reset links, Meta OAuth, web push targets)
-NEXT_PUBLIC_APP_URL=https://crm.xcelppf.com
+NEXT_PUBLIC_APP_URL=https://ultrakool-crm.vercel.app
 # Optional alias; if set, used before NEXT_PUBLIC_APP_URL for the same purpose
-# NEXT_PUBLIC_SITE_URL=https://crm.xcelppf.com
+# NEXT_PUBLIC_SITE_URL=https://ultrakool-crm.vercel.app
 
 # Meta Facebook Login: must match Meta app “Valid OAuth Redirect URIs” exactly
-# FACEBOOK_REDIRECT_URI=https://crm.xcelppf.com/api/integrations/facebook/callback
+# FACEBOOK_REDIRECT_URI=https://ultrakool-crm.vercel.app/api/integrations/facebook/callback
 INBOX_ATTACHMENTS_ENABLED=false
 INBOX_ASSIGNMENT_ENABLED=false
 INBOX_QUICK_REPLIES_ENABLED=false
@@ -48,8 +48,8 @@ NEXT_PUBLIC_INBOX_QUICK_REPLIES_ENABLED=false
 ```
 
    **After moving to a custom domain**, also update:
-   - **Supabase** → Authentication → URL configuration: set **Site URL** to `https://crm.xcelppf.com` and add `https://crm.xcelppf.com/**` (and `/reset-password` if listed explicitly) under **Redirect URLs**.
-   - **Meta Developer** → Facebook Login → **Valid OAuth Redirect URIs**: `https://crm.xcelppf.com/api/integrations/facebook/callback` (remove old `*.vercel.app` entries if you no longer use them).
+   - **Supabase** → Authentication → URL configuration: set **Site URL** to `https://ultrakool-crm.vercel.app` and add `https://ultrakool-crm.vercel.app/**` (and `/reset-password` if listed explicitly) under **Redirect URLs**.
+   - **Meta Developer** → Facebook Login → **Valid OAuth Redirect URIs**: `https://ultrakool-crm.vercel.app/api/integrations/facebook/callback` (remove old `*.vercel.app` entries if you no longer use them).
    - **WhatsApp / webhooks** (if any): point callback URLs to the new host.
 
    **Optional – show customers from a second database:** To merge customer data from another Supabase project into the Customers section, add:
@@ -76,7 +76,7 @@ npm run dev
 ## Project Structure
 
 ```
-xcel/
+ultrakool-crm/
 ├── app/                    # Next.js app router pages
 │   ├── api/               # API routes
 │   ├── dashboard/         # Dashboard page

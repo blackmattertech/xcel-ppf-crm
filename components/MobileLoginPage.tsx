@@ -159,7 +159,7 @@ export default function MobileLoginPage() {
               <div className="mb-2 self-center flex justify-center">
                 <Image
                   src="/image.png"
-                  alt="XCEL Logo"
+                  alt="Ultrakool Logo"
                   width={280}
                   height={172}
                   className="w-48 h-auto sm:w-56"

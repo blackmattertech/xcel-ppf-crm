@@ -157,7 +157,7 @@ export default function LoginPage() {
             <div className="mb-2 md:mb-3 lg:mb-4 self-center flex justify-center">
               <Image
                 src="/image.png"
-                alt="XCEL Logo"
+                alt="Ultrakool Logo"
                 width={320}
                 height={197}
                 className="w-48 h-auto sm:w-56 md:w-64 lg:w-[320px]"

@@ -5,8 +5,8 @@
  * npx tsx scripts/create-admin.ts <email> <password> <name> [role]
  * 
  * Examples:
- * npx tsx scripts/create-admin.ts admin@xcel.com Admin123 "Admin User" admin
- * npx tsx scripts/create-admin.ts superadmin@xcel.com Super123 "Super Admin" super_admin
+ * npx tsx scripts/create-admin.ts admin@ultrakool.com Admin123 "Admin User" admin
+ * npx tsx scripts/create-admin.ts superadmin@ultrakool.com Super123 "Super Admin" super_admin
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -43,8 +43,8 @@ async function createAdmin() {
     console.error('\nUsage:')
     console.error('  npx tsx scripts/create-admin.ts <email> <password> <name> [role]')
     console.error('\nExamples:')
-    console.error('  npx tsx scripts/create-admin.ts admin@xcel.com Admin123 "Admin User" admin')
-    console.error('  npx tsx scripts/create-admin.ts super@xcel.com Super123 "Super Admin" super_admin')
+    console.error('  npx tsx scripts/create-admin.ts admin@ultrakool.com Admin123 "Admin User" admin')
+    console.error('  npx tsx scripts/create-admin.ts super@ultrakool.com Super123 "Super Admin" super_admin')
     process.exit(1)
   }
 

@@ -22,7 +22,7 @@ firebase.initializeApp(${JSON.stringify(config)});
 const messaging = firebase.messaging();
 
 function showPayloadNotification(payload) {
-  var title = (payload && payload.notification && payload.notification.title) ? payload.notification.title : (payload && payload.data && payload.data.title) ? payload.data.title : 'Xcel CRM';
+  var title = (payload && payload.notification && payload.notification.title) ? payload.notification.title : (payload && payload.data && payload.data.title) ? payload.data.title : 'Ultrakool CRM';
   var body = (payload && payload.notification && payload.notification.body) ? payload.notification.body : (payload && payload.data && payload.data.body) ? payload.data.body : '';
   var options = {
     body: body,
@@ -49,7 +49,7 @@ self.addEventListener('push', function(event) {
     event.data.json().then(function(payload) {
       return showPayloadNotification(payload);
     }).catch(function() {
-      return showPayloadNotification({ data: { title: 'Xcel CRM', body: '' } });
+      return showPayloadNotification({ data: { title: 'Ultrakool CRM', body: '' } });
     })
   );
 });

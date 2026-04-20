@@ -133,7 +133,7 @@ export async function buildQuotationPdfBytes(quotation: QuotationRow): Promise<U
   })
 
   const quoteRight = pdfSafe(`${quotation.quote_number}  v${quotation.version}`)
-  page.drawText('Xcel PPF', {
+  page.drawText('Ultrakool', {
     x: MARGIN,
     y: PAGE_H - 36,
     size: 22,
@@ -232,9 +232,9 @@ export async function buildQuotationPdfBytes(quotation: QuotationRow): Promise<U
     color: TEXT_MUTED,
   })
   cy -= 16
-  page.drawText('Xcel PPF', { x: MARGIN + 12, y: cy, size: 11, font: fontBold, color: TEXT })
+  page.drawText('Ultrakool', { x: MARGIN + 12, y: cy, size: 11, font: fontBold, color: TEXT })
   cy -= 13
-  for (const t of ['info@xcelppf.com', '+91 1234567890', 'Your Company Address', 'GSTIN: 29ABCDE1234F1Z5']) {
+  for (const t of ['info@ultrakool.com', '+91 1234567890', 'Your Company Address', 'GSTIN: 29ABCDE1234F1Z5']) {
     page.drawText(pdfSafe(t), { x: MARGIN + 12, y: cy, size: 8.5, font, color: TEXT_MUTED })
     cy -= 12
   }

@@ -60,7 +60,7 @@ async function listUsers() {
     if (errorUser) {
       console.log(`\n⚠️  The error showed user ID: ${errorUserId}`)
       console.log(`   This user's email: ${errorUser.email}`)
-      console.log(`   This user is ${errorUser.email === 'xcelppf@gmail.com' ? 'the same' : 'DIFFERENT'} from xcelppf@gmail.com`)
+      console.log(`   This user is ${errorUser.email === 'ultrakool@gmail.com' ? 'the same' : 'DIFFERENT'} from ultrakool@gmail.com`)
     }
   } catch (error) {
     console.error('❌ Error:', error instanceof Error ? error.message : error)

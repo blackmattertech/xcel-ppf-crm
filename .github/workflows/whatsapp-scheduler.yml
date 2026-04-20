@@ -1,6 +1,6 @@
 # Runs automatically on the DEFAULT branch only (merge this file to main/master).
 # Schedule uses UTC. GitHub does not support cron faster than every 5 minutes.
-# Repo → Settings → Secrets → APP_BASE_URL (e.g. https://crm.xcelppf.com) and CRON_SECRET.
+# Repo → Settings → Secrets → APP_BASE_URL (e.g. https://ultrakool-crm.vercel.app) and CRON_SECRET.
 # CRON_SECRET must match production CRON_SECRET or WHATSAPP_PROCESS_SCHEDULED_SECRET (either works; values are trimmed).
 # If the workflow never runs: Actions enabled? Default branch? Not a fork? Secrets set?
 

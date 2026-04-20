@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     const siteUrl = getPublicSiteUrl()
     if (!siteUrl) {
       console.error(
-        '[auth] Password reset: set NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_SITE_URL to your live origin (e.g. https://crm.xcelppf.com)'
+        '[auth] Password reset: set NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_SITE_URL to your live origin (e.g. https://ultrakool-crm.vercel.app)'
       )
       return NextResponse.json({
         message: 'If an account with that email exists, you will receive a password reset link.',

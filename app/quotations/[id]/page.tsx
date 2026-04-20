@@ -176,7 +176,7 @@ export default function QuotationDetailPage() {
             <div className="bg-gradient-to-r from-[#de0510] to-[#ff1a24] text-white px-8 py-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold mb-1">Xcel PPF</h2>
+                  <h2 className="text-2xl font-bold mb-1">Ultrakool</h2>
                   <p className="text-white/90 text-sm">Professional Paint Protection Films</p>
                 </div>
                 <div className="text-right">
@@ -196,8 +196,8 @@ export default function QuotationDetailPage() {
                     From
                   </h3>
                   <div className="space-y-1 text-sm">
-                    <p className="font-medium text-gray-900">Xcel PPF</p>
-                    <p className="text-gray-600">info@xcelppf.com</p>
+                    <p className="font-medium text-gray-900">Ultrakool</p>
+                    <p className="text-gray-600">info@ultrakool.com</p>
                     <p className="text-gray-600">+91 1234567890</p>
                     <p className="text-gray-600">Your Company Address</p>
                     <p className="text-gray-600">GSTIN: 29ABCDE1234F1Z5</p>

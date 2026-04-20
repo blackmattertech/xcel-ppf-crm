@@ -138,7 +138,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
     if (!messaging) return
 
     const unsubscribe = onMessage(messaging, (payload) => {
-      const title = payload.notification?.title ?? payload.data?.title ?? 'Xcel CRM'
+      const title = payload.notification?.title ?? payload.data?.title ?? 'Ultrakool CRM'
       const body = payload.notification?.body ?? payload.data?.body ?? ''
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const n = new Notification(title, {

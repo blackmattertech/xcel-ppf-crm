@@ -131,7 +131,7 @@ export default function Sidebar() {
           <div className="flex items-center justify-center">
             <Image
               src="/image.png"
-              alt="XCEL Logo"
+              alt="Ultrakool Logo"
               width={80}
               height={49}
               className="object-contain"
@@ -143,7 +143,7 @@ export default function Sidebar() {
           <div className="flex items-center justify-start">
             <Image
               src="/image.png"
-              alt="XCEL Logo"
+              alt="Ultrakool Logo"
               width={180}
               height={111}
               className="object-contain"

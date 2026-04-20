@@ -38,7 +38,7 @@ export type PushPayload = {
 
 const isDev = process.env.NODE_ENV === 'development'
 
-/** Base URL of the app (e.g. https://crm.xcelppf.com). Used for web push click action. */
+/** Base URL of the app (e.g. https://ultrakool-crm.vercel.app). Used for web push click action. */
 function getAppBaseUrl(): string {
   return getPublicSiteUrl()
 }
