@@ -7,12 +7,8 @@ export const metadata: Metadata = {
   description: "Customer Relationship Management System",
   manifest: "/manifest.json",
   icons: {
-    icon: [
-      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
-      { url: '/favicon.png', sizes: 'any', type: 'image/png' },
-    ],
-    apple: '/icon-192x192.png',
+    icon: [{ url: '/Ultrakool.png', type: 'image/png' }],
+    apple: '/Ultrakool.png',
   },
   appleWebApp: {
     capable: true,
@@ -51,18 +47,12 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Ultrakool CRM" />
-        {/* Favicon for browser tabs */}
-        <link rel="icon" type="image/png" href="/icon-192x192.png" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192x192.png" />
-        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512x512.png" />
-        {/* Apple touch icon for iOS */}
-        <link rel="apple-touch-icon" href="/icon-192x192.png" />
-        <link rel="apple-touch-icon" sizes="192x192" href="/icon-192x192.png" />
-        <link rel="apple-touch-icon" sizes="512x512" href="/icon-512x512.png" />
+        <link rel="icon" type="image/png" href="/Ultrakool.png" />
+        <link rel="apple-touch-icon" href="/Ultrakool.png" />
         {/* Windows tile */}
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="msapplication-TileColor" content="#000000" />
-        <meta name="msapplication-TileImage" content="/icon-192x192.png" />
+        <meta name="msapplication-TileImage" content="/Ultrakool.png" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
       </head>
       <body className="antialiased">

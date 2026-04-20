@@ -37,7 +37,7 @@ export default function PopupNotification() {
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Overdue Follow-ups', {
           body: `You have ${notifications.overdue.length} overdue follow-up${notifications.overdue.length > 1 ? 's' : ''} that need attention.`,
-          icon: '/favicon.ico',
+          icon: '/Ultrakool.png',
           tag: 'followup-notification',
         })
       }

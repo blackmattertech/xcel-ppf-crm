@@ -194,7 +194,7 @@ function ResetPasswordForm() {
             <div className="flex flex-col px-4 md:px-8 lg:px-[60px] pt-8 md:pt-12 lg:pt-[90px] pb-8 md:pb-12 lg:pb-[80px] h-full">
               <div className="mb-6 md:mb-8 lg:mb-[40px] self-start">
                 <Image
-                  src="/login-logo.png"
+                  src="/Ultrakool.png"
                   alt="Ultrakool Logo"
                   width={136}
                   height={65}
@@ -250,7 +250,7 @@ function ResetPasswordForm() {
             {/* Logo - Positioned on the left inside the dialog */}
             <div className="mb-6 md:mb-8 lg:mb-[40px] self-start">
               <Image
-                src="/login-logo.png"
+                src="/Ultrakool.png"
                 alt="Ultrakool Logo"
                 width={136}
                 height={65}

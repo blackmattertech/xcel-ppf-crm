@@ -85,7 +85,7 @@ export async function sendPushToUser(
       notification: {
         title: payload.title,
         body: payload.body,
-        icon: '/icon-192x192.png',
+        icon: '/Ultrakool.png',
       },
       fcmOptions: clickLink ? { link: clickLink } : undefined,
     },

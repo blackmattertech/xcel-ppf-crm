@@ -1,7 +1,7 @@
 /**
  * Generate PWA Icons with Black Background and Padding
  * 
- * This script processes the favicon.png and creates PWA icons
+ * This script processes public/Ultrakool.png (or favicon.png) and creates PWA icons
  * with a black background and padding for better visibility.
  */
 
@@ -62,12 +62,13 @@ async function generatePWAIcon(inputPath: string, outputPath: string, size: numb
 
 async function main() {
   const publicDir = join(process.cwd(), 'public')
-  const inputIcon = join(publicDir, 'favicon.png')
+  const primary = join(publicDir, 'Ultrakool.png')
+  const fallback = join(publicDir, 'favicon.png')
+  const inputIcon = existsSync(primary) ? primary : fallback
   const outputDir = publicDir
 
-  // Check if input file exists
   if (!existsSync(inputIcon)) {
-    console.error(`❌ Input icon not found: ${inputIcon}`)
+    console.error(`❌ Input icon not found: ${primary} or ${fallback}`)
     process.exit(1)
   }
 

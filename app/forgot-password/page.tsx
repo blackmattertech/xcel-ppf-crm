@@ -64,7 +64,7 @@ export default function ForgotPasswordPage() {
             {/* Logo - Positioned on the left inside the dialog */}
             <div className="mb-6 md:mb-8 lg:mb-[40px] self-start">
               <Image
-                src="/login-logo.png"
+                src="/Ultrakool.png"
                 alt="Ultrakool Logo"
                 width={136}
                 height={65}

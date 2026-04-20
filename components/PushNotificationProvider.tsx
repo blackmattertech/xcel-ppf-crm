@@ -143,7 +143,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const n = new Notification(title, {
           body,
-          icon: '/icon-192x192.png',
+          icon: '/Ultrakool.png',
           tag: payload.data?.type ?? 'fcm',
           data: payload.data,
         })

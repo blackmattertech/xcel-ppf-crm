@@ -130,7 +130,7 @@ export default function Sidebar() {
         {isCollapsed ? (
           <div className="flex items-center justify-center">
             <Image
-              src="/image.png"
+              src="/Ultrakool.png"
               alt="Ultrakool Logo"
               width={80}
               height={49}
@@ -142,7 +142,7 @@ export default function Sidebar() {
         ) : (
           <div className="flex items-center justify-start">
             <Image
-              src="/image.png"
+              src="/Ultrakool.png"
               alt="Ultrakool Logo"
               width={180}
               height={111}

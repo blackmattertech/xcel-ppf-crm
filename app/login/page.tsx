@@ -156,7 +156,7 @@ export default function LoginPage() {
             {/* Logo - Centered inside the dialog */}
             <div className="mb-2 md:mb-3 lg:mb-4 self-center flex justify-center">
               <Image
-                src="/image.png"
+                src="/Ultrakool.png"
                 alt="Ultrakool Logo"
                 width={320}
                 height={197}

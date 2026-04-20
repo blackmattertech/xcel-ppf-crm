@@ -26,8 +26,8 @@ function showPayloadNotification(payload) {
   var body = (payload && payload.notification && payload.notification.body) ? payload.notification.body : (payload && payload.data && payload.data.body) ? payload.data.body : '';
   var options = {
     body: body,
-    icon: '/icon-192x192.png',
-    badge: '/icon-192x192.png',
+    icon: '/Ultrakool.png',
+    badge: '/Ultrakool.png',
     data: (payload && payload.data) ? payload.data : {},
     tag: (payload && payload.data && payload.data.type) ? payload.data.type : 'fcm',
     requireInteraction: false

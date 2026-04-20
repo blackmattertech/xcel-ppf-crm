@@ -158,7 +158,7 @@ export default function MobileLoginPage() {
               {/* Logo - Centered */}
               <div className="mb-2 self-center flex justify-center">
                 <Image
-                  src="/image.png"
+                  src="/Ultrakool.png"
                   alt="Ultrakool Logo"
                   width={280}
                   height={172}
