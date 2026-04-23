@@ -29,6 +29,39 @@ export interface ResolvedBroadcastPayload {
   headerMediaId?: string | null
 }
 
+/** Meta's hard size limits for template media headers (bytes). */
+const META_MEDIA_SIZE_LIMITS: Record<string, number> = {
+  IMAGE: 5 * 1024 * 1024,      // 5 MB
+  VIDEO: 16 * 1024 * 1024,     // 16 MB
+  DOCUMENT: 100 * 1024 * 1024, // 100 MB
+}
+
+/**
+ * HEAD-check a media URL and validate against Meta's size limits.
+ * Returns an error string if too large, null if OK (or if size cannot be determined).
+ */
+async function checkMediaUrlSize(url: string, format: string): Promise<string | null> {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal }).finally(() => clearTimeout(timeout))
+    const contentLength = res.headers.get('content-length')
+    if (!contentLength) return null // Can't determine size — let Meta decide
+    const bytes = parseInt(contentLength, 10)
+    if (isNaN(bytes) || bytes <= 0) return null
+    const limitBytes = META_MEDIA_SIZE_LIMITS[format.toUpperCase()]
+    if (!limitBytes) return null
+    if (bytes > limitBytes) {
+      const sizeMB = (bytes / (1024 * 1024)).toFixed(1)
+      const limitMB = (limitBytes / (1024 * 1024)).toFixed(0)
+      return `${format} file is ${sizeMB} MB but Meta's limit for ${format.toLowerCase()} headers is ${limitMB} MB. Compress the file and re-upload before sending.`
+    }
+    return null
+  } catch {
+    return null // Network error during check — don't block the send
+  }
+}
+
 export class BroadcastValidationError extends Error {
   constructor(
     public statusCode: number,
@@ -168,6 +201,23 @@ export async function resolveBroadcastPayload(
       error: 'This template has an image/video/document header. Add a public URL or pass headerParameters.',
       code: 'MISSING_HEADER_MEDIA',
     })
+  }
+
+  // Validate media file size against Meta's limits before attempting the send.
+  // A URL that looks like https:// in headerParameters is the actual media link being passed to Meta.
+  if (headerFormat && headerFormat !== 'TEXT' && headerParameters && headerParameters.length > 0) {
+    const mediaUrl = headerParameters[0]
+    if (typeof mediaUrl === 'string' && /^https?:\/\//i.test(mediaUrl)) {
+      const sizeError = await checkMediaUrlSize(mediaUrl, headerFormat)
+      if (sizeError) {
+        throw new BroadcastValidationError(400, {
+          error: sizeError,
+          code: 'MEDIA_TOO_LARGE',
+          mediaUrl,
+          format: headerFormat,
+        })
+      }
+    }
   }
 
   return {
