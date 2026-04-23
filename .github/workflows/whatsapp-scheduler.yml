@@ -9,7 +9,7 @@ name: WhatsApp Scheduled Processor
 on:
   schedule:
     # Every 5 minutes (UTC) — GitHub’s minimum reliable interval for scheduled workflows
-    - cron: "*/5 * * * *"
+    - cron: "* * * * *"
   workflow_dispatch:
 
 permissions:
