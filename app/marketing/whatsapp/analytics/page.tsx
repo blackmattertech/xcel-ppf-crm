@@ -22,6 +22,9 @@ import {
   CheckCheck,
   XCircle,
   Reply,
+  MousePointerClick,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   BarChart,
@@ -121,6 +124,33 @@ interface DeliveryStatusItem { phone: string; lead_id: string | null; lead_name:
 interface DeliveryStatusResponse {
   byStatus: Record<string, { count: number; items: DeliveryStatusItem[] }>
   summary: { pending: number; sent: number; delivered: number; read: number; failed: number; notDelivered: number; notRead: number }
+}
+
+// Meta official API types
+interface MetaClickDetail { type: string; button_content: string; count: number }
+interface MetaTemplateMetric {
+  templateId: string
+  templateName: string
+  sent: number
+  delivered: number
+  read: number
+  clicked: number
+  clickDetails: MetaClickDetail[]
+  readRate: number
+  deliverRate: number
+  failed: number
+  notSent: number
+}
+interface MetaAnalyticsResponse {
+  source: 'meta'
+  overall: { sent: number; delivered: number }
+  templates: MetaTemplateMetric[]
+  period: { startDate: string; endDate: string }
+  granularity: 'DAILY' | 'MONTHLY'
+}
+interface MetaAnalyticsError {
+  source: 'unavailable'
+  reason: string
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -224,6 +254,10 @@ export default function WhatsAppAnalyticsPage() {
   const [campaigns, setCampaigns] = useState<CampaignSummaryRow[]>([])
   const [error, setError] = useState<string | null>(null)
 
+  // Meta official analytics
+  const [metaAnalytics, setMetaAnalytics] = useState<MetaAnalyticsResponse | MetaAnalyticsError | null>(null)
+  const [expandedMetaTemplate, setExpandedMetaTemplate] = useState<string | null>(null)
+
   // Template recipient drill-down
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
   const [templateRecipients, setTemplateRecipients] = useState<Record<string, TemplateRecipientsData>>({})
@@ -256,6 +290,7 @@ export default function WhatsAppAnalyticsPage() {
     setError(null)
     setExpandedTemplate(null)
     setTemplateRecipients({})
+    setExpandedMetaTemplate(null)
     const { start, end } = committedRange
 
     Promise.all([
@@ -274,11 +309,16 @@ export default function WhatsAppAnalyticsPage() {
           const j = await res.json()
           return { campaigns: Array.isArray(j.campaigns) ? j.campaigns : [] }
         }),
+      // Meta official analytics — never throws, returns unavailable on error
+      fetch(`/api/marketing/whatsapp/meta-analytics?startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}&live=1`, { credentials: 'include' })
+        .then((res) => res.json().catch(() => ({ source: 'unavailable', reason: 'Parse error' })))
+        .catch(() => ({ source: 'unavailable', reason: 'Network error' })),
     ])
-      .then(([analyticsData, deliveryData, campaignPayload]) => {
+      .then(([analyticsData, deliveryData, campaignPayload, metaData]) => {
         setData(analyticsData)
         setDeliveryStatus(deliveryData)
         setCampaigns(campaignPayload.campaigns)
+        setMetaAnalytics(metaData as MetaAnalyticsResponse | MetaAnalyticsError)
         setExpandedCampaignId(null)
         setCampaignDetail(null)
       })
@@ -300,6 +340,24 @@ export default function WhatsAppAnalyticsPage() {
     setError(null)
     setCommittedRange({ start: s.toISOString(), end: e.toISOString() })
     setActivePresetDays(null)
+  }
+
+  const toggleMetaTemplate = async (templateName: string) => {
+    if (expandedMetaTemplate === templateName) { setExpandedMetaTemplate(null); return }
+    setExpandedMetaTemplate(templateName)
+    if (templateRecipients[templateName]) return
+    setTemplateLoading(templateName)
+    try {
+      const { start, end } = committedRange
+      const res = await fetch(
+        `/api/marketing/whatsapp/template-recipients?templateName=${encodeURIComponent(templateName)}&startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`,
+        { credentials: 'include' }
+      )
+      const j = await res.json().catch(() => ({}))
+      if (res.ok) setTemplateRecipients((prev) => ({ ...prev, [templateName]: j }))
+    } finally {
+      setTemplateLoading(null)
+    }
   }
 
   const toggleTemplate = async (templateName: string) => {
@@ -439,6 +497,226 @@ export default function WhatsAppAnalyticsPage() {
 
       {error && (
         <div className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div>
+      )}
+
+      {/* ── Meta Official Analytics ── */}
+      {metaAnalytics && (
+        <section className="space-y-4">
+          {/* Section header */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">Meta Official Insights</span>
+            </div>
+            <span className="text-xs text-slate-400">Numbers sourced directly from Meta&apos;s Business API — most accurate</span>
+          </div>
+
+          {metaAnalytics.source === 'unavailable' ? (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div>
+                <p className="font-semibold text-amber-900">Meta API not available</p>
+                <p className="mt-0.5 text-sm text-amber-800">{(metaAnalytics as MetaAnalyticsError).reason}</p>
+                <p className="mt-1 text-xs text-amber-700">
+                  CRM data (parsed from message body) is shown below. To enable Meta Insights, configure your WABA ID and Access Token in{' '}
+                  <Link href="/marketing/whatsapp" className="underline">WhatsApp settings</Link>.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Overall Meta KPIs */}
+              {(() => {
+                const m = metaAnalytics as MetaAnalyticsResponse
+                const totalSent = m.overall.sent || m.templates.reduce((s, t) => s + t.sent, 0)
+                const totalDelivered = m.overall.delivered || m.templates.reduce((s, t) => s + t.delivered, 0)
+                const totalRead = m.templates.reduce((s, t) => s + t.read, 0)
+                const totalClicked = m.templates.reduce((s, t) => s + t.clicked, 0)
+                const totalFailed = m.templates.reduce((s, t) => s + t.failed, 0)
+                const readRate = totalSent > 0 ? (totalRead / totalSent) * 100 : 0
+                const deliverRate = totalSent > 0 ? (totalDelivered / totalSent) * 100 : 0
+                return (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                    {[
+                      { label: 'Sent', value: formatInt(totalSent), sub: 'Accepted by Meta', color: 'bg-emerald-50 border-emerald-200 text-emerald-950', badge: 'text-emerald-600' },
+                      { label: 'Delivered', value: formatInt(totalDelivered), sub: formatPct(deliverRate) + ' of sent', color: 'bg-teal-50 border-teal-200 text-teal-950', badge: 'text-teal-600' },
+                      { label: 'Read', value: formatInt(totalRead), sub: formatPct(readRate) + ' read rate', color: 'bg-sky-50 border-sky-200 text-sky-950', badge: 'text-sky-600' },
+                      { label: 'Clicked', value: formatInt(totalClicked), sub: 'Button interactions', color: 'bg-violet-50 border-violet-200 text-violet-950', badge: 'text-violet-600' },
+                      { label: 'Failed', value: formatInt(totalFailed), sub: 'Delivery errors (CRM)', color: 'bg-rose-50 border-rose-200 text-rose-950', badge: 'text-rose-600' },
+                    ].map((card) => (
+                      <div key={card.label} className={`rounded-2xl border p-4 ${card.color}`}>
+                        <p className={`text-xs font-bold uppercase tracking-wide opacity-60`}>{card.label}</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums">{card.value}</p>
+                        <p className="mt-0.5 text-[11px] opacity-60">{card.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+
+              {/* Per-template Meta table */}
+              {(metaAnalytics as MetaAnalyticsResponse).templates.length > 0 ? (
+                <div className="space-y-2">
+                  {(metaAnalytics as MetaAnalyticsResponse).templates.map((t) => {
+                    const isExpanded = expandedMetaTemplate === t.templateName
+                    const isLoadingThis = templateLoading === t.templateName
+                    const recData = templateRecipients[t.templateName]
+
+                    return (
+                      <div key={t.templateId} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        {/* Row */}
+                        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-slate-900">{t.templateName}</span>
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 border border-emerald-200">
+                                Meta verified
+                              </span>
+                            </div>
+                            {/* Progress bar: read / delivered / sent */}
+                            <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-100">
+                              <div className="h-full bg-sky-400" style={{ width: `${Math.min(100, t.readRate)}%` }} />
+                              <div className="h-full bg-teal-400" style={{ width: `${Math.min(100, t.deliverRate - t.readRate)}%` }} />
+                              {t.failed > 0 && (
+                                <div className="ml-auto h-full bg-rose-400" style={{ width: `${Math.min(100, (t.failed / (t.sent || 1)) * 100)}%` }} />
+                              )}
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" />Read {formatPct(t.readRate)}</span>
+                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-400" />Delivered {formatPct(t.deliverRate)}</span>
+                              {t.clicked > 0 && <span className="flex items-center gap-1 text-violet-600"><MousePointerClick className="h-3 w-3" />{formatInt(t.clicked)} clicked</span>}
+                              {t.failed > 0 && <span className="flex items-center gap-1 text-rose-600"><XCircle className="h-3 w-3" />{formatInt(t.failed)} failed</span>}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 shrink-0 sm:justify-end">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                              <Send className="h-3 w-3" />{formatInt(t.sent)} Sent
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800">
+                              <CheckCheck className="h-3 w-3" />{formatInt(t.delivered)} Delivered
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
+                              <CheckCheck className="h-3 w-3" />{formatInt(t.read)} Read
+                            </span>
+                            {t.clicked > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800">
+                                <MousePointerClick className="h-3 w-3" />{formatInt(t.clicked)} Clicked
+                              </span>
+                            )}
+                            {recData && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800">
+                                <Reply className="h-3 w-3" />{formatInt(recData.summary.replied)} Replied
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleMetaTemplate(t.templateName)}
+                              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                              {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                              {isExpanded ? 'Hide' : 'View'} recipients
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Click breakdown (if any) */}
+                        {t.clickDetails.length > 0 && (
+                          <div className="border-t border-slate-100 bg-violet-50/40 px-5 py-2 flex flex-wrap gap-2">
+                            <span className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide mr-1">Button clicks:</span>
+                            {t.clickDetails.map((c, i) => (
+                              <span key={i} className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] text-violet-800">
+                                <MousePointerClick className="h-3 w-3" />
+                                {c.button_content} ({c.type.replace('_', ' ')}): <strong>{formatInt(c.count)}</strong>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Expanded recipient list */}
+                        {isExpanded && (
+                          <div className="border-t border-slate-100 bg-slate-50/60">
+                            {isLoadingThis ? (
+                              <div className="flex items-center gap-2 px-5 py-6 text-sm text-slate-500">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Loading recipients…
+                              </div>
+                            ) : !recData ? (
+                              <div className="px-5 py-6 text-sm text-slate-500">No CRM recipient data for this template.</div>
+                            ) : (
+                              <>
+                                <div className="grid grid-cols-3 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-6">
+                                  {[
+                                    { label: 'Total', value: recData.summary.total, color: 'text-slate-900' },
+                                    { label: 'Sent', value: recData.summary.sent, color: 'text-emerald-700' },
+                                    { label: 'Delivered', value: recData.summary.delivered, color: 'text-teal-700' },
+                                    { label: 'Read', value: recData.summary.read, color: 'text-sky-700' },
+                                    { label: 'Failed', value: recData.summary.failed, color: 'text-rose-700' },
+                                    { label: 'Replied', value: recData.summary.replied, color: 'text-violet-700' },
+                                  ].map((m) => (
+                                    <div key={m.label} className="flex flex-col items-center bg-white px-3 py-2.5">
+                                      <span className={`text-lg font-bold tabular-nums ${m.color}`}>{formatInt(m.value)}</span>
+                                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{m.label}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="max-h-96 overflow-y-auto">
+                                  <table className="w-full text-sm">
+                                    <thead className="sticky top-0 z-10">
+                                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
+                                        <th className="px-4 py-2.5">Name</th>
+                                        <th className="px-4 py-2.5">Phone</th>
+                                        <th className="px-4 py-2.5">Status</th>
+                                        <th className="px-4 py-2.5">Sent at</th>
+                                        <th className="px-4 py-2.5 text-center">Replied</th>
+                                        <th className="px-4 py-2.5 text-center">Inbox</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                      {recData.recipients.map((r, i) => (
+                                        <tr key={i} className={`transition hover:bg-slate-50/80 ${r.status === 'failed' ? 'bg-rose-50/40' : ''}`}>
+                                          <td className="px-4 py-2.5">
+                                            <span className="flex items-center gap-1.5 font-medium text-slate-800">
+                                              <User className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                                              {r.lead_name || '—'}
+                                            </span>
+                                          </td>
+                                          <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.phone}</td>
+                                          <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                                          <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                                            {new Date(r.sent_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                          </td>
+                                          <td className="px-4 py-2.5 text-center">
+                                            {r.replied
+                                              ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-violet-700"><Reply className="h-3 w-3" /></span>
+                                              : <span className="text-slate-300">—</span>}
+                                          </td>
+                                          <td className="px-4 py-2.5 text-center">
+                                            <Link href={inboxUrl(r.phone, r.lead_id, r.lead_name)}
+                                              className="inline-flex items-center gap-1 rounded-lg bg-[#25D366]/10 px-2 py-1 text-[11px] font-semibold text-[#128C7E] transition hover:bg-[#25D366]/20">
+                                              <ExternalLink className="h-3 w-3" /> Open
+                                            </Link>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center text-sm text-slate-500">
+                  No template analytics returned by Meta for this period.
+                </div>
+              )}
+            </>
+          )}
+        </section>
       )}
 
       {data && derivedMetrics && (
@@ -900,8 +1178,9 @@ export default function WhatsAppAnalyticsPage() {
           )}
 
           <footer className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 text-center text-xs text-slate-500">
-            Data sourced from <code className="rounded bg-slate-100 px-1">whatsapp_messages</code> and <code className="rounded bg-slate-100 px-1">scheduled_broadcasts</code>.
-            Template tags are parsed from message body. Reply matching uses last 10 phone digits.
+            <span className="inline-flex items-center gap-1.5 mr-3"><ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /><strong>Meta Insights</strong> — official numbers via <code className="rounded bg-slate-100 px-1">/{'{WABA-ID}'}/template_analytics</code></span>
+            ·
+            <span className="inline-flex items-center gap-1.5 ml-3"><Activity className="h-3.5 w-3.5 text-slate-400" /><strong>CRM data</strong> from <code className="rounded bg-slate-100 px-1">whatsapp_messages</code> &amp; <code className="rounded bg-slate-100 px-1">scheduled_broadcasts</code></span>
           </footer>
         </>
       )}
