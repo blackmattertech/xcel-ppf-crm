@@ -78,11 +78,12 @@ export default function ReportsPage() {
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [calls, setCalls] = useState<CallRow[]>([])
   const [summary, setSummary] = useState<{
-    totalCalls: number
+    totalLeads: number
     connected: number
     notReachable: number
     byUser: SummaryByUser[]
   } | null>(null)
+  const [outcomeFilter, setOutcomeFilter] = useState<'connected' | 'not_reachable'>('connected')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -242,7 +243,7 @@ export default function ReportsPage() {
                 <Phone className="w-4 h-4" />
                 Leads Called
               </div>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{summary.totalCalls}</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{summary.totalLeads}</p>
             </div>
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wide">
@@ -303,18 +304,41 @@ export default function ReportsPage() {
         ) : null}
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-900">Call log</h2>
-            {calls.length >= 2500 ? (
-              <span className="text-xs text-amber-700">Showing first 2,500 rows for this range</span>
-            ) : null}
+          <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">Lead log</h2>
+            <div className="flex items-center gap-1">
+              {(['connected', 'not_reachable'] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setOutcomeFilter(f)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    outcomeFilter === f
+                      ? f === 'connected'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-700'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {f === 'connected' ? 'Connected' : 'Not Reachable'}
+                </button>
+              ))}
+              {calls.length >= 2500 ? (
+                <span className="text-xs text-amber-700 ml-2">Showing first 2,500 rows</span>
+              ) : null}
+            </div>
           </div>
           <div className="overflow-x-auto">
             {loading && calls.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 text-sm">Loading calls…</div>
-            ) : calls.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 text-sm">No calls for this day.</div>
-            ) : (
+              <div className="p-8 text-center text-gray-500 text-sm">Loading…</div>
+            ) : (() => {
+              const visibleCalls = outcomeFilter === 'connected'
+                ? calls.filter((c) => c.outcome === 'connected' && ((c.answered_duration_seconds ?? c.call_duration ?? 0) >= 5))
+                : calls.filter((c) => c.outcome === outcomeFilter)
+              if (visibleCalls.length === 0) {
+                return <div className="p-8 text-center text-gray-500 text-sm">No leads for this filter.</div>
+              }
+              return (
               <table className="min-w-[880px] w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
@@ -328,7 +352,7 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {calls.map((call) => {
+                  {visibleCalls.map((call) => {
                     const when = new Date(call.created_at)
                     const timeStr = when.toLocaleTimeString(undefined, {
                       hour: '2-digit',
@@ -393,7 +417,8 @@ export default function ReportsPage() {
                   })}
                 </tbody>
               </table>
-            )}
+              )
+            })()}
           </div>
         </div>
       </div>

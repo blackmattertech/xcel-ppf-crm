@@ -136,6 +136,7 @@ export async function GET(request: NextRequest) {
     }
 
     type CallAggRow = {
+      lead_id: string | null
       called_by: string
       outcome: string
       recording_url: string | null
@@ -144,7 +145,6 @@ export async function GET(request: NextRequest) {
       called_by_user: { name?: string } | null
     }
     const rows = (calls ?? []) as CallAggRow[]
-    const totalCalls = rows.length
     const withRecording = rows.filter((c) => c.recording_url && String(c.recording_url).trim() !== '').length
 
     function isConnectedCall(c: CallAggRow): boolean {
@@ -153,34 +153,45 @@ export async function GET(request: NextRequest) {
       return dur >= 5
     }
 
-    const connected = rows.filter(isConnectedCall).length
-    const notReachable = rows.filter((c) => c.outcome === 'not_reachable').length
+    // Count unique leads, not call rows
+    const allLeadIds = new Set(rows.map((c) => c.lead_id).filter(Boolean))
+    const connectedLeadIds = new Set(rows.filter(isConnectedCall).map((c) => c.lead_id).filter(Boolean))
+    const notReachableLeadIds = new Set(rows.filter((c) => c.outcome === 'not_reachable').map((c) => c.lead_id).filter(Boolean))
 
-    const byUserMap = new Map<string, { userId: string; name: string; count: number; connected: number; notReachable: number }>()
+    const totalLeads = allLeadIds.size
+    const connected = connectedLeadIds.size
+    const notReachable = notReachableLeadIds.size
+
+    // Per-user: unique leads contacted, connected, not reachable
+    const byUserLeads = new Map<string, { name: string; all: Set<string>; connected: Set<string>; notReachable: Set<string> }>()
     for (const c of rows) {
       const uid = c.called_by
       const name = c.called_by_user?.name ?? 'Unknown'
-      const prev = byUserMap.get(uid)
-      if (prev) {
-        prev.count += 1
-        if (isConnectedCall(c)) prev.connected += 1
-        if (c.outcome === 'not_reachable') prev.notReachable += 1
-      } else {
-        byUserMap.set(uid, {
-          userId: uid,
-          name,
-          count: 1,
-          connected: isConnectedCall(c) ? 1 : 0,
-          notReachable: c.outcome === 'not_reachable' ? 1 : 0,
-        })
+      const lid = c.lead_id
+      if (!lid) continue
+      if (!byUserLeads.has(uid)) {
+        byUserLeads.set(uid, { name, all: new Set(), connected: new Set(), notReachable: new Set() })
       }
+      const sets = byUserLeads.get(uid)!
+      sets.name = name
+      sets.all.add(lid)
+      if (isConnectedCall(c)) sets.connected.add(lid)
+      if (c.outcome === 'not_reachable') sets.notReachable.add(lid)
     }
-    const byUser = Array.from(byUserMap.values()).sort((a, b) => b.count - a.count)
+    const byUser = Array.from(byUserLeads.entries())
+      .map(([uid, sets]) => ({
+        userId: uid,
+        name: sets.name,
+        count: sets.all.size,
+        connected: sets.connected.size,
+        notReachable: sets.notReachable.size,
+      }))
+      .sort((a, b) => b.count - a.count)
 
     return NextResponse.json({
       calls: rows,
       summary: {
-        totalCalls,
+        totalLeads,
         connected,
         notReachable,
         withRecording,
