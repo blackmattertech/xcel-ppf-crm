@@ -1,5 +1,7 @@
 # Runs automatically on the DEFAULT branch only (merge this file to main/master).
-# Schedule uses UTC. GitHub does not support cron faster than every 5 minutes.
+# Schedule uses UTC. GitHub’s minimum supported cron interval is every 5 minutes,
+# but actual execution can be delayed 5–30 min during high load — this is a GitHub limitation.
+# For precise per-minute scheduling use Supabase pg_cron or an external cron service instead.
 # Repo → Settings → Secrets → APP_BASE_URL (e.g. https://crm.xcelppf.com) and CRON_SECRET.
 # CRON_SECRET must match production CRON_SECRET or WHATSAPP_PROCESS_SCHEDULED_SECRET (either works; values are trimmed).
 # If the workflow never runs: Actions enabled? Default branch? Not a fork? Secrets set?
@@ -8,8 +10,8 @@ name: WhatsApp Scheduled Processor
 
 on:
   schedule:
-    # Every 5 minutes (UTC) — GitHub’s minimum reliable interval for scheduled workflows
-    - cron: "* * * * *"
+    # Every 5 minutes (UTC) — GitHub’s minimum supported interval (*/1 is not reliable on GitHub)
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
