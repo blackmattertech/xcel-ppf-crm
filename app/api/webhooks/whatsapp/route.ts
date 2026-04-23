@@ -364,13 +364,13 @@ export async function POST(request: NextRequest) {
           if (!wamid) continue
           const mapped = mapWebhookStatusToMessageStatus(String(st.status ?? ''))
           if (mapped === 'failed') {
-            const errs = (st as { errors?: Array<{ code: number; title: string; message?: string }> }).errors ?? []
-            console.error('[webhooks/whatsapp] Message delivery FAILED:', {
+            const errs = (st as { errors?: Array<{ code: number; title: string; message?: string; error_data?: unknown }> }).errors ?? []
+            console.error('[webhooks/whatsapp] Message delivery FAILED:', JSON.stringify({
               messageId: wamid,
               recipientId: st.recipient_id,
               errors: errs,
-              hint: 'Common: 131047=user not opted in / 24h window closed, 131026=template rejected, 131031=recipient blocked',
-            })
+              hint: '131047=user not opted in / 24h window closed | 131026=template rejected | 131031=recipient blocked | 131053=media upload error (bad URL, wrong MIME type, file too large, or unsupported format)',
+            }, null, 2))
             updateMessageStatus(wamid, 'failed').catch((err) =>
               console.warn('[webhooks/whatsapp] updateMessageStatus failed:', err)
             )
