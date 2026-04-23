@@ -139,14 +139,55 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const headers = { Authorization: `Bearer ${accessToken}` }
 
-    // ── 2. Fetch Meta template_analytics ────────────────────────────────────
+    // ── 2. Resolve template IDs (required by Meta's template_analytics) ──────
+    // Primary: fetch from our DB where we store meta_id after template approval
+    const supabase = createServiceClient()
+    const { data: dbTemplates } = await supabase
+      .from('whatsapp_templates')
+      .select('meta_id, name')
+      .not('meta_id', 'is', null)
+
+    const idToName = new Map<string, string>()
+    for (const r of (dbTemplates ?? []) as Array<{ meta_id: string | null; name: string }>) {
+      if (r.meta_id) idToName.set(r.meta_id, r.name)
+    }
+
+    // Fallback: if DB has no meta_ids, fetch template list directly from Meta
+    if (idToName.size === 0) {
+      const listUrl = new URL(`${META_GRAPH_BASE}/${wabaId}/message_templates`)
+      listUrl.searchParams.set('fields', 'id,name,status')
+      listUrl.searchParams.set('limit', '200')
+      const listRes = await fetch(listUrl.toString(), { headers })
+      if (listRes.ok) {
+        const listJson = (await listRes.json().catch(() => ({}))) as {
+          data?: Array<{ id: string; name: string; status: string }>
+        }
+        for (const t of listJson.data ?? []) {
+          if (t.id) idToName.set(t.id, t.name)
+        }
+      }
+    }
+
+    if (idToName.size === 0) {
+      return NextResponse.json({
+        source: 'unavailable',
+        reason: 'No approved templates found. Create and get at least one template approved by Meta first.',
+        period: periodPayload,
+      } satisfies MetaAnalyticsError)
+    }
+
+    const templateIds = Array.from(idToName.keys())
+
+    // ── 3. Fetch Meta template_analytics (template_ids is required) ──────────
     const templateAnalyticsUrl = new URL(`${META_GRAPH_BASE}/${wabaId}/template_analytics`)
     templateAnalyticsUrl.searchParams.set('start', String(startUnix))
     templateAnalyticsUrl.searchParams.set('end', String(endUnix))
     templateAnalyticsUrl.searchParams.set('granularity', granularity)
     templateAnalyticsUrl.searchParams.set('metric_types', 'SENT,DELIVERED,READ,CLICKED')
+    // Pass all IDs — Meta requires this parameter
+    templateAnalyticsUrl.searchParams.set('template_ids', JSON.stringify(templateIds))
 
-    // ── 3. Fetch Meta overall analytics ─────────────────────────────────────
+    // ── 4. Fetch Meta overall analytics ─────────────────────────────────────
     const overallAnalyticsUrl = new URL(`${META_GRAPH_BASE}/${wabaId}/analytics`)
     overallAnalyticsUrl.searchParams.set('start', String(startUnix))
     overallAnalyticsUrl.searchParams.set('end', String(endUnix))
@@ -171,7 +212,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       } satisfies MetaAnalyticsError)
     }
 
-    // ── 4. Aggregate template data points (sum across all days) ─────────────
+    // ── 5. Aggregate template data points (sum across all days) ─────────────
     const aggregated = new Map<string, {
       sent: number; delivered: number; read: number
       clicked: number; clickDetails: Map<string, MetaClickDetail>
@@ -198,28 +239,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // ── 5. Aggregate overall analytics ──────────────────────────────────────
+    // ── 6. Aggregate overall analytics ──────────────────────────────────────
     let overallSent = 0
     let overallDelivered = 0
     for (const block of overallJson.data ?? []) {
       for (const dp of block.data_points ?? []) {
         overallSent += dp.sent ?? 0
         overallDelivered += dp.delivered ?? 0
-      }
-    }
-
-    // ── 6. Resolve template IDs → names from whatsapp_templates table ───────
-    const supabase = createServiceClient()
-    const templateIds = Array.from(aggregated.keys())
-
-    const idToName = new Map<string, string>()
-    if (templateIds.length > 0) {
-      const { data: templateRows } = await supabase
-        .from('whatsapp_templates')
-        .select('meta_id, name')
-        .in('meta_id', templateIds)
-      for (const r of (templateRows ?? []) as Array<{ meta_id: string | null; name: string }>) {
-        if (r.meta_id) idToName.set(r.meta_id, r.name)
       }
     }
 
@@ -256,7 +282,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       if (name) pendingByTemplate.set(name, (pendingByTemplate.get(name) ?? 0) + 1)
     }
 
-    // ── 8. Build final template list ─────────────────────────────────────────
+    // ── 8. Build final template list (idToName already populated above) ──────
     const templates: MetaTemplateMetric[] = Array.from(aggregated.entries()).map(([tid, agg]) => {
       const name = idToName.get(tid) ?? `Template ${tid}`
       const failed = failedByTemplate.get(name) ?? 0
