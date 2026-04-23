@@ -139,20 +139,41 @@ export async function GET(request: NextRequest) {
       called_by: string
       outcome: string
       recording_url: string | null
+      answered_duration_seconds: number | null
+      call_duration: number | null
       called_by_user: { name?: string } | null
     }
     const rows = (calls ?? []) as CallAggRow[]
     const totalCalls = rows.length
     const withRecording = rows.filter((c) => c.recording_url && String(c.recording_url).trim() !== '').length
-    const connected = rows.filter((c) => c.outcome === 'connected').length
 
-    const byUserMap = new Map<string, { userId: string; name: string; count: number }>()
+    function isConnectedCall(c: CallAggRow): boolean {
+      if (c.outcome !== 'connected') return false
+      const dur = c.answered_duration_seconds ?? c.call_duration ?? 0
+      return dur >= 5
+    }
+
+    const connected = rows.filter(isConnectedCall).length
+    const notReachable = rows.filter((c) => c.outcome === 'not_reachable').length
+
+    const byUserMap = new Map<string, { userId: string; name: string; count: number; connected: number; notReachable: number }>()
     for (const c of rows) {
       const uid = c.called_by
       const name = c.called_by_user?.name ?? 'Unknown'
       const prev = byUserMap.get(uid)
-      if (prev) prev.count += 1
-      else byUserMap.set(uid, { userId: uid, name, count: 1 })
+      if (prev) {
+        prev.count += 1
+        if (isConnectedCall(c)) prev.connected += 1
+        if (c.outcome === 'not_reachable') prev.notReachable += 1
+      } else {
+        byUserMap.set(uid, {
+          userId: uid,
+          name,
+          count: 1,
+          connected: isConnectedCall(c) ? 1 : 0,
+          notReachable: c.outcome === 'not_reachable' ? 1 : 0,
+        })
+      }
     }
     const byUser = Array.from(byUserMap.values()).sort((a, b) => b.count - a.count)
 
@@ -161,6 +182,7 @@ export async function GET(request: NextRequest) {
       summary: {
         totalCalls,
         connected,
+        notReachable,
         withRecording,
         byUser,
       },

@@ -8,7 +8,7 @@ import { useAuthContext } from '@/components/AuthProvider'
 import { cachedFetch } from '@/lib/api-client'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { PERMISSIONS } from '@/shared/constants/permissions'
-import { Phone, User, Calendar, BarChart3, ChevronRight } from 'lucide-react'
+import { Phone, User, Calendar, BarChart3, ChevronRight, PhoneMissed } from 'lucide-react'
 
 function todayLocalYmd(): string {
   const d = new Date()
@@ -66,6 +66,8 @@ interface SummaryByUser {
   userId: string
   name: string
   count: number
+  connected: number
+  notReachable: number
 }
 
 export default function ReportsPage() {
@@ -78,6 +80,7 @@ export default function ReportsPage() {
   const [summary, setSummary] = useState<{
     totalCalls: number
     connected: number
+    notReachable: number
     byUser: SummaryByUser[]
   } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -233,11 +236,11 @@ export default function ReportsPage() {
         ) : null}
 
         {summary ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
               <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wide">
                 <Phone className="w-4 h-4" />
-                Total calls
+                Leads Called
               </div>
               <p className="text-2xl font-bold text-gray-900 mt-1">{summary.totalCalls}</p>
             </div>
@@ -246,26 +249,55 @@ export default function ReportsPage() {
                 <BarChart3 className="w-4 h-4" />
                 Connected
               </div>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{summary.connected}</p>
+              <p className="text-2xl font-bold text-green-700 mt-1">{summary.connected}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">≥ 5s duration</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-gray-500 text-xs font-medium uppercase tracking-wide">
+                <PhoneMissed className="w-4 h-4" />
+                Not Reachable
+              </div>
+              <p className="text-2xl font-bold text-red-600 mt-1">{summary.notReachable}</p>
             </div>
           </div>
         ) : null}
 
-        {canViewAllCallers && summary && summary.byUser.length > 1 && !agentFilter ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900 mb-3">Calls by agent</h2>
-            <div className="flex flex-wrap gap-2">
-              {summary.byUser.map((row) => (
-                <button
-                  key={row.userId}
-                  type="button"
-                  onClick={() => setAgentFilter(row.userId)}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-800 hover:bg-gray-100"
-                >
-                  <span className="font-medium">{row.name}</span>
-                  <span className="text-gray-500">{row.count}</span>
-                </button>
-              ))}
+        {canViewAllCallers && summary && summary.byUser.length > 0 && !agentFilter ? (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-900">Leads by caller</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                    <th className="px-4 py-3">Caller</th>
+                    <th className="px-4 py-3 text-center">Leads Called</th>
+                    <th className="px-4 py-3 text-center">Connected</th>
+                    <th className="px-4 py-3 text-center">Not Reachable</th>
+                    <th className="px-4 py-3 w-10" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {summary.byUser.map((row) => (
+                    <tr key={row.userId} className="hover:bg-gray-50/80">
+                      <td className="px-4 py-3 font-medium text-gray-900">{row.name}</td>
+                      <td className="px-4 py-3 text-center text-gray-700">{row.count}</td>
+                      <td className="px-4 py-3 text-center font-medium text-green-700">{row.connected}</td>
+                      <td className="px-4 py-3 text-center font-medium text-red-600">{row.notReachable}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setAgentFilter(row.userId)}
+                          className="text-xs text-[#2563eb] hover:underline"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         ) : null}
