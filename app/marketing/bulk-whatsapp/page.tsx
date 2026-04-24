@@ -17,7 +17,42 @@ import {
   Upload,
   Download,
 } from 'lucide-react'
-import type { LeadRecipient, CustomerRecipient, PastedRecipient, Recipient, SendResult, WhatsAppTemplate, MetaTemplateOption } from '../_lib/types'
+import type {
+  LeadRecipient,
+  CustomerRecipient,
+  PastedRecipient,
+  Recipient,
+  SendResult,
+  WhatsAppTemplate,
+  MetaTemplateOption,
+} from '../_lib/types'
+
+/** Extra text used for universal search (name, phone, email, etc.) — not sent to API. */
+type LeadRecipientRow = LeadRecipient & { searchHaystack: string }
+type CustomerRecipientRow = CustomerRecipient & { searchHaystack: string }
+type ListRecipientRow = LeadRecipientRow | CustomerRecipientRow
+
+function lowerHay(...parts: Array<string | number | null | undefined>): string {
+  return parts
+    .filter((p) => p != null && String(p).trim() !== '')
+    .map((p) => String(p).toLowerCase())
+    .join(' ')
+}
+
+function matchesUniversalSearch(haystack: string, rawPhone: string, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase()
+  if (!q) return true
+  const phoneNorm = normalizePhone(rawPhone)
+  const queryDigits = q.replace(/\D/g, '')
+  if (queryDigits.length >= 3 && phoneNorm.includes(queryDigits)) return true
+  const terms = q.split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return true
+  return terms.every((term) => {
+    const td = term.replace(/\D/g, '')
+    if (td.length >= 3 && phoneNorm.includes(td)) return true
+    return haystack.includes(term)
+  })
+}
 import { templateNameSimilar, normalizePhone, buildWhatsAppUrl } from '../_lib/utils'
 import { cachedFetch } from '@/lib/api-client'
 import {
@@ -39,13 +74,14 @@ const btnPrimaryWa =
 
 function BulkWhatsAppPageContent() {
   const [source, setSource] = useState<'leads' | 'customers' | 'paste'>('leads')
-  const [leads, setLeads] = useState<LeadRecipient[]>([])
-  const [customers, setCustomers] = useState<CustomerRecipient[]>([])
+  const [leads, setLeads] = useState<LeadRecipientRow[]>([])
+  const [customers, setCustomers] = useState<CustomerRecipientRow[]>([])
   const [pastedText, setPastedText] = useState('')
   const [uploadHint, setUploadHint] = useState<string | null>(null)
   const recipientFileInputRef = useRef<HTMLInputElement>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
+  const [searchTrigger, setSearchTrigger] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null)
@@ -124,45 +160,91 @@ function BulkWhatsAppPageContent() {
   }, [approvedTemplates, metaTemplates, selectedTemplateId])
 
   useEffect(() => {
-    if (source !== 'leads') return
+    if (source === 'paste') {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setLoadError(null)
-    cachedFetch('/api/leads')
-      .then((res) => {
-        if (!res.ok) throw new Error(res.status === 403 ? "You don't have access to leads." : 'Failed to load leads')
-        return res.json()
-      })
-      .then((data) => {
-        const list: LeadRecipient[] = (data.leads || []).map((l: { id: string; name?: string; phone?: string }) => ({
-          id: l.id,
-          name: l.name || '—',
-          phone: l.phone || '',
-          type: 'lead' as const,
-        })).filter((r: LeadRecipient) => normalizePhone(r.phone).length >= 10)
-        setLeads(list)
-        setSelectedIds(new Set())
-      })
-      .catch((e: Error) => setLoadError(e.message))
-      .finally(() => setLoading(false))
-  }, [source])
-
-  useEffect(() => {
-    if (source !== 'customers') return
-    setLoading(true)
-    setLoadError(null)
-    cachedFetch('/api/customers')
-      .then((res) => {
-        if (!res.ok) throw new Error(res.status === 403 ? "You don't have access to customers." : 'Failed to load customers')
-        return res.json()
-      })
-      .then((data) => {
-        const list: CustomerRecipient[] = (data.customers || []).map((c: { id: string; name?: string; phone?: string }) => ({
-          id: c.id,
-          name: c.name || '—',
-          phone: c.phone || '',
-          type: 'customer' as const,
-        })).filter((r: CustomerRecipient) => normalizePhone(r.phone).length >= 10)
-        setCustomers(list)
+    Promise.all([
+      cachedFetch('/api/leads').then((res) => (res.ok ? res.json() : { leads: [] })),
+      cachedFetch('/api/customers').then((res) => (res.ok ? res.json() : { customers: [] })),
+    ])
+      .then(([leadsData, customersData]) => {
+        const leadList: LeadRecipientRow[] = (leadsData.leads || [])
+          .map(
+            (l: {
+              id: string
+              name?: string | null
+              phone?: string | null
+              email?: string | null
+              requirement?: string | null
+              campaign_name?: string | null
+              ad_name?: string | null
+              lead_id?: string | null
+            }) => {
+              const name = l.name?.trim() || '—'
+              const phone = l.phone || ''
+              const searchHaystack = lowerHay(
+                name,
+                phone,
+                normalizePhone(phone),
+                l.email,
+                l.requirement,
+                l.campaign_name,
+                l.ad_name,
+                l.lead_id
+              )
+              return {
+                id: l.id,
+                name,
+                phone,
+                type: 'lead' as const,
+                searchHaystack,
+              }
+            }
+          )
+          .filter((r: LeadRecipientRow) => normalizePhone(r.phone).length >= 10)
+        const custList: CustomerRecipientRow[] = (customersData.customers || [])
+          .map(
+            (c: {
+              id: string
+              name?: string | null
+              phone?: string | null
+              email?: string | null
+              dealer_name?: string | null
+              car_model?: string | null
+              car_name?: string | null
+              service_type?: string | null
+              chassis_number?: string | null
+              car_number?: string | null
+            }) => {
+              const name = c.name?.trim() || '—'
+              const phone = c.phone || ''
+              const searchHaystack = lowerHay(
+                name,
+                phone,
+                normalizePhone(phone),
+                c.email,
+                c.dealer_name,
+                c.car_model,
+                c.car_name,
+                c.service_type,
+                c.chassis_number,
+                c.car_number
+              )
+              return {
+                id: c.id,
+                name,
+                phone,
+                type: 'customer' as const,
+                searchHaystack,
+              }
+            }
+          )
+          .filter((r: CustomerRecipientRow) => normalizePhone(r.phone).length >= 10)
+        setLeads(leadList)
+        setCustomers(custList)
         setSelectedIds(new Set())
       })
       .catch((e: Error) => setLoadError(e.message))
@@ -186,18 +268,27 @@ function BulkWhatsAppPageContent() {
   }, [source, pastedText])
 
   const allRecipients: Recipient[] = useMemo(() => {
-    if (source === 'leads') return leads
-    if (source === 'customers') return customers
-    return pastedRecipients
+    if (source === 'paste') return pastedRecipients
+    return [...leads, ...customers]
   }, [source, leads, customers, pastedRecipients])
 
   const filteredRecipients = useMemo(() => {
-    if (!search.trim()) return allRecipients
-    const q = search.toLowerCase()
-    return allRecipients.filter(
-      (r) => r.name.toLowerCase().includes(q) || normalizePhone(r.phone).includes(q.replace(/\D/g, ''))
-    )
-  }, [allRecipients, search])
+    const rawQuery = search.trim()
+    if (!rawQuery) {
+      if (source === 'leads') return leads
+      if (source === 'customers') return customers
+      return pastedRecipients
+    }
+    // Universal search: match leads and customers together (by name, phone, email, and other mapped fields).
+    return allRecipients.filter((r) => {
+      if (r.type === 'pasted') {
+        const hay = lowerHay(r.name, r.phone, normalizePhone(r.phone))
+        return matchesUniversalSearch(hay, r.phone, rawQuery)
+      }
+      const row = r as ListRecipientRow
+      return matchesUniversalSearch(row.searchHaystack, row.phone, rawQuery)
+    })
+  }, [search, searchTrigger, source, leads, customers, pastedRecipients, allRecipients])
 
   const selectedRecipients = useMemo(() => {
     if (source === 'paste') return pastedRecipients
@@ -558,10 +649,10 @@ function BulkWhatsAppPageContent() {
           <div className={cardShell}>
             <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 sm:px-6">
               <p className={sectionLabel}>Audience</p>
-              <p className="mt-1 text-sm text-slate-600">
+                <p className="mt-1 text-sm text-slate-600">
                 {source === 'paste'
                   ? 'Paste one number per line, use Name + number, or upload a CSV / Excel file.'
-                  : 'Search and tick contacts to include.'}
+                  : 'Search matches leads and customers together (name, phone, email, and more). Tabs only filter the list when the search box is empty.'}
               </p>
             </div>
             {source === 'paste' ? (
@@ -632,8 +723,11 @@ function BulkWhatsAppPageContent() {
                     <input
                       type="text"
                       value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search by name or phone..."
+                      onChange={(e) => {
+                        setSearch(e.target.value)
+                        setSearchTrigger((t) => t + 1)
+                      }}
+                      placeholder="Search all leads & customers (name, phone, email…)"
                       className={`${fieldInput} py-2.5 pl-10`}
                     />
                   </div>
@@ -667,6 +761,17 @@ function BulkWhatsAppPageContent() {
                             className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/30"
                           />
                           <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{r.name}</span>
+                          {r.type !== 'pasted' && (
+                            <span
+                              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                r.type === 'lead'
+                                  ? 'bg-sky-100 text-sky-800 ring-1 ring-sky-200/80'
+                                  : 'bg-violet-100 text-violet-800 ring-1 ring-violet-200/80'
+                              }`}
+                            >
+                              {r.type === 'lead' ? 'Lead' : 'Customer'}
+                            </span>
+                          )}
                           <span className="shrink-0 font-mono text-xs text-slate-500 sm:text-sm">{r.phone}</span>
                         </li>
                       ))}
