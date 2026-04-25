@@ -465,6 +465,26 @@ export interface BulkSendResult {
   results: Array<{ phone: string; success: boolean; error?: string; messageId?: string; metaResponse?: unknown }>
 }
 
+function getPositiveInt(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(1, Math.floor(n))
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (!ms || ms <= 0) return
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function runPool<T>(
+  concurrency: number,
+  worker: (workerIndex: number) => Promise<T>
+): Promise<T[]> {
+  const c = Math.max(1, Math.floor(concurrency))
+  const tasks = Array.from({ length: c }, (_, i) => worker(i))
+  return await Promise.all(tasks)
+}
+
 /**
  * Send the same text to multiple recipients. Sends sequentially with a small delay to avoid rate limits.
  */
@@ -1351,32 +1371,51 @@ export async function sendTemplateBulk(
   let sent = 0
   let failed = 0
 
-  for (const r of recipients) {
-    const bodyParams = r.bodyParameters ?? []
-    const result = await sendTemplateMessage(
-      r.phone,
-      templateName,
-      templateLanguage,
-      {
-        bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
-        headerParameters: headerParams && headerParams.length > 0 ? headerParams : undefined,
-        headerFormat,
-        headerMediaId,
-        defaultCountryCode,
-        config: options?.config ?? undefined,
+  // If delay is 0, we can safely run a small concurrent pool to hit targets like 1000/10min.
+  // Concurrency is capped via env so operators can tune based on Meta throughput and infra.
+  const enableConcurrency = delayMs <= 0
+  const envConcurrency = getPositiveInt(process.env.WHATSAPP_BULK_CONCURRENCY, 20)
+  const concurrency = enableConcurrency ? Math.min(50, Math.max(1, envConcurrency)) : 1
+
+  results.length = recipients.length
+  let idx = 0
+
+  await runPool(concurrency, async () => {
+    while (true) {
+      const i = idx++
+      if (i >= recipients.length) return
+      const r = recipients[i]
+      const bodyParams = r.bodyParameters ?? []
+      const result = await sendTemplateMessage(
+        r.phone,
+        templateName,
+        templateLanguage,
+        {
+          bodyParameters: bodyParams.length > 0 ? bodyParams : undefined,
+          headerParameters: headerParams && headerParams.length > 0 ? headerParams : undefined,
+          headerFormat,
+          headerMediaId,
+          defaultCountryCode,
+          config: options?.config ?? undefined,
+        }
+      )
+
+      results[i] = {
+        phone: r.phone,
+        success: result.success,
+        error: result.error,
+        ...(result.messageId && { messageId: result.messageId }),
+        ...(result.metaResponse !== undefined && { metaResponse: result.metaResponse }),
       }
-    )
-    results.push({
-      phone: r.phone,
-      success: result.success,
-      error: result.error,
-      ...(result.messageId && { messageId: result.messageId }),
-      ...(result.metaResponse !== undefined && { metaResponse: result.metaResponse }),
-    })
-    if (result.success) sent++
-    else failed++
-    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
-  }
+
+      if (result.success) sent++
+      else failed++
+
+      // Keep old behavior when delayMs > 0: sequential pacing.
+      // When delayMs === 0: no sleep (pool controls speed).
+      if (!enableConcurrency) await sleep(delayMs)
+    }
+  })
 
   return { sent, failed, results }
 }

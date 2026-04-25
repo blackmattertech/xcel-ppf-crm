@@ -78,7 +78,7 @@ export default function ScheduledBroadcastsPage() {
   const [editError, setEditError] = useState<string | null>(null)
 
   const [scheduledLocal, setScheduledLocal] = useState('')
-  const [delayMs, setDelayMs] = useState(250)
+  const [delayMs, setDelayMs] = useState(0)
   const [recipientsText, setRecipientsText] = useState('')
   const [bodyParamsText, setBodyParamsText] = useState('')
   const [headerParamsText, setHeaderParamsText] = useState('')

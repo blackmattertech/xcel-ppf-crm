@@ -116,28 +116,16 @@ function extractReplyToMetaId(msg: unknown): string | null {
 
 /** Meta `context.from` — who sent the quoted message (digits). Used for CRM quote labels. */
 function extractReplyContextFrom(msg: unknown): string | null {
-  const selfFrom =
-    msg && typeof msg === 'object' && typeof (msg as Record<string, unknown>).from === 'string'
-      ? String((msg as Record<string, unknown>).from).trim()
-      : ''
+  // IMPORTANT: Only treat `context.from` as reply metadata when Meta actually sent a reply context.
+  // Older fallback heuristics were too permissive and caused normal inbound messages to render as replies in the inbox UI.
   const ctx = readContext(msg)
-  if (ctx) {
-    const from = ctx.from
-    if (typeof from === 'string' && from.trim()) return from.trim()
-  }
-
-  for (const obj of collectObjects(msg)) {
-    const candidate = obj.from ?? obj.sender ?? obj.author
-    if (typeof candidate !== 'string') continue
-    const normalized = candidate.replace(/\D/g, '')
-    if (normalized.length >= 8) return candidate.trim()
-  }
-  for (const s of collectStrings(msg)) {
-    const digits = s.replace(/\D/g, '')
-    if (digits.length < 8) continue
-    if (selfFrom && digits === selfFrom.replace(/\D/g, '')) continue
-    return s
-  }
+  if (!ctx) return null
+  const hasContextId =
+    (typeof ctx.id === 'string' && ctx.id.trim()) ||
+    (typeof (ctx as Record<string, unknown>).message_id === 'string' && String((ctx as Record<string, unknown>).message_id).trim())
+  if (!hasContextId) return null
+  const from = ctx.from
+  if (typeof from === 'string' && from.trim()) return from.trim()
   return null
 }
 
@@ -419,6 +407,8 @@ export async function POST(request: NextRequest) {
           }
 
           const metaId = typeof msg.id === 'string' ? msg.id.trim() : String(msg.id ?? '').trim()
+          const replyTo = extractReplyToMetaId(msg)
+          const replyFrom = replyTo ? extractReplyContextFrom(msg) : null
           let saved
           try {
             saved = await saveIncomingMessage({
@@ -430,8 +420,8 @@ export async function POST(request: NextRequest) {
               attachmentUrl,
               attachmentMimeType,
               attachmentFileName,
-              replyToMetaMessageId: extractReplyToMetaId(msg),
-              replyContextFrom: extractReplyContextFrom(msg),
+              replyToMetaMessageId: replyTo,
+              replyContextFrom: replyFrom,
             })
           } catch (err) {
             console.error('[webhooks/whatsapp] saveIncomingMessage threw:', err)

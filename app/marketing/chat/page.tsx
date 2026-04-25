@@ -1627,7 +1627,7 @@ function ChatWithLeadsPageInner() {
                                 : 'bg-white text-gray-900 rounded-bl-md border border-gray-200'
                             }`}
                           >
-                          {(normalizeWamid(msg.reply_to_meta_message_id) || msg.reply_context_from?.trim()) && (() => {
+                          {normalizeWamid(msg.reply_to_meta_message_id) && (() => {
                             const replyId = normalizeWamid(msg.reply_to_meta_message_id)
                             const quoted = replyId ? findQuotedMessage(messages, replyId) : undefined
                             const inferredUs =

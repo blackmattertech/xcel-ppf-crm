@@ -224,7 +224,8 @@ export async function resolveBroadcastPayload(
     templateName,
     templateLanguage,
     recipients,
-    delayMs: Math.min(60000, Math.max(0, data.delayMs ?? 250)),
+    // Default to 0 so bulk sends don't unintentionally take hours (delayMs * recipients).
+    delayMs: Math.min(60000, Math.max(0, data.delayMs ?? 0)),
     defaultCountryCode: data.defaultCountryCode ?? '91',
     headerParameters,
     headerFormat,

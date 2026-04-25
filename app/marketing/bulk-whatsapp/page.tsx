@@ -93,7 +93,7 @@ function BulkWhatsAppPageContent() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [templateParamValues, setTemplateParamValues] = useState<string[]>([])
   const [templateHeaderParamValues, setTemplateHeaderParamValues] = useState<string[]>([])
-  const [delayMs, setDelayMs] = useState(250)
+  const [delayMs, setDelayMs] = useState(0)
   const [scheduleAt, setScheduleAt] = useState('')
   const [processingScheduled, setProcessingScheduled] = useState(false)
   const [processScheduledResult, setProcessScheduledResult] = useState<{
@@ -884,7 +884,7 @@ function BulkWhatsAppPageContent() {
                   onChange={(e) => setDelayMs(Math.max(0, Math.min(60000, parseInt(e.target.value, 10) || 0)))}
                   className={fieldInput}
                 />
-                <p className="mt-1.5 text-xs text-slate-500">e.g. 250–1000 to avoid rate limits</p>
+                <p className="mt-1.5 text-xs text-slate-500">Use 0 for fastest send; increase only if Meta rate-limits.</p>
               </div>
               <div>
                 <label className="mb-2 text-sm font-semibold text-slate-800">Schedule for (optional)</label>
