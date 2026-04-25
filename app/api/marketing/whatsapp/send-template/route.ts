@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
   const templateRow =
     (parsed.data.templateId ? await getTemplateById(parsed.data.templateId) : null) ??
     (await getTemplateByNameAndLanguage(payload.templateName, payload.templateLanguage))
+  const metaTemplateId = templateRow?.meta_id ?? null
   for (let i = 0; i < result.results.length; i++) {
     const r = result.results[i]
     if (r.success) {
@@ -121,6 +122,8 @@ export async function POST(request: NextRequest) {
         phone: recipient?.phone ?? r.phone,
         body: bodyForChat,
         metaMessageId: r.messageId ?? undefined,
+        templateName: payload.templateName,
+        metaTemplateId,
       })
     }
   }

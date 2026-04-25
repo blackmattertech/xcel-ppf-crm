@@ -4,7 +4,8 @@ import { createServiceClient } from '@/lib/supabase/service'
 
 function parseTemplateName(body: string | null): string | null {
   if (!body || typeof body !== 'string') return null
-  const m = body.match(/^\[Template:\s*(.+?)\]\s*$/i)
+  // Accept multi-line "template preview" bodies and legacy single-line bodies.
+  const m = body.match(/^\s*\[Template:\s*(.+?)\]\s*$/im) ?? body.match(/\[Template:\s*(.+?)\]/i)
   return m ? m[1].trim() || null : null
 }
 
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('whatsapp_messages')
-      .select('phone, lead_id, status, created_at, body')
+      .select('phone, lead_id, status, created_at, body, template_name')
       .eq('direction', 'out')
       .order('created_at', { ascending: false })
       .limit(5000)
@@ -77,10 +78,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    type MsgRow = { phone: string; lead_id: string | null; status: string | null; created_at: string; body: string | null }
+    type MsgRow = { phone: string; lead_id: string | null; status: string | null; created_at: string; body: string | null; template_name?: string | null }
 
     const templateMsgs = ((msgs ?? []) as MsgRow[]).filter(
-      (m) => parseTemplateName(m.body) === templateName
+      (m) => (m.template_name ?? parseTemplateName(m.body)) === templateName
     )
 
     if (templateMsgs.length === 0) return NextResponse.json(empty)

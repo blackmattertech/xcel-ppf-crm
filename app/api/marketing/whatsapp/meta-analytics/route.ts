@@ -94,7 +94,8 @@ function toUnix(iso: string): number {
 
 function parseTemplateName(body: string | null): string | null {
   if (!body) return null
-  const m = body.match(/^\[Template:\s*(.+?)\]\s*$/i)
+  // Accept multi-line "template preview" bodies and legacy single-line bodies.
+  const m = body.match(/^\s*\[Template:\s*(.+?)\]\s*$/im) ?? body.match(/\[Template:\s*(.+?)\]/i)
   return m ? m[1].trim() || null : null
 }
 
@@ -253,7 +254,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // Query whatsapp_messages for failed status, group by template name in body
     const { data: failedMsgs } = await supabase
       .from('whatsapp_messages')
-      .select('body, status')
+      .select('body, status, template_name')
       .eq('direction', 'out')
       .eq('status', 'failed')
       .gte('created_at', startDate)
@@ -261,15 +262,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .limit(5000)
 
     const failedByTemplate = new Map<string, number>()
-    for (const m of (failedMsgs ?? []) as Array<{ body: string | null; status: string | null }>) {
-      const name = parseTemplateName(m.body)
+    for (const m of (failedMsgs ?? []) as Array<{ body: string | null; status: string | null; template_name?: string | null }>) {
+      const name = m.template_name ?? parseTemplateName(m.body)
       if (name) failedByTemplate.set(name, (failedByTemplate.get(name) ?? 0) + 1)
     }
 
     // Pending (not sent) counts
     const { data: pendingMsgs } = await supabase
       .from('whatsapp_messages')
-      .select('body, status')
+      .select('body, status, template_name')
       .eq('direction', 'out')
       .is('status', null)
       .gte('created_at', startDate)
@@ -277,8 +278,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .limit(2000)
 
     const pendingByTemplate = new Map<string, number>()
-    for (const m of (pendingMsgs ?? []) as Array<{ body: string | null; status: string | null }>) {
-      const name = parseTemplateName(m.body)
+    for (const m of (pendingMsgs ?? []) as Array<{ body: string | null; status: string | null; template_name?: string | null }>) {
+      const name = m.template_name ?? parseTemplateName(m.body)
       if (name) pendingByTemplate.set(name, (pendingByTemplate.get(name) ?? 0) + 1)
     }
 

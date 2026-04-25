@@ -6,7 +6,9 @@ import { getCache, setCache, CACHE_TTL } from '@/lib/cache'
 /** Parse template name from body when saved as "[Template: name]" from send-template. */
 function parseTemplateName(body: string | null): string | null {
   if (!body || typeof body !== 'string') return null
-  const m = body.match(/^\[Template:\s*(.+?)\]\s*$/i)
+  // Accept multi-line "template preview" bodies and legacy single-line bodies.
+  // We only need the first "[Template: ...]" marker anywhere in the text.
+  const m = body.match(/^\s*\[Template:\s*(.+?)\]\s*$/im) ?? body.match(/\[Template:\s*(.+?)\]/i)
   return m ? m[1].trim() || null : null
 }
 
@@ -60,7 +62,7 @@ export async function GET(request: NextRequest) {
 
     const { data: rows, error } = await supabase
       .from('whatsapp_messages')
-      .select('direction, status, body, created_at')
+      .select('direction, status, body, created_at, template_name')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
 
@@ -79,7 +81,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const messages = (rows ?? []) as Array<{ direction: string; status: string | null; body: string; created_at: string }>
+    const messages = (rows ?? []) as Array<{ direction: string; status: string | null; body: string; created_at: string; template_name?: string | null }>
 
     const messagesByDirection: Record<string, number> = { in: 0, out: 0 }
     const messagesByStatus: Record<string, number> = {}
@@ -100,7 +102,7 @@ export async function GET(request: NextRequest) {
       if (m.direction === 'out') {
         const status = m.status && m.status.trim() ? m.status.trim().toLowerCase() : 'pending'
         messagesByStatus[status] = (messagesByStatus[status] ?? 0) + 1
-        const template = parseTemplateName(m.body)
+        const template = m.template_name ?? parseTemplateName(m.body)
         if (template) {
           templateCounts[template] = (templateCounts[template] ?? 0) + 1
           if (!templateByStatus[template]) {

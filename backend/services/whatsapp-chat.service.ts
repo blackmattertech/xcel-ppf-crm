@@ -184,6 +184,10 @@ export async function saveOutgoingMessage(params: {
   phone: string
   body: string
   metaMessageId?: string | null
+  /** Optional template marker for accurate analytics. */
+  templateName?: string | null
+  /** Optional Meta template id (whatsapp_templates.meta_id). */
+  metaTemplateId?: string | null
   messageType?: 'text' | 'image' | 'video' | 'document'
   attachmentUrl?: string | null
   attachmentMimeType?: string | null
@@ -216,6 +220,8 @@ export async function saveOutgoingMessage(params: {
         conversation_key: toConversationKey(phone),
         direction: 'out',
         body: params.body,
+        template_name: params.templateName?.trim() || null,
+        meta_template_id: params.metaTemplateId?.trim() || null,
         message_type: params.messageType ?? 'text',
         attachment_url: params.attachmentUrl ?? null,
         attachment_mime_type: params.attachmentMimeType ?? null,
@@ -236,6 +242,40 @@ export async function saveOutgoingMessage(params: {
   const { data, error } = await tryInsert(params.leadId || null)
   if (!error && data) return { success: true, data: data as WhatsAppMessageRow }
 
+  // If template columns are missing (migration not applied), retry without them.
+  const missingTemplateCols =
+    error &&
+    (error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      /template_name|meta_template_id|column.*does not exist/i.test(String((error as { message?: string }).message ?? '')))
+  if (missingTemplateCols) {
+    const { data: retryData, error: retryError } = await supabase
+      .from('whatsapp_messages')
+      .insert({
+        lead_id: params.leadId || null,
+        phone,
+        conversation_key: toConversationKey(phone),
+        direction: 'out',
+        body: params.body,
+        message_type: params.messageType ?? 'text',
+        attachment_url: params.attachmentUrl ?? null,
+        attachment_mime_type: params.attachmentMimeType ?? null,
+        attachment_file_name: params.attachmentFileName ?? null,
+        attachment_size_bytes: params.attachmentSizeBytes ?? null,
+        thumbnail_url: params.thumbnailUrl ?? null,
+        assigned_to: params.assignedTo ?? null,
+        is_read: true,
+        read_at: new Date().toISOString(),
+        meta_message_id: params.metaMessageId?.trim() || null,
+        reply_to_meta_message_id: params.replyToMetaMessageId?.trim() || null,
+      } as never)
+      .select()
+      .single()
+    if (!retryError && retryData) return { success: true, data: retryData as WhatsAppMessageRow }
+    if (retryError) logError(retryError)
+    return { success: false, errorCode: retryError?.code, errorMessage: retryError?.message }
+  }
+
   // 23503 = foreign key violation (lead_id doesn't exist in leads). Retry without lead_id to save by phone.
   if (error?.code === '23503' && params.leadId) {
     const retry = await tryInsert(null)
@@ -255,6 +295,8 @@ export async function saveOutgoingMessagesBatch(
     phone: string
     body: string
     metaMessageId?: string | null
+    templateName?: string | null
+    metaTemplateId?: string | null
   }>
 ): Promise<void> {
   if (rows.length === 0) return
@@ -265,8 +307,26 @@ export async function saveOutgoingMessagesBatch(
     direction: 'out' as const,
     body: r.body,
     meta_message_id: r.metaMessageId?.trim() || null,
+    template_name: r.templateName?.trim() || null,
+    meta_template_id: r.metaTemplateId?.trim() || null,
   }))
-  const { error } = await supabase.from('whatsapp_messages').insert(payload as never)
+  let { error } = await supabase.from('whatsapp_messages').insert(payload as never)
+  // Backward compatible: retry without new columns if migration missing
+  const missingTemplateCols =
+    error &&
+    (error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      /template_name|meta_template_id|column.*does not exist/i.test(String((error as { message?: string }).message ?? '')))
+  if (missingTemplateCols) {
+    const fallback = rows.map((r) => ({
+      lead_id: r.leadId || null,
+      phone: normalizePhoneForStorage(r.phone),
+      direction: 'out' as const,
+      body: r.body,
+      meta_message_id: r.metaMessageId?.trim() || null,
+    }))
+    ;({ error } = await supabase.from('whatsapp_messages').insert(fallback as never))
+  }
   if (error) {
     console.error('[whatsapp-chat] saveOutgoingMessagesBatch FAILED:', error.message)
   }
