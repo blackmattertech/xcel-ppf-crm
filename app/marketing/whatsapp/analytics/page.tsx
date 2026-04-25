@@ -262,6 +262,9 @@ export default function WhatsAppAnalyticsPage() {
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
   const [templateRecipients, setTemplateRecipients] = useState<Record<string, TemplateRecipientsData>>({})
   const [templateLoading, setTemplateLoading] = useState<string | null>(null)
+  const [templateRecipientFilter, setTemplateRecipientFilter] = useState<
+    Record<string, 'all' | 'sent' | 'delivered' | 'read' | 'failed' | 'replied'>
+  >({})
 
   // Campaign drill-down
   const [expandedStatus, setExpandedStatus] = useState<string | null>(null)
@@ -345,6 +348,7 @@ export default function WhatsAppAnalyticsPage() {
   const toggleMetaTemplate = async (templateName: string) => {
     if (expandedMetaTemplate === templateName) { setExpandedMetaTemplate(null); return }
     setExpandedMetaTemplate(templateName)
+    setTemplateRecipientFilter((prev) => (prev[templateName] ? prev : { ...prev, [templateName]: 'all' }))
     if (templateRecipients[templateName]) return
     setTemplateLoading(templateName)
     try {
@@ -363,6 +367,7 @@ export default function WhatsAppAnalyticsPage() {
   const toggleTemplate = async (templateName: string) => {
     if (expandedTemplate === templateName) { setExpandedTemplate(null); return }
     setExpandedTemplate(templateName)
+    setTemplateRecipientFilter((prev) => (prev[templateName] ? prev : { ...prev, [templateName]: 'all' }))
     if (templateRecipients[templateName]) return // already loaded
     setTemplateLoading(templateName)
     try {
@@ -644,21 +649,39 @@ export default function WhatsAppAnalyticsPage() {
                               <div className="px-5 py-6 text-sm text-slate-500">No CRM recipient data for this template.</div>
                             ) : (
                               <>
-                                <div className="grid grid-cols-3 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-6">
-                                  {[
-                                    { label: 'Total', value: recData.summary.total, color: 'text-slate-900' },
-                                    { label: 'Sent', value: recData.summary.sent, color: 'text-emerald-700' },
-                                    { label: 'Delivered', value: recData.summary.delivered, color: 'text-teal-700' },
-                                    { label: 'Read', value: recData.summary.read, color: 'text-sky-700' },
-                                    { label: 'Failed', value: recData.summary.failed, color: 'text-rose-700' },
-                                    { label: 'Replied', value: recData.summary.replied, color: 'text-violet-700' },
-                                  ].map((m) => (
-                                    <div key={m.label} className="flex flex-col items-center bg-white px-3 py-2.5">
-                                      <span className={`text-lg font-bold tabular-nums ${m.color}`}>{formatInt(m.value)}</span>
-                                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{m.label}</span>
+                                {(() => {
+                                  const active = templateRecipientFilter[t.templateName] ?? 'all'
+                                  const set = (v: typeof active) => setTemplateRecipientFilter((prev) => ({ ...prev, [t.templateName]: v }))
+                                  const metrics: Array<{ label: string; value: number; color: string; filter: typeof active }> = [
+                                    { label: 'Total', value: recData.summary.total, color: 'text-slate-900', filter: 'all' },
+                                    { label: 'Sent', value: recData.summary.sent, color: 'text-emerald-700', filter: 'sent' },
+                                    { label: 'Delivered', value: recData.summary.delivered, color: 'text-teal-700', filter: 'delivered' },
+                                    { label: 'Read', value: recData.summary.read, color: 'text-sky-700', filter: 'read' },
+                                    { label: 'Failed', value: recData.summary.failed, color: 'text-rose-700', filter: 'failed' },
+                                    { label: 'Replied', value: recData.summary.replied, color: 'text-violet-700', filter: 'replied' },
+                                  ]
+
+                                  return (
+                                    <div className="grid grid-cols-3 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-6">
+                                      {metrics.map((m) => {
+                                        const isActive = active === m.filter
+                                        return (
+                                          <button
+                                            key={m.label}
+                                            type="button"
+                                            aria-pressed={isActive}
+                                            onClick={() => set(m.filter)}
+                                            className={`flex flex-col items-center bg-white px-3 py-2.5 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${isActive ? 'ring-2 ring-inset ring-slate-900/10' : ''}`}
+                                            title={`Show ${m.label.toLowerCase()} recipients`}
+                                          >
+                                            <span className={`text-lg font-bold tabular-nums ${m.color}`}>{formatInt(m.value)}</span>
+                                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${isActive ? 'text-slate-700' : 'text-slate-400'}`}>{m.label}</span>
+                                          </button>
+                                        )
+                                      })}
                                     </div>
-                                  ))}
-                                </div>
+                                  )
+                                })()}
                                 <div className="max-h-96 overflow-y-auto">
                                   <table className="w-full text-sm">
                                     <thead className="sticky top-0 z-10">
@@ -672,7 +695,16 @@ export default function WhatsAppAnalyticsPage() {
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white">
-                                      {recData.recipients.map((r, i) => (
+                                      {(() => {
+                                        const active = templateRecipientFilter[t.templateName] ?? 'all'
+                                        const recipients =
+                                          active === 'all'
+                                            ? recData.recipients
+                                            : active === 'replied'
+                                              ? recData.recipients.filter((r) => r.replied)
+                                              : recData.recipients.filter((r) => r.status === active)
+
+                                        return recipients.map((r, i) => (
                                         <tr key={i} className={`transition hover:bg-slate-50/80 ${r.status === 'failed' ? 'bg-rose-50/40' : ''}`}>
                                           <td className="px-4 py-2.5">
                                             <span className="flex items-center gap-1.5 font-medium text-slate-800">
@@ -697,7 +729,8 @@ export default function WhatsAppAnalyticsPage() {
                                             </Link>
                                           </td>
                                         </tr>
-                                      ))}
+                                        ))
+                                      })()}
                                     </tbody>
                                   </table>
                                 </div>
@@ -831,21 +864,39 @@ export default function WhatsAppAnalyticsPage() {
                           ) : (
                             <>
                               {/* Recipient summary bar */}
-                              <div className="grid grid-cols-3 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-6">
-                                {[
-                                  { label: 'Total', value: recData.summary.total, color: 'text-slate-900' },
-                                  { label: 'Sent', value: recData.summary.sent, color: 'text-emerald-700' },
-                                  { label: 'Delivered', value: recData.summary.delivered, color: 'text-teal-700' },
-                                  { label: 'Read', value: recData.summary.read, color: 'text-sky-700' },
-                                  { label: 'Failed', value: recData.summary.failed, color: 'text-rose-700' },
-                                  { label: 'Replied', value: recData.summary.replied, color: 'text-violet-700' },
-                                ].map((m) => (
-                                  <div key={m.label} className="flex flex-col items-center bg-white px-3 py-2.5">
-                                    <span className={`text-lg font-bold tabular-nums ${m.color}`}>{formatInt(m.value)}</span>
-                                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{m.label}</span>
+                              {(() => {
+                                const active = templateRecipientFilter[row.template] ?? 'all'
+                                const set = (v: typeof active) => setTemplateRecipientFilter((prev) => ({ ...prev, [row.template]: v }))
+                                const metrics: Array<{ label: string; value: number; color: string; filter: typeof active }> = [
+                                  { label: 'Total', value: recData.summary.total, color: 'text-slate-900', filter: 'all' },
+                                  { label: 'Sent', value: recData.summary.sent, color: 'text-emerald-700', filter: 'sent' },
+                                  { label: 'Delivered', value: recData.summary.delivered, color: 'text-teal-700', filter: 'delivered' },
+                                  { label: 'Read', value: recData.summary.read, color: 'text-sky-700', filter: 'read' },
+                                  { label: 'Failed', value: recData.summary.failed, color: 'text-rose-700', filter: 'failed' },
+                                  { label: 'Replied', value: recData.summary.replied, color: 'text-violet-700', filter: 'replied' },
+                                ]
+
+                                return (
+                                  <div className="grid grid-cols-3 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-6">
+                                    {metrics.map((m) => {
+                                      const isActive = active === m.filter
+                                      return (
+                                        <button
+                                          key={m.label}
+                                          type="button"
+                                          aria-pressed={isActive}
+                                          onClick={() => set(m.filter)}
+                                          className={`flex flex-col items-center bg-white px-3 py-2.5 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${isActive ? 'ring-2 ring-inset ring-slate-900/10' : ''}`}
+                                          title={`Show ${m.label.toLowerCase()} recipients`}
+                                        >
+                                          <span className={`text-lg font-bold tabular-nums ${m.color}`}>{formatInt(m.value)}</span>
+                                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${isActive ? 'text-slate-700' : 'text-slate-400'}`}>{m.label}</span>
+                                        </button>
+                                      )
+                                    })}
                                   </div>
-                                ))}
-                              </div>
+                                )
+                              })()}
 
                               {/* Recipient table */}
                               <div className="max-h-96 overflow-y-auto">
@@ -861,7 +912,16 @@ export default function WhatsAppAnalyticsPage() {
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100 bg-white">
-                                    {recData.recipients.map((r, i) => (
+                                    {(() => {
+                                      const active = templateRecipientFilter[row.template] ?? 'all'
+                                      const recipients =
+                                        active === 'all'
+                                          ? recData.recipients
+                                          : active === 'replied'
+                                            ? recData.recipients.filter((r) => r.replied)
+                                            : recData.recipients.filter((r) => r.status === active)
+
+                                      return recipients.map((r, i) => (
                                       <tr key={i} className={`transition hover:bg-slate-50/80 ${r.status === 'failed' ? 'bg-rose-50/40' : ''}`}>
                                         <td className="px-4 py-2.5">
                                           <span className="flex items-center gap-1.5 font-medium text-slate-800">
@@ -893,7 +953,8 @@ export default function WhatsAppAnalyticsPage() {
                                           </Link>
                                         </td>
                                       </tr>
-                                    ))}
+                                      ))
+                                    })()}
                                   </tbody>
                                 </table>
                               </div>
