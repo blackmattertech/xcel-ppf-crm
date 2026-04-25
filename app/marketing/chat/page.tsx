@@ -1627,8 +1627,13 @@ function ChatWithLeadsPageInner() {
                                 : 'bg-white text-gray-900 rounded-bl-md border border-gray-200'
                             }`}
                           >
-                          {normalizeWamid(msg.reply_to_meta_message_id) && (() => {
+                          {(() => {
                             const replyId = normalizeWamid(msg.reply_to_meta_message_id)
+                            const selfId = normalizeWamid(msg.meta_message_id)
+                            if (!replyId) return null
+                            if (!replyId.startsWith('wamid.')) return null
+                            // Safety: ignore webhook bugs where reply points to itself.
+                            if (selfId && replyId === selfId) return null
                             const quoted = replyId ? findQuotedMessage(messages, replyId) : undefined
                             const inferredUs =
                               quoted == null && selectedContact

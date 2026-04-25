@@ -88,20 +88,39 @@ function extractReplyToMetaId(msg: unknown): string | null {
   const ctx = readContext(msg)
   if (ctx) {
     const id = ctx.id
-    if (typeof id === 'string' && id.trim()) return id.trim()
+    if (typeof id === 'string' && id.trim()) {
+      const trimmed = id.trim()
+      // Only treat WhatsApp message ids (wamid.*) as replies. Other context ids exist (referrals, etc.)
+      // and must not render as "quoted reply" UI.
+      if (trimmed.startsWith('wamid.')) {
+        if (selfWamid && trimmed === selfWamid) return null
+        return trimmed
+      }
+    }
     const messageId = (ctx as Record<string, unknown>).message_id
-    if (typeof messageId === 'string' && messageId.trim()) return messageId.trim()
+    if (typeof messageId === 'string' && messageId.trim()) {
+      const trimmed = String(messageId).trim()
+      if (trimmed.startsWith('wamid.')) {
+        if (selfWamid && trimmed === selfWamid) return null
+        return trimmed
+      }
+    }
   }
 
   // Fallback for payload variants where reply reference is nested differently.
   for (const obj of collectObjects(msg)) {
-    const keys: Array<keyof typeof obj> = ['message_id', 'quoted_message_id', 'reply_to', 'context_message_id', 'id']
+    // Do NOT include plain "id" here: most objects contain the current message id, which would
+    // incorrectly mark the message as "replying to itself" and render a fake quoted block in the inbox UI.
+    const keys: Array<keyof typeof obj> = ['message_id', 'quoted_message_id', 'reply_to', 'context_message_id']
     for (const k of keys) {
       const v = obj[k]
       if (typeof v !== 'string') continue
       const trimmed = v.trim()
       if (!trimmed) continue
-      if (trimmed.startsWith('wamid.')) return trimmed
+      if (trimmed.startsWith('wamid.')) {
+        if (selfWamid && trimmed === selfWamid) continue
+        return trimmed
+      }
     }
   }
 
@@ -121,8 +140,8 @@ function extractReplyContextFrom(msg: unknown): string | null {
   const ctx = readContext(msg)
   if (!ctx) return null
   const hasContextId =
-    (typeof ctx.id === 'string' && ctx.id.trim()) ||
-    (typeof (ctx as Record<string, unknown>).message_id === 'string' && String((ctx as Record<string, unknown>).message_id).trim())
+    (typeof ctx.id === 'string' && ctx.id.trim().startsWith('wamid.')) ||
+    (typeof (ctx as Record<string, unknown>).message_id === 'string' && String((ctx as Record<string, unknown>).message_id).trim().startsWith('wamid.'))
   if (!hasContextId) return null
   const from = ctx.from
   if (typeof from === 'string' && from.trim()) return from.trim()
