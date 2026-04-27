@@ -2,6 +2,10 @@
  * Supabase Edge Function: process scheduled WhatsApp broadcasts.
  * Run by pg_cron every minute. Reads due jobs from scheduled_broadcasts,
  * gets WhatsApp config from whatsapp_business_settings (or env), sends via Meta API.
+ *
+ * For large lists (100+), prefer the Next.js route instead — it chunks, persists progress in
+ * `result_json.broadcastProgress`, retries failures, and writes `whatsapp_messages`:
+ * GET /api/marketing/whatsapp/process-scheduled?secret=...
  */
 import { createClient } from "npm:@supabase/supabase-js@2"
 

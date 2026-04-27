@@ -297,6 +297,8 @@ export async function saveOutgoingMessagesBatch(
     metaMessageId?: string | null
     templateName?: string | null
     metaTemplateId?: string | null
+    /** When Meta accepted the send, mark sent immediately so CRM is not stuck on pending until webhook. */
+    initialStatus?: 'sent' | null
   }>
 ): Promise<void> {
   if (rows.length === 0) return
@@ -309,6 +311,7 @@ export async function saveOutgoingMessagesBatch(
     meta_message_id: r.metaMessageId?.trim() || null,
     template_name: r.templateName?.trim() || null,
     meta_template_id: r.metaTemplateId?.trim() || null,
+    ...(r.initialStatus ? { status: r.initialStatus } : {}),
   }))
   let { error } = await supabase.from('whatsapp_messages').insert(payload as never)
   // Backward compatible: retry without new columns if migration missing
@@ -324,6 +327,7 @@ export async function saveOutgoingMessagesBatch(
       direction: 'out' as const,
       body: r.body,
       meta_message_id: r.metaMessageId?.trim() || null,
+      ...(r.initialStatus ? { status: r.initialStatus } : {}),
     }))
     ;({ error } = await supabase.from('whatsapp_messages').insert(fallback as never))
   }
