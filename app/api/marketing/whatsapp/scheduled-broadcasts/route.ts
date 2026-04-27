@@ -11,6 +11,8 @@ export interface ScheduledBroadcastListItem {
   templateName: string
   templateLanguage: string
   recipientCount: number
+  /** From last `result_json.sent` when job finished (Meta successes recorded on job). */
+  lastJobSentCount: number | null
   delayMs: number
   errorMessage: string | null
 }
@@ -21,12 +23,15 @@ type ScheduledBroadcastListRow = {
   status: string
   created_at: string
   payload_json: unknown
+  result_json: unknown
   error_message: string | null
 }
 
 function mapRow(row: ScheduledBroadcastListRow): ScheduledBroadcastListItem {
   const payload = row.payload_json as ResolvedBroadcastPayload | null
   const recipients = Array.isArray(payload?.recipients) ? payload.recipients : []
+  const rj = row.result_json as { sent?: number } | null
+  const lastJobSentCount = typeof rj?.sent === 'number' ? rj.sent : null
   return {
     id: row.id,
     scheduledAt: row.scheduled_at,
@@ -35,6 +40,7 @@ function mapRow(row: ScheduledBroadcastListRow): ScheduledBroadcastListItem {
     templateName: payload?.templateName ?? '—',
     templateLanguage: payload?.templateLanguage ?? '—',
     recipientCount: recipients.length,
+    lastJobSentCount,
     delayMs: payload?.delayMs ?? 250,
     errorMessage: row.error_message,
   }
@@ -56,7 +62,7 @@ export async function GET(request: NextRequest) {
 
     const { data: rows, error } = await supabase
       .from('scheduled_broadcasts')
-      .select('id, scheduled_at, status, created_at, payload_json, error_message')
+      .select('id, scheduled_at, status, created_at, payload_json, result_json, error_message')
       .eq('created_by', user.id)
       .order('scheduled_at', { ascending: false })
       .limit(limit)

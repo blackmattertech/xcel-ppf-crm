@@ -21,6 +21,7 @@ interface ListItem {
   templateName: string
   templateLanguage: string
   recipientCount: number
+  lastJobSentCount: number | null
   delayMs: number
   errorMessage: string | null
 }
@@ -72,6 +73,8 @@ export default function ScheduledBroadcastsPage() {
   const [items, setItems] = useState<ListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
+  const [actionBanner, setActionBanner] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [resumeId, setResumeId] = useState<string | null>(null)
 
   const [editId, setEditId] = useState<string | null>(null)
   const [editLoading, setEditLoading] = useState(false)
@@ -91,7 +94,13 @@ export default function ScheduledBroadcastsPage() {
       const res = await fetch('/api/marketing/whatsapp/scheduled-broadcasts', { credentials: 'include' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to load')
-      setItems(Array.isArray(data.items) ? data.items : [])
+      const raw = Array.isArray(data.items) ? data.items : []
+      setItems(
+        raw.map((it: ListItem) => ({
+          ...it,
+          lastJobSentCount: typeof it.lastJobSentCount === 'number' ? it.lastJobSentCount : null,
+        }))
+      )
     } catch (e) {
       setListError(e instanceof Error ? e.message : 'Failed to load')
       setItems([])
@@ -99,6 +108,34 @@ export default function ScheduledBroadcastsPage() {
       setLoading(false)
     }
   }, [])
+
+  const resumeMissingSends = async (jobId: string) => {
+    setActionBanner(null)
+    setResumeId(jobId)
+    try {
+      const res = await fetch(`/api/marketing/whatsapp/scheduled-broadcasts/${jobId}/resume`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setActionBanner({ type: 'err', text: typeof data.error === 'string' ? data.error : `HTTP ${res.status}` })
+        return
+      }
+      const msg =
+        typeof data.message === 'string'
+          ? data.message
+          : data.requeued > 0
+            ? `Re-queued ${data.requeued} recipient(s). Use Bulk WhatsApp → Process scheduled now (or cron).`
+            : 'Nothing to resume.'
+      setActionBanner({ type: 'ok', text: msg })
+      await loadList()
+    } catch (e) {
+      setActionBanner({ type: 'err', text: e instanceof Error ? e.message : 'Request failed' })
+    } finally {
+      setResumeId(null)
+    }
+  }
 
   useEffect(() => {
     loadList()
@@ -207,6 +244,19 @@ export default function ScheduledBroadcastsPage() {
         </div>
       )}
 
+      {actionBanner && (
+        <div
+          className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
+            actionBanner.type === 'ok'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-rose-200 bg-rose-50 text-rose-900'
+          }`}
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          {actionBanner.text}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="h-10 w-10 animate-spin text-[#25D366]" />
@@ -225,7 +275,10 @@ export default function ScheduledBroadcastsPage() {
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 bg-slate-50/90 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-800">Your scheduled jobs</h2>
-            <p className="text-xs text-slate-500">Newest first. Only <strong>pending</strong> rows are editable.</p>
+            <p className="text-xs text-slate-500">
+              Newest first. Only <strong>pending</strong> rows are editable. For finished jobs that stopped early, use{' '}
+              <strong>Resume missing</strong> then run <strong>Process scheduled now</strong> on Bulk WhatsApp.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
@@ -236,7 +289,7 @@ export default function ScheduledBroadcastsPage() {
                   <th className="px-4 py-3 text-right">Contacts</th>
                   <th className="px-4 py-3">Scheduled</th>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-right w-[200px]">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -264,18 +317,45 @@ export default function ScheduledBroadcastsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {row.status === 'pending' ? (
-                        <button
-                          type="button"
-                          onClick={() => openEdit(row.id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Edit
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
+                      <div className="flex flex-col items-end gap-1.5">
+                        {row.status === 'pending' && (
+                          <button
+                            type="button"
+                            onClick={() => openEdit(row.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                        )}
+                        {(row.status === 'completed' || row.status === 'failed') && (
+                          <button
+                            type="button"
+                            disabled={resumeId === row.id}
+                            onClick={() => resumeMissingSends(row.id)}
+                            title={
+                              row.lastJobSentCount != null && row.lastJobSentCount < row.recipientCount
+                                ? `Job recorded ${row.lastJobSentCount} sent vs ${row.recipientCount} contacts — re-queue missing`
+                                : 'Re-queue anyone without a successful send in this job window'
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-sm transition hover:bg-amber-100 disabled:opacity-50"
+                          >
+                            {resumeId === row.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Timer className="h-3.5 w-3.5" />
+                            )}
+                            Resume missing
+                          </button>
+                        )}
+                        {row.status === 'processing' && (
+                          <span className="text-xs text-slate-500">Processing…</span>
+                        )}
+                        {row.status !== 'pending' &&
+                          row.status !== 'completed' &&
+                          row.status !== 'failed' &&
+                          row.status !== 'processing' && <span className="text-xs text-slate-400">—</span>}
+                      </div>
                     </td>
                   </tr>
                 ))}
