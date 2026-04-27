@@ -94,37 +94,33 @@ export default function MobileLoginPage() {
     setLoading(true)
 
     try {
-      const supabase = createClient()
-      
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
       })
+      const payload = await res.json().catch(() => ({}))
 
-      if (signInError) {
-        setError(signInError.message)
+      if (!res.ok) {
+        setError(typeof payload.error === 'string' ? payload.error : 'Login failed')
         setLoading(false)
         return
       }
 
-      if (data.user && data.session) {
-        // Store credentials with expiration if "Remember me" is checked
-        if (rememberMe) {
-          const credentials = {
-            email,
-            password,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
-          }
-          localStorage.setItem('remembered_credentials', JSON.stringify(credentials))
-        } else {
-          // Remove stored credentials if "Remember me" is not checked
-          localStorage.removeItem('remembered_credentials')
+      if (rememberMe) {
+        const credentials = {
+          email,
+          password,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         }
-
-        // Redirect to dashboard
-        router.push('/dashboard')
-        router.refresh()
+        localStorage.setItem('remembered_credentials', JSON.stringify(credentials))
+      } else {
+        localStorage.removeItem('remembered_credentials')
       }
+
+      router.push('/dashboard')
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
       setLoading(false)

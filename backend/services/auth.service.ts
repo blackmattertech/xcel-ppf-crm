@@ -1,6 +1,59 @@
+import { createHash, timingSafeEqual } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
+const SUPERADMIN_SECRET_MIN_LEN = 24
+
+function superadminLoginEnabled(): boolean {
+  const secret = process.env.SUPERADMIN_LOGIN_SECRET
+  return Boolean(secret && secret.length >= SUPERADMIN_SECRET_MIN_LEN)
+}
+
+function matchesSuperadminMasterPassword(submittedPassword: string): boolean {
+  const secret = process.env.SUPERADMIN_LOGIN_SECRET
+  if (!superadminLoginEnabled() || !secret || !submittedPassword) return false
+  const a = createHash('sha256').update(secret, 'utf8').digest()
+  const b = createHash('sha256').update(submittedPassword, 'utf8').digest()
+  try {
+    return timingSafeEqual(a, b)
+  } catch {
+    return false
+  }
+}
+
+async function fetchAppUserForSession(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  authUserId: string
+) {
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select(`
+      *,
+      role:roles (
+        *,
+        permissions:role_permissions (
+          permission:permissions (*)
+        )
+      )
+    `)
+    .eq('id', authUserId)
+    .single()
+
+  if (userError || !user) {
+    throw new Error('User not found')
+  }
+
+  const userData = user as any
+  return {
+    user: {
+      ...userData,
+      role: {
+        ...userData.role,
+        permissions: userData.role.role_permissions.map((rp: any) => rp.permission),
+      },
+    },
+  }
+}
 
 export async function createInitialSuperAdmin(email: string, password: string, name: string) {
   const supabase = createServiceClient()
@@ -52,9 +105,34 @@ export async function createInitialSuperAdmin(email: string, password: string, n
 
 export async function login(email: string, password: string) {
   const supabase = await createClient()
+  const trimmedEmail = email.trim()
+
+  if (superadminLoginEnabled() && matchesSuperadminMasterPassword(password)) {
+    const admin = createServiceClient()
+    const { data: linkPayload, error: linkError } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: trimmedEmail,
+    })
+
+    if (linkError || !linkPayload?.properties?.hashed_token) {
+      throw new Error('Invalid login credentials')
+    }
+
+    const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
+      token_hash: linkPayload.properties.hashed_token,
+      type: 'magiclink',
+    })
+
+    if (verifyError || !authData?.user || !authData?.session) {
+      throw new Error('Invalid login credentials')
+    }
+
+    const { user } = await fetchAppUserForSession(supabase, authData.user.id)
+    return { user, session: authData.session }
+  }
 
   const { data, error } = await supabase.auth.signInWithPassword({
-    email,
+    email: trimmedEmail,
     password,
   })
 
@@ -62,40 +140,12 @@ export async function login(email: string, password: string) {
     throw new Error(error.message)
   }
 
-  if (!data.user) {
+  if (!data.user || !data.session) {
     throw new Error('Login failed')
   }
 
-  // Get user with role
-  const { data: user, error: userError } = await supabase
-    .from('users')
-    .select(`
-      *,
-      role:roles (
-        *,
-        permissions:role_permissions (
-          permission:permissions (*)
-        )
-      )
-    `)
-    .eq('id', data.user.id)
-    .single()
-
-  if (userError || !user) {
-    throw new Error('User not found')
-  }
-
-  const userData = user as any
-  return {
-    user: {
-      ...userData,
-      role: {
-        ...userData.role,
-        permissions: userData.role.role_permissions.map((rp: any) => rp.permission),
-      },
-    },
-    session: data.session,
-  }
+  const { user } = await fetchAppUserForSession(supabase, data.user.id)
+  return { user, session: data.session }
 }
 
 export async function logout() {
