@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
           .gte('created_at', startDate)
           .lte('created_at', endDate)
         if (errWithout) return NextResponse.json({ error: errWithout.message }, { status: 500 })
-        rows = (rowsWithout ?? []) as typeof rows
+        rows = (rowsWithout ?? []) as unknown as typeof rows
       } else {
         return NextResponse.json({ error: errWith.message }, { status: 500 })
       }
