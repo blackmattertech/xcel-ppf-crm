@@ -60,14 +60,18 @@ export async function GET(request: NextRequest) {
       if (cached) return NextResponse.json(cached)
     }
 
-    const { data: rows, error } = await supabase
+    let rows: Array<{ direction: string; status: string | null; body: string; created_at: string; template_name?: string | null }> | null = null
+
+    // Try with template_name column first (migration 047+). Fall back without it.
+    const { data: rowsWith, error: errWith } = await supabase
       .from('whatsapp_messages')
       .select('direction, status, body, created_at, template_name')
       .gte('created_at', startDate)
       .lte('created_at', endDate)
 
-    if (error) {
-      if (error.code === '42P01') {
+    if (errWith) {
+      if (errWith.code === '42P01') {
+        // Table doesn't exist yet
         return NextResponse.json({
           messagesByDirection: { in: 0, out: 0 },
           messagesByStatus: {},
@@ -78,10 +82,23 @@ export async function GET(request: NextRequest) {
           period: { startDate, endDate },
         } satisfies WhatsAppAnalyticsResponse)
       }
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      if (errWith.code === '42703') {
+        // template_name column doesn't exist yet — fallback without it
+        const { data: rowsWithout, error: errWithout } = await supabase
+          .from('whatsapp_messages')
+          .select('direction, status, body, created_at')
+          .gte('created_at', startDate)
+          .lte('created_at', endDate)
+        if (errWithout) return NextResponse.json({ error: errWithout.message }, { status: 500 })
+        rows = (rowsWithout ?? []) as typeof rows
+      } else {
+        return NextResponse.json({ error: errWith.message }, { status: 500 })
+      }
+    } else {
+      rows = rowsWith ?? []
     }
 
-    const messages = (rows ?? []) as Array<{ direction: string; status: string | null; body: string; created_at: string; template_name?: string | null }>
+    const messages = rows ?? []
 
     const messagesByDirection: Record<string, number> = { in: 0, out: 0 }
     const messagesByStatus: Record<string, number> = {}

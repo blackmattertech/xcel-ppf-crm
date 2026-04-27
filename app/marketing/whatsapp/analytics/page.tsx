@@ -5,17 +5,12 @@ import Link from 'next/link'
 import {
   Loader2,
   Send,
-  Inbox,
-  BarChart2,
-  FileText,
   Calendar,
   ArrowLeft,
   ChevronDown,
   ChevronRight,
   RotateCcw,
   Activity,
-  Zap,
-  Target,
   Megaphone,
   User,
   ExternalLink,
@@ -25,10 +20,13 @@ import {
   MousePointerClick,
   ShieldCheck,
   AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Users,
+  ArrowRight,
+  Award,
 } from 'lucide-react'
 import {
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -36,22 +34,11 @@ import {
   ResponsiveContainer,
   Legend,
   Area,
-  Line,
   ComposedChart,
 } from 'recharts'
 
 const WA_GREEN = '#25D366'
 const WA_TEAL = '#128C7E'
-
-const STATUS_COLORS: Record<string, string> = {
-  sent: '#25D366',
-  delivered: '#128C7E',
-  read: '#34B7F1',
-  pending: '#f59e0b',
-  failed: '#ef4444',
-}
-
-const STATUS_RANK: Record<string, number> = { read: 5, delivered: 4, sent: 3, pending: 2, failed: 1 }
 
 // ─── interfaces ──────────────────────────────────────────────────────────────
 
@@ -126,7 +113,6 @@ interface DeliveryStatusResponse {
   summary: { pending: number; sent: number; delivered: number; read: number; failed: number; notDelivered: number; notRead: number }
 }
 
-// Meta official API types
 interface MetaClickDetail { type: string; button_content: string; count: number }
 interface MetaTemplateMetric {
   templateId: string
@@ -171,7 +157,7 @@ function formatInt(n: number) {
 }
 
 function formatPct(n: number) {
-  if (!Number.isFinite(n)) return '—'
+  if (!Number.isFinite(n) || isNaN(n)) return '—'
   return `${n.toFixed(1)}%`
 }
 
@@ -189,6 +175,8 @@ function StatusBadge({ status }: { status: string }) {
     sent: { label: 'Sent', className: 'bg-emerald-100 text-emerald-800' },
     pending: { label: 'Pending', className: 'bg-amber-100 text-amber-800' },
     failed: { label: 'Failed', className: 'bg-rose-100 text-rose-800' },
+    completed: { label: 'Completed', className: 'bg-emerald-100 text-emerald-800' },
+    processing: { label: 'Processing', className: 'bg-blue-100 text-blue-800' },
   }
   const c = config[status] ?? { label: status, className: 'bg-slate-100 text-slate-700' }
   return (
@@ -198,27 +186,67 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+// Funnel Step component
+function FunnelStep({
+  label,
+  value,
+  pct,
+  color,
+  subLabel,
+  isLast = false,
+}: {
+  label: string
+  value: number
+  pct: number | null
+  color: string
+  subLabel?: string
+  isLast?: boolean
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
+      <div className={`w-full rounded-xl border-2 p-3 text-center ${color}`}>
+        <p className="text-xl font-bold tabular-nums">{formatInt(value)}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide mt-0.5 opacity-80">{label}</p>
+        {subLabel && <p className="text-[10px] opacity-60 mt-0.5">{subLabel}</p>}
+      </div>
+      {!isLast && (
+        <div className="flex flex-col items-center gap-0.5 py-1">
+          {pct !== null && (
+            <span className={`text-[10px] font-bold ${pct >= 70 ? 'text-emerald-600' : pct >= 40 ? 'text-amber-600' : 'text-rose-600'}`}>
+              {formatPct(pct)}
+            </span>
+          )}
+          <ArrowRight className="h-4 w-4 text-slate-300 rotate-90 sm:rotate-0" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// KPI Card
 function KpiCard({
   icon: Icon,
   label,
   value,
   sub,
   accent,
+  trend,
 }: {
   icon: ComponentType<{ className?: string }>
   label: string
   value: string | number
   sub?: string
   accent: 'green' | 'teal' | 'blue' | 'violet' | 'amber' | 'rose' | 'slate'
+  trend?: 'up' | 'down' | 'neutral'
 }) {
   const rings: Record<string, string> = {
-    green: 'from-emerald-500/20 to-emerald-600/5 ring-emerald-500/20',
-    teal: 'from-teal-500/20 to-teal-600/5 ring-teal-500/20',
-    blue: 'from-sky-500/20 to-sky-600/5 ring-sky-500/20',
-    violet: 'from-violet-500/20 to-violet-600/5 ring-violet-500/20',
-    amber: 'from-amber-500/20 to-amber-600/5 ring-amber-500/20',
-    rose: 'from-rose-500/20 to-rose-600/5 ring-rose-500/20',
-    slate: 'from-slate-500/15 to-slate-600/5 ring-slate-500/15',
+    green: 'from-emerald-500/10 to-emerald-600/5 ring-emerald-500/20',
+    teal: 'from-teal-500/10 to-teal-600/5 ring-teal-500/20',
+    blue: 'from-sky-500/10 to-sky-600/5 ring-sky-500/20',
+    violet: 'from-violet-500/10 to-violet-600/5 ring-violet-500/20',
+    amber: 'from-amber-500/10 to-amber-600/5 ring-amber-500/20',
+    rose: 'from-rose-500/10 to-rose-600/5 ring-rose-500/20',
+    slate: 'from-slate-500/8 to-slate-600/5 ring-slate-500/15',
   }
   const iconBg: Record<string, string> = {
     green: 'bg-emerald-500/15 text-emerald-600',
@@ -232,13 +260,17 @@ function KpiCard({
   return (
     <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rings[accent]} p-4 ring-1 shadow-sm backdrop-blur-sm transition hover:shadow-md`}>
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
           <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">{value}</p>
           {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
         </div>
-        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconBg[accent]}`}>
-          <Icon className="h-5 w-5" />
+        <div className="flex flex-col items-center gap-1.5 shrink-0">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconBg[accent]}`}>
+            <Icon className="h-4.5 w-4.5" />
+          </div>
+          {trend === 'up' && <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />}
+          {trend === 'down' && <TrendingDown className="h-3.5 w-3.5 text-rose-500" />}
         </div>
       </div>
     </div>
@@ -254,9 +286,7 @@ export default function WhatsAppAnalyticsPage() {
   const [campaigns, setCampaigns] = useState<CampaignSummaryRow[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  // Meta official analytics
   const [metaAnalytics, setMetaAnalytics] = useState<MetaAnalyticsResponse | MetaAnalyticsError | null>(null)
-  const [expandedMetaTemplate, setExpandedMetaTemplate] = useState<string | null>(null)
 
   // Template recipient drill-down
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null)
@@ -283,17 +313,11 @@ export default function WhatsAppAnalyticsPage() {
   })
   const [activePresetDays, setActivePresetDays] = useState<number | null>(30)
 
-  const periodDays = useMemo(() => {
-    const ms = new Date(committedRange.end).getTime() - new Date(committedRange.start).getTime()
-    return Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000)))
-  }, [committedRange])
-
   useEffect(() => {
     setLoading(true)
     setError(null)
     setExpandedTemplate(null)
     setTemplateRecipients({})
-    setExpandedMetaTemplate(null)
     const { start, end } = committedRange
 
     Promise.all([
@@ -312,7 +336,6 @@ export default function WhatsAppAnalyticsPage() {
           const j = await res.json()
           return { campaigns: Array.isArray(j.campaigns) ? j.campaigns : [] }
         }),
-      // Meta official analytics — never throws, returns unavailable on error
       fetch(`/api/marketing/whatsapp/meta-analytics?startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}&live=1`, { credentials: 'include' })
         .then((res) => res.json().catch(() => ({ source: 'unavailable', reason: 'Parse error' })))
         .catch(() => ({ source: 'unavailable', reason: 'Network error' })),
@@ -345,9 +368,9 @@ export default function WhatsAppAnalyticsPage() {
     setActivePresetDays(null)
   }
 
-  const toggleMetaTemplate = async (templateName: string) => {
-    if (expandedMetaTemplate === templateName) { setExpandedMetaTemplate(null); return }
-    setExpandedMetaTemplate(templateName)
+  const toggleTemplate = async (templateName: string) => {
+    if (expandedTemplate === templateName) { setExpandedTemplate(null); return }
+    setExpandedTemplate(templateName)
     setTemplateRecipientFilter((prev) => (prev[templateName] ? prev : { ...prev, [templateName]: 'all' }))
     if (templateRecipients[templateName]) return
     setTemplateLoading(templateName)
@@ -359,27 +382,6 @@ export default function WhatsAppAnalyticsPage() {
       )
       const j = await res.json().catch(() => ({}))
       if (res.ok) setTemplateRecipients((prev) => ({ ...prev, [templateName]: j }))
-    } finally {
-      setTemplateLoading(null)
-    }
-  }
-
-  const toggleTemplate = async (templateName: string) => {
-    if (expandedTemplate === templateName) { setExpandedTemplate(null); return }
-    setExpandedTemplate(templateName)
-    setTemplateRecipientFilter((prev) => (prev[templateName] ? prev : { ...prev, [templateName]: 'all' }))
-    if (templateRecipients[templateName]) return // already loaded
-    setTemplateLoading(templateName)
-    try {
-      const { start, end } = committedRange
-      const res = await fetch(
-        `/api/marketing/whatsapp/template-recipients?templateName=${encodeURIComponent(templateName)}&startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`,
-        { credentials: 'include' }
-      )
-      const j = await res.json().catch(() => ({}))
-      if (res.ok) {
-        setTemplateRecipients((prev) => ({ ...prev, [templateName]: j }))
-      }
     } finally {
       setTemplateLoading(null)
     }
@@ -411,22 +413,82 @@ export default function WhatsAppAnalyticsPage() {
     }))
   }, [data])
 
-  const derivedMetrics = useMemo(() => {
-    if (!data) return null
-    const out = data.totals.sent
-    const read = data.messagesByStatus.read ?? 0
-    const delivered = data.messagesByStatus.delivered ?? 0
-    const failed = data.messagesByStatus.failed ?? 0
-    const readRate = out > 0 ? (read / out) * 100 : 0
-    const deliverRate = out > 0 ? ((delivered + read) / out) * 100 : 0
-    const avgPerDay = periodDays > 0 ? data.totals.total / periodDays : 0
-    let peakDay = { date: '', total: 0 }
-    for (const d of data.messagesOverTime) { if (d.total > peakDay.total) peakDay = { date: d.date, total: d.total } }
-    const activeDays = data.messagesOverTime.filter((d) => d.total > 0).length
-    const templateCount = data.messagesByTemplate.length
-    const totalTemplSends = data.messagesByTemplate.reduce((s, t) => s + t.count, 0)
-    return { readRate, deliverRate, avgPerDay, peakDay, activeDays, templateCount, totalTemplSends, failedOutgoing: failed }
-  }, [data, periodDays])
+  // Unified metrics — prefer Meta data if available, fallback to CRM
+  const metrics = useMemo(() => {
+    const crmSent = data?.totals.sent ?? 0
+    const crmRead = data?.messagesByStatus.read ?? 0
+    const crmDelivered = data?.messagesByStatus.delivered ?? 0
+    const crmFailed = data?.messagesByStatus.failed ?? 0
+    const crmReplied = data?.totals.received ?? 0
+
+    const hasMeta = metaAnalytics?.source === 'meta'
+    const meta = hasMeta ? (metaAnalytics as MetaAnalyticsResponse) : null
+
+    const metaTotalSent = meta ? (meta.overall.sent || meta.templates.reduce((s, t) => s + t.sent, 0)) : 0
+    const metaTotalDelivered = meta ? (meta.overall.delivered || meta.templates.reduce((s, t) => s + t.delivered, 0)) : 0
+    const metaTotalRead = meta ? meta.templates.reduce((s, t) => s + t.read, 0) : 0
+    const metaTotalClicked = meta ? meta.templates.reduce((s, t) => s + t.clicked, 0) : 0
+    const metaTotalFailed = meta ? meta.templates.reduce((s, t) => s + t.failed, 0) : 0
+
+    const sent = hasMeta && metaTotalSent > 0 ? metaTotalSent : crmSent
+    const delivered = hasMeta && metaTotalDelivered > 0 ? metaTotalDelivered : crmDelivered + crmRead
+    const read = hasMeta && metaTotalRead > 0 ? metaTotalRead : crmRead
+    const failed = hasMeta && metaTotalFailed > 0 ? metaTotalFailed : crmFailed
+    const clicked = metaTotalClicked
+    const replied = crmReplied
+
+    const deliveryRate = sent > 0 ? (delivered / sent) * 100 : 0
+    const readRate = sent > 0 ? (read / sent) * 100 : 0
+    const replyRate = sent > 0 ? (replied / sent) * 100 : 0
+    const failureRate = sent > 0 ? (failed / sent) * 100 : 0
+    const clickRate = sent > 0 ? (clicked / sent) * 100 : 0
+
+    // Unique contacts from deliveryStatus
+    const ds = deliveryStatus?.summary
+    const uniqueContacts = ds ? (ds.read + ds.delivered + ds.sent + ds.failed + ds.pending) : 0
+
+    return {
+      sent, delivered, read, failed, clicked, replied,
+      deliveryRate, readRate, replyRate, failureRate, clickRate,
+      uniqueContacts,
+      source: hasMeta ? 'meta' : 'crm',
+    }
+  }, [data, metaAnalytics, deliveryStatus])
+
+  // Template performance sorted by read rate
+  const templatePerformance = useMemo(() => {
+    if (!data?.templateDeliveryStats?.length) return []
+    return [...data.templateDeliveryStats]
+      .map((row) => {
+        const totalOut = row.sent + row.delivered + row.read + row.pending + row.failed
+        const effectiveSent = totalOut || 1
+        const deliveryRate = ((row.delivered + row.read) / effectiveSent) * 100
+        const readRate = (row.read / effectiveSent) * 100
+        const failRate = (row.failed / effectiveSent) * 100
+        return { ...row, effectiveSent, deliveryRate, readRate, failRate }
+      })
+      .sort((a, b) => b.readRate - a.readRate)
+  }, [data])
+
+  // Campaign metrics summary
+  const campaignMetrics = useMemo(() => {
+    if (!campaigns.length) return null
+    const totalCampaigns = campaigns.length
+    const completedCampaigns = campaigns.filter(c => c.status === 'completed').length
+    const totalRecipients = campaigns.reduce((s, c) => s + c.recipientCount, 0)
+    const totalSent = campaigns.reduce((s, c) => s + c.sent, 0)
+    const totalFailed = campaigns.reduce((s, c) => s + c.failed, 0)
+    const totalReplied = campaigns.reduce((s, c) => s + c.repliedCount, 0)
+    const avgReplyRate = totalSent > 0 ? (totalReplied / totalSent) * 100 : 0
+
+    // Best campaign by reply rate
+    const best = campaigns
+      .filter(c => c.sent > 0)
+      .map(c => ({ ...c, replyRate: (c.repliedCount / c.sent) * 100 }))
+      .sort((a, b) => b.replyRate - a.replyRate)[0] ?? null
+
+    return { totalCampaigns, completedCampaigns, totalRecipients, totalSent, totalFailed, totalReplied, avgReplyRate, best }
+  }, [campaigns])
 
   if (loading) {
     return (
@@ -445,9 +507,9 @@ export default function WhatsAppAnalyticsPage() {
   }
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-6 pb-10">
 
-      {/* ── Hero ── */}
+      {/* ── Header ── */}
       <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 p-6 text-white shadow-lg sm:p-8">
         <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#25D366]/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-teal-400/10 blur-3xl" />
@@ -457,17 +519,28 @@ export default function WhatsAppAnalyticsPage() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300/90">Insights</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300/90">Campaign Intelligence</p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">WhatsApp Analytics</h1>
-              <p className="mt-2 max-w-xl text-sm text-slate-300">
-                Template performance, delivery funnel, per-recipient status and replies — everything to run effective campaigns.
+              <p className="mt-1.5 text-sm text-slate-300/80">
+                Delivery funnel · Template ROI · Campaign performance · Audience reach
               </p>
-              <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
-                <Calendar className="h-3.5 w-3.5 text-emerald-300" />
-                {new Date(committedRange.start).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                {' – '}
-                {new Date(committedRange.end).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
+                  <Calendar className="h-3.5 w-3.5 text-emerald-300" />
+                  {new Date(committedRange.start).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {' – '}
+                  {new Date(committedRange.end).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+                {metrics.source === 'meta' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+                    <ShieldCheck className="h-3 w-3" /> Meta Verified Data
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-slate-300">
+                    <Activity className="h-3 w-3" /> CRM Data
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex w-full max-w-xl flex-col gap-3 lg:max-w-none lg:items-end">
@@ -504,141 +577,304 @@ export default function WhatsAppAnalyticsPage() {
         <div className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</div>
       )}
 
-      {/* ── Meta Official Analytics ── */}
-      {metaAnalytics && (
-        <section className="space-y-4">
-          {/* Section header */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">Meta Official Insights</span>
-            </div>
-            <span className="text-xs text-slate-400">Numbers sourced directly from Meta&apos;s Business API — most accurate</span>
-          </div>
+      {/* ── Meta unavailable notice ── */}
+      {metaAnalytics?.source === 'unavailable' && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p className="text-sm text-amber-800">
+            <strong>Meta API not connected —</strong> showing CRM webhook data.{' '}
+            <Link href="/marketing/whatsapp" className="underline font-medium">Configure WABA credentials</Link> to unlock verified Meta Insights.
+          </p>
+        </div>
+      )}
 
-          {metaAnalytics.source === 'unavailable' ? (
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+      {data && (
+        <>
+          {/* ══════════════════════════════════════════════════════════════
+              SECTION 1 — DELIVERY FUNNEL (top-priority business view)
+          ══════════════════════════════════════════════════════════════ */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                <TrendingUp className="h-4 w-4" />
+              </div>
               <div>
-                <p className="font-semibold text-amber-900">Meta API not available</p>
-                <p className="mt-0.5 text-sm text-amber-800">{(metaAnalytics as MetaAnalyticsError).reason}</p>
-                <p className="mt-1 text-xs text-amber-700">
-                  CRM data (parsed from message body) is shown below. To enable Meta Insights, configure your WABA ID and Access Token in{' '}
-                  <Link href="/marketing/whatsapp" className="underline">WhatsApp settings</Link>.
-                </p>
+                <h2 className="text-sm font-semibold text-slate-900">Delivery Funnel</h2>
+                <p className="text-xs text-slate-500">End-to-end message journey — how many leads actually engaged</p>
+              </div>
+              {metrics.source === 'meta' && (
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                  <ShieldCheck className="h-3 w-3" /> Meta Verified
+                </span>
+              )}
+            </div>
+
+            {/* Funnel bar */}
+            <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm ring-1 ring-slate-100">
+              {/* Visual funnel steps */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-2">
+                <FunnelStep
+                  label="Sent"
+                  value={metrics.sent}
+                  pct={null}
+                  color="border-emerald-300 bg-emerald-50 text-emerald-900"
+                  subLabel="accepted by Meta"
+                />
+                <FunnelStep
+                  label="Delivered"
+                  value={metrics.delivered}
+                  pct={metrics.deliveryRate}
+                  color="border-teal-300 bg-teal-50 text-teal-900"
+                  subLabel="reached device"
+                />
+                <FunnelStep
+                  label="Read"
+                  value={metrics.read}
+                  pct={metrics.readRate}
+                  color="border-sky-300 bg-sky-50 text-sky-900"
+                  subLabel="message opened"
+                />
+                <FunnelStep
+                  label="Replied"
+                  value={metrics.replied}
+                  pct={metrics.replyRate}
+                  color="border-violet-300 bg-violet-50 text-violet-900"
+                  subLabel="responded back"
+                />
+                <FunnelStep
+                  label="Failed"
+                  value={metrics.failed}
+                  pct={null}
+                  color="border-rose-300 bg-rose-50 text-rose-900"
+                  subLabel="not delivered"
+                  isLast
+                />
+              </div>
+
+              {/* Progress bar */}
+              <div className="mt-5 space-y-1.5">
+                <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full bg-sky-400 transition-all" style={{ width: `${(metrics.read / (metrics.sent || 1)) * 100}%` }} title={`Read: ${formatPct(metrics.readRate)}`} />
+                  <div className="h-full bg-teal-400 transition-all" style={{ width: `${Math.max(0, (metrics.delivered - metrics.read) / (metrics.sent || 1)) * 100}%` }} title="Delivered (not read)" />
+                  <div className="h-full bg-emerald-300 transition-all" style={{ width: `${Math.max(0, (metrics.sent - metrics.delivered - metrics.failed) / (metrics.sent || 1)) * 100}%` }} title="Sent (pending delivery)" />
+                  <div className="ml-auto h-full bg-rose-400 transition-all" style={{ width: `${(metrics.failed / (metrics.sent || 1)) * 100}%` }} title="Failed" />
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" />Read {formatPct(metrics.readRate)}</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-400" />Delivered {formatPct(metrics.deliveryRate)}</span>
+                  {metrics.clicked > 0 && <span className="flex items-center gap-1 text-violet-600"><MousePointerClick className="h-3 w-3" />Clicked {formatPct(metrics.clickRate)}</span>}
+                  {metrics.failed > 0 && <span className="flex items-center gap-1 text-rose-600"><span className="h-2 w-2 rounded-full bg-rose-400" />Failed {formatPct(metrics.failureRate)}</span>}
+                </div>
+              </div>
+
+              {/* Drop-off insight */}
+              {metrics.sent > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {metrics.deliveryRate < 90 && (
+                    <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      <strong>{formatInt(metrics.sent - metrics.delivered)}</strong> messages not delivered — check DND/opt-out list
+                    </div>
+                  )}
+                  {metrics.readRate < 40 && metrics.deliveryRate > 70 && (
+                    <div className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-800">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      Low read rate — try improving message content or sending time
+                    </div>
+                  )}
+                  {metrics.replyRate > 5 && (
+                    <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800">
+                      <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                      Strong reply rate ({formatPct(metrics.replyRate)}) — good audience engagement
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ══════════════════════════════════════════════════════════════
+              SECTION 2 — KEY METRICS GRID
+          ══════════════════════════════════════════════════════════════ */}
+          <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <KpiCard
+              icon={Users}
+              label="Unique Contacts Reached"
+              value={metrics.uniqueContacts > 0 ? formatInt(metrics.uniqueContacts) : formatInt(metrics.sent)}
+              sub="distinct leads messaged"
+              accent="green"
+            />
+            <KpiCard
+              icon={TrendingUp}
+              label="Read Rate"
+              value={formatPct(metrics.readRate)}
+              sub={`${formatInt(metrics.read)} messages read`}
+              accent={metrics.readRate >= 50 ? 'blue' : metrics.readRate >= 30 ? 'amber' : 'rose'}
+            />
+            <KpiCard
+              icon={Reply}
+              label="Reply Rate"
+              value={formatPct(metrics.replyRate)}
+              sub={`${formatInt(metrics.replied)} inbound replies`}
+              accent="violet"
+            />
+            <KpiCard
+              icon={XCircle}
+              label="Failure Rate"
+              value={formatPct(metrics.failureRate)}
+              sub={`${formatInt(metrics.failed)} undelivered`}
+              accent={metrics.failureRate > 10 ? 'rose' : 'slate'}
+            />
+            <KpiCard
+              icon={Send}
+              label="Total Sent"
+              value={formatInt(metrics.sent)}
+              sub="outbound messages"
+              accent="green"
+            />
+            <KpiCard
+              icon={CheckCheck}
+              label="Delivery Rate"
+              value={formatPct(metrics.deliveryRate)}
+              sub={`${formatInt(metrics.delivered)} delivered`}
+              accent={metrics.deliveryRate >= 85 ? 'teal' : 'amber'}
+            />
+            {metrics.clicked > 0 && (
+              <KpiCard
+                icon={MousePointerClick}
+                label="Button Click Rate"
+                value={formatPct(metrics.clickRate)}
+                sub={`${formatInt(metrics.clicked)} total clicks`}
+                accent="violet"
+              />
+            )}
+            <KpiCard
+              icon={Megaphone}
+              label="Campaigns Run"
+              value={formatInt(campaigns.length)}
+              sub={campaignMetrics ? `${formatInt(campaignMetrics.completedCampaigns)} completed` : 'this period'}
+              accent="amber"
+            />
+          </section>
+
+          {/* ══════════════════════════════════════════════════════════════
+              SECTION 3 — TEMPLATE PERFORMANCE (ranked by read rate)
+          ══════════════════════════════════════════════════════════════ */}
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                <Award className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Template Performance</h2>
+                <p className="text-xs text-slate-500">Ranked by read rate — identify your best and worst performing templates</p>
               </div>
             </div>
-          ) : (
-            <>
-              {/* Overall Meta KPIs */}
-              {(() => {
-                const m = metaAnalytics as MetaAnalyticsResponse
-                const totalSent = m.overall.sent || m.templates.reduce((s, t) => s + t.sent, 0)
-                const totalDelivered = m.overall.delivered || m.templates.reduce((s, t) => s + t.delivered, 0)
-                const totalRead = m.templates.reduce((s, t) => s + t.read, 0)
-                const totalClicked = m.templates.reduce((s, t) => s + t.clicked, 0)
-                const totalFailed = m.templates.reduce((s, t) => s + t.failed, 0)
-                const readRate = totalSent > 0 ? (totalRead / totalSent) * 100 : 0
-                const deliverRate = totalSent > 0 ? (totalDelivered / totalSent) * 100 : 0
-                return (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                    {[
-                      { label: 'Sent', value: formatInt(totalSent), sub: 'Accepted by Meta', color: 'bg-emerald-50 border-emerald-200 text-emerald-950', badge: 'text-emerald-600' },
-                      { label: 'Delivered', value: formatInt(totalDelivered), sub: formatPct(deliverRate) + ' of sent', color: 'bg-teal-50 border-teal-200 text-teal-950', badge: 'text-teal-600' },
-                      { label: 'Read', value: formatInt(totalRead), sub: formatPct(readRate) + ' read rate', color: 'bg-sky-50 border-sky-200 text-sky-950', badge: 'text-sky-600' },
-                      { label: 'Clicked', value: formatInt(totalClicked), sub: 'Button interactions', color: 'bg-violet-50 border-violet-200 text-violet-950', badge: 'text-violet-600' },
-                      { label: 'Failed', value: formatInt(totalFailed), sub: 'Delivery errors (CRM)', color: 'bg-rose-50 border-rose-200 text-rose-950', badge: 'text-rose-600' },
-                    ].map((card) => (
-                      <div key={card.label} className={`rounded-2xl border p-4 ${card.color}`}>
-                        <p className={`text-xs font-bold uppercase tracking-wide opacity-60`}>{card.label}</p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums">{card.value}</p>
-                        <p className="mt-0.5 text-[11px] opacity-60">{card.sub}</p>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
 
-              {/* Per-template Meta table */}
-              {(metaAnalytics as MetaAnalyticsResponse).templates.length > 0 ? (
-                <div className="space-y-2">
-                  {(metaAnalytics as MetaAnalyticsResponse).templates.map((t) => {
-                    const isExpanded = expandedMetaTemplate === t.templateName
-                    const isLoadingThis = templateLoading === t.templateName
-                    const recData = templateRecipients[t.templateName]
+            {templatePerformance.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 py-12 text-center text-sm text-slate-500">
+                No template sends in this period.
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                {/* Table header */}
+                <div className="hidden grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-4 border-b border-slate-100 bg-slate-50/80 px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:grid">
+                  <span>Template</span>
+                  <span className="text-right">Sent</span>
+                  <span className="text-right">Delivered</span>
+                  <span className="text-right">Read Rate</span>
+                  <span className="text-right">Replied</span>
+                  <span className="text-right">Failed</span>
+                  <span />
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {templatePerformance.map((row, idx) => {
+                    const isExpanded = expandedTemplate === row.template
+                    const isLoadingThis = templateLoading === row.template
+                    const recData = templateRecipients[row.template]
+                    const replyCount = recData?.summary.replied ?? 0
+                    const replyRate = recData ? (replyCount / (recData.summary.total || 1)) * 100 : null
+                    const isTopPerformer = idx === 0 && row.readRate > 0
+                    const isLowPerformer = row.readRate < 20 && row.effectiveSent > 10
 
                     return (
-                      <div key={t.templateId} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                        {/* Row */}
-                        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold text-slate-900">{t.templateName}</span>
-                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 border border-emerald-200">
-                                Meta verified
-                              </span>
-                            </div>
-                            {/* Progress bar: read / delivered / sent */}
-                            <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-100">
-                              <div className="h-full bg-sky-400" style={{ width: `${Math.min(100, t.readRate)}%` }} />
-                              <div className="h-full bg-teal-400" style={{ width: `${Math.min(100, t.deliverRate - t.readRate)}%` }} />
-                              {t.failed > 0 && (
-                                <div className="ml-auto h-full bg-rose-400" style={{ width: `${Math.min(100, (t.failed / (t.sent || 1)) * 100)}%` }} />
-                              )}
-                            </div>
-                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" />Read {formatPct(t.readRate)}</span>
-                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-400" />Delivered {formatPct(t.deliverRate)}</span>
-                              {t.clicked > 0 && <span className="flex items-center gap-1 text-violet-600"><MousePointerClick className="h-3 w-3" />{formatInt(t.clicked)} clicked</span>}
-                              {t.failed > 0 && <span className="flex items-center gap-1 text-rose-600"><XCircle className="h-3 w-3" />{formatInt(t.failed)} failed</span>}
+                      <div key={row.template}>
+                        <div className={`grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] sm:gap-4 sm:items-center ${isTopPerformer ? 'bg-emerald-50/30' : isLowPerformer ? 'bg-rose-50/20' : ''}`}>
+                          {/* Template name */}
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isTopPerformer && (
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-700">★</span>
+                            )}
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-slate-900 text-sm">{row.template}</p>
+                              {/* Mobile metrics */}
+                              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500 sm:hidden">
+                                <span>Sent: <strong>{formatInt(row.effectiveSent)}</strong></span>
+                                <span className={row.readRate >= 40 ? 'text-sky-700 font-semibold' : row.readRate >= 20 ? 'text-amber-700' : 'text-rose-700'}>
+                                  Read: <strong>{formatPct(row.readRate)}</strong>
+                                </span>
+                                {row.failed > 0 && <span className="text-rose-600">Failed: <strong>{formatInt(row.failed)}</strong></span>}
+                              </div>
+                              {/* Delivery bar */}
+                              <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                <div className="h-full bg-sky-400" style={{ width: `${Math.min(100, row.readRate)}%` }} />
+                                <div className="h-full bg-teal-300" style={{ width: `${Math.min(100, Math.max(0, row.deliveryRate - row.readRate))}%` }} />
+                                {row.failed > 0 && <div className="ml-auto h-full bg-rose-400" style={{ width: `${Math.min(100, row.failRate)}%` }} />}
+                              </div>
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap gap-1.5 shrink-0 sm:justify-end">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                              <Send className="h-3 w-3" />{formatInt(t.sent)} Sent
+                          {/* Sent */}
+                          <div className="hidden sm:block text-right">
+                            <span className="text-sm font-semibold text-slate-900 tabular-nums">{formatInt(row.effectiveSent)}</span>
+                          </div>
+
+                          {/* Delivered % */}
+                          <div className="hidden sm:block text-right">
+                            <span className={`text-sm font-semibold tabular-nums ${row.deliveryRate >= 85 ? 'text-teal-700' : row.deliveryRate >= 60 ? 'text-amber-700' : 'text-rose-700'}`}>
+                              {formatPct(row.deliveryRate)}
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800">
-                              <CheckCheck className="h-3 w-3" />{formatInt(t.delivered)} Delivered
+                          </div>
+
+                          {/* Read Rate */}
+                          <div className="hidden sm:block text-right">
+                            <span className={`text-sm font-bold tabular-nums ${row.readRate >= 50 ? 'text-sky-700' : row.readRate >= 25 ? 'text-amber-700' : 'text-rose-600'}`}>
+                              {formatPct(row.readRate)}
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
-                              <CheckCheck className="h-3 w-3" />{formatInt(t.read)} Read
+                          </div>
+
+                          {/* Replied */}
+                          <div className="hidden sm:block text-right">
+                            <span className="text-sm font-semibold text-violet-700 tabular-nums">
+                              {recData ? formatInt(replyCount) : '—'}
                             </span>
-                            {t.clicked > 0 && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800">
-                                <MousePointerClick className="h-3 w-3" />{formatInt(t.clicked)} Clicked
-                              </span>
+                            {replyRate !== null && replyRate > 0 && (
+                              <p className="text-[10px] text-slate-400">{formatPct(replyRate)}</p>
                             )}
-                            {recData && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800">
-                                <Reply className="h-3 w-3" />{formatInt(recData.summary.replied)} Replied
-                              </span>
-                            )}
+                          </div>
+
+                          {/* Failed */}
+                          <div className="hidden sm:block text-right">
+                            <span className={`text-sm font-semibold tabular-nums ${row.failed > 0 ? 'text-rose-600' : 'text-slate-300'}`}>
+                              {row.failed > 0 ? formatInt(row.failed) : '—'}
+                            </span>
+                          </div>
+
+                          {/* Expand button */}
+                          <div className="flex items-center justify-end">
                             <button
                               type="button"
-                              onClick={() => toggleMetaTemplate(t.templateName)}
+                              onClick={() => toggleTemplate(row.template)}
                               className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
                             >
                               {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                              {isExpanded ? 'Hide' : 'View'} recipients
+                              {isExpanded ? 'Hide' : 'Recipients'}
                             </button>
                           </div>
                         </div>
 
-                        {/* Click breakdown (if any) */}
-                        {t.clickDetails.length > 0 && (
-                          <div className="border-t border-slate-100 bg-violet-50/40 px-5 py-2 flex flex-wrap gap-2">
-                            <span className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide mr-1">Button clicks:</span>
-                            {t.clickDetails.map((c, i) => (
-                              <span key={i} className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] text-violet-800">
-                                <MousePointerClick className="h-3 w-3" />
-                                {c.button_content} ({c.type.replace('_', ' ')}): <strong>{formatInt(c.count)}</strong>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Expanded recipient list */}
+                        {/* Expanded recipient table */}
                         {isExpanded && (
                           <div className="border-t border-slate-100 bg-slate-50/60">
                             {isLoadingThis ? (
@@ -649,91 +885,87 @@ export default function WhatsAppAnalyticsPage() {
                               <div className="px-5 py-6 text-sm text-slate-500">No CRM recipient data for this template.</div>
                             ) : (
                               <>
+                                {/* Filter tabs */}
                                 {(() => {
-                                  const active = templateRecipientFilter[t.templateName] ?? 'all'
-                                  const set = (v: typeof active) => setTemplateRecipientFilter((prev) => ({ ...prev, [t.templateName]: v }))
-                                  const metrics: Array<{ label: string; value: number; color: string; filter: typeof active }> = [
-                                    { label: 'Total', value: recData.summary.total, color: 'text-slate-900', filter: 'all' },
-                                    { label: 'Sent', value: recData.summary.sent, color: 'text-emerald-700', filter: 'sent' },
-                                    { label: 'Delivered', value: recData.summary.delivered, color: 'text-teal-700', filter: 'delivered' },
-                                    { label: 'Read', value: recData.summary.read, color: 'text-sky-700', filter: 'read' },
-                                    { label: 'Failed', value: recData.summary.failed, color: 'text-rose-700', filter: 'failed' },
-                                    { label: 'Replied', value: recData.summary.replied, color: 'text-violet-700', filter: 'replied' },
+                                  const active = templateRecipientFilter[row.template] ?? 'all'
+                                  const set = (v: typeof active) => setTemplateRecipientFilter((prev) => ({ ...prev, [row.template]: v }))
+                                  const tabs: Array<{ label: string; value: number; filter: typeof active; color: string }> = [
+                                    { label: 'All', value: recData.summary.total, filter: 'all', color: 'text-slate-900' },
+                                    { label: 'Read', value: recData.summary.read, filter: 'read', color: 'text-sky-700' },
+                                    { label: 'Delivered', value: recData.summary.delivered, filter: 'delivered', color: 'text-teal-700' },
+                                    { label: 'Sent', value: recData.summary.sent, filter: 'sent', color: 'text-emerald-700' },
+                                    { label: 'Replied', value: recData.summary.replied, filter: 'replied', color: 'text-violet-700' },
+                                    { label: 'Failed', value: recData.summary.failed, filter: 'failed', color: 'text-rose-700' },
                                   ]
-
                                   return (
-                                    <div className="grid grid-cols-3 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-6">
-                                      {metrics.map((m) => {
-                                        const isActive = active === m.filter
-                                        return (
-                                          <button
-                                            key={m.label}
-                                            type="button"
-                                            aria-pressed={isActive}
-                                            onClick={() => set(m.filter)}
-                                            className={`flex flex-col items-center bg-white px-3 py-2.5 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${isActive ? 'ring-2 ring-inset ring-slate-900/10' : ''}`}
-                                            title={`Show ${m.label.toLowerCase()} recipients`}
-                                          >
-                                            <span className={`text-lg font-bold tabular-nums ${m.color}`}>{formatInt(m.value)}</span>
-                                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${isActive ? 'text-slate-700' : 'text-slate-400'}`}>{m.label}</span>
-                                          </button>
-                                        )
-                                      })}
+                                    <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-white px-4 py-2">
+                                      {tabs.map((tab) => (
+                                        <button key={tab.filter} type="button" onClick={() => set(tab.filter)}
+                                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active === tab.filter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                          {tab.label} <span className={active === tab.filter ? 'opacity-70' : tab.color}>({formatInt(tab.value)})</span>
+                                        </button>
+                                      ))}
                                     </div>
                                   )
                                 })()}
-                                <div className="max-h-96 overflow-y-auto">
+
+                                <div className="max-h-80 overflow-y-auto">
                                   <table className="w-full text-sm">
                                     <thead className="sticky top-0 z-10">
                                       <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
                                         <th className="px-4 py-2.5">Name</th>
                                         <th className="px-4 py-2.5">Phone</th>
                                         <th className="px-4 py-2.5">Status</th>
-                                        <th className="px-4 py-2.5">Sent at</th>
+                                        <th className="px-4 py-2.5">Sent At</th>
                                         <th className="px-4 py-2.5 text-center">Replied</th>
-                                        <th className="px-4 py-2.5 text-center">Inbox</th>
+                                        <th className="px-4 py-2.5 text-center">Chat</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white">
                                       {(() => {
-                                        const active = templateRecipientFilter[t.templateName] ?? 'all'
+                                        const active = templateRecipientFilter[row.template] ?? 'all'
                                         const recipients =
-                                          active === 'all'
-                                            ? recData.recipients
-                                            : active === 'replied'
-                                              ? recData.recipients.filter((r) => r.replied)
+                                          active === 'all' ? recData.recipients
+                                            : active === 'replied' ? recData.recipients.filter((r) => r.replied)
                                               : recData.recipients.filter((r) => r.status === active)
-
+                                        if (recipients.length === 0) {
+                                          return (
+                                            <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-400">No recipients in this filter.</td></tr>
+                                          )
+                                        }
                                         return recipients.map((r, i) => (
-                                        <tr key={i} className={`transition hover:bg-slate-50/80 ${r.status === 'failed' ? 'bg-rose-50/40' : ''}`}>
-                                          <td className="px-4 py-2.5">
-                                            <span className="flex items-center gap-1.5 font-medium text-slate-800">
-                                              <User className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-                                              {r.lead_name || '—'}
-                                            </span>
-                                          </td>
-                                          <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.phone}</td>
-                                          <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
-                                          <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
-                                            {new Date(r.sent_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                          </td>
-                                          <td className="px-4 py-2.5 text-center">
-                                            {r.replied
-                                              ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-violet-700"><Reply className="h-3 w-3" /></span>
-                                              : <span className="text-slate-300">—</span>}
-                                          </td>
-                                          <td className="px-4 py-2.5 text-center">
-                                            <Link href={inboxUrl(r.phone, r.lead_id, r.lead_name)}
-                                              className="inline-flex items-center gap-1 rounded-lg bg-[#25D366]/10 px-2 py-1 text-[11px] font-semibold text-[#128C7E] transition hover:bg-[#25D366]/20">
-                                              <ExternalLink className="h-3 w-3" /> Open
-                                            </Link>
-                                          </td>
-                                        </tr>
+                                          <tr key={i} className={`transition hover:bg-slate-50/80 ${r.status === 'failed' ? 'bg-rose-50/40' : ''}`}>
+                                            <td className="px-4 py-2.5">
+                                              <span className="flex items-center gap-1.5 font-medium text-slate-800">
+                                                <User className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                                                {r.lead_name || '—'}
+                                              </span>
+                                            </td>
+                                            <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.phone}</td>
+                                            <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                                            <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                                              {new Date(r.sent_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="px-4 py-2.5 text-center">
+                                              {r.replied
+                                                ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-violet-700"><Reply className="h-3 w-3" /></span>
+                                                : <span className="text-slate-300">—</span>}
+                                            </td>
+                                            <td className="px-4 py-2.5 text-center">
+                                              <Link href={inboxUrl(r.phone, r.lead_id, r.lead_name)}
+                                                className="inline-flex items-center gap-1 rounded-lg bg-[#25D366]/10 px-2 py-1 text-[11px] font-semibold text-[#128C7E] transition hover:bg-[#25D366]/20">
+                                                <ExternalLink className="h-3 w-3" /> Open
+                                              </Link>
+                                            </td>
+                                          </tr>
                                         ))
                                       })()}
                                     </tbody>
                                   </table>
                                 </div>
+                                {recData.recipients.length >= 200 && (
+                                  <p className="px-4 py-2 text-center text-xs text-amber-700">Showing first 200 recipients. Narrow the date range to see more.</p>
+                                )}
                               </>
                             )}
                           </div>
@@ -742,507 +974,368 @@ export default function WhatsAppAnalyticsPage() {
                     )
                   })}
                 </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center text-sm text-slate-500">
-                  No template analytics returned by Meta for this period.
-                </div>
-              )}
-            </>
-          )}
-        </section>
-      )}
-
-      {data && derivedMetrics && (
-        <>
-          {/* ── KPI Grid ── */}
-          <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            <KpiCard icon={Send} label="Total Sent" value={formatInt(data.totals.sent)} sub={`${formatInt(derivedMetrics.activeDays)} active days`} accent="green" />
-            <KpiCard icon={CheckCheck} label="Delivered + Read" value={formatInt((data.messagesByStatus.delivered ?? 0) + (data.messagesByStatus.read ?? 0))} sub={formatPct(derivedMetrics.deliverRate) + ' of sent'} accent="teal" />
-            <KpiCard icon={Target} label="Read Rate" value={formatPct(derivedMetrics.readRate)} sub={`${formatInt(data.messagesByStatus.read ?? 0)} messages read`} accent="blue" />
-            <KpiCard icon={XCircle} label="Failed" value={formatInt(derivedMetrics.failedOutgoing)} sub="Delivery errors" accent="rose" />
-            <KpiCard icon={Inbox} label="Replies Received" value={formatInt(data.totals.received)} sub="Inbound messages" accent="violet" />
-            <KpiCard icon={FileText} label="Templates Used" value={formatInt(derivedMetrics.templateCount)} sub={`${formatInt(derivedMetrics.totalTemplSends)} total sends`} accent="amber" />
-            <KpiCard icon={Zap} label="Busiest Day" value={derivedMetrics.peakDay.total > 0 ? formatInt(derivedMetrics.peakDay.total) : '—'} sub={derivedMetrics.peakDay.date ? new Date(derivedMetrics.peakDay.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'No data'} accent="amber" />
-            <KpiCard icon={Activity} label="Avg / Day" value={derivedMetrics.avgPerDay < 10 ? derivedMetrics.avgPerDay.toFixed(1) : formatInt(Math.round(derivedMetrics.avgPerDay))} sub="Messages per day" accent="slate" />
+              </div>
+            )}
           </section>
 
-          {/* ── Template Metrics (main section) ── */}
+          {/* ══════════════════════════════════════════════════════════════
+              SECTION 4 — CAMPAIGN PERFORMANCE TABLE
+          ══════════════════════════════════════════════════════════════ */}
           <section className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                <Megaphone className="h-4 w-4" />
+              </div>
               <div>
-                <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                    <FileText className="h-4 w-4" />
-                  </span>
-                  Template Metrics
-                </h2>
-                <p className="mt-0.5 pl-10 text-xs text-slate-500">
-                  Per-template delivery: sent, delivered, read, failed, replied. Expand to see every recipient.
-                </p>
+                <h2 className="text-sm font-semibold text-slate-900">Broadcast Campaigns</h2>
+                <p className="text-xs text-slate-500">Per-campaign results — sent, failed, reply rate</p>
               </div>
             </div>
 
-            {(data.templateDeliveryStats?.length ?? 0) === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 py-12 text-center text-sm text-slate-500">
-                No template sends in this period.
+            {/* Campaign summary bar */}
+            {campaignMetrics && campaigns.length > 0 && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Campaigns</p>
+                  <p className="mt-1 text-xl font-bold text-slate-900 tabular-nums">{formatInt(campaignMetrics.totalCampaigns)}</p>
+                  <p className="text-[11px] text-slate-500">{formatInt(campaignMetrics.completedCampaigns)} completed</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Total Recipients</p>
+                  <p className="mt-1 text-xl font-bold text-slate-900 tabular-nums">{formatInt(campaignMetrics.totalRecipients)}</p>
+                  <p className="text-[11px] text-slate-500">{formatInt(campaignMetrics.totalFailed)} failed</p>
+                </div>
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-3.5 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-violet-500">Total Replies</p>
+                  <p className="mt-1 text-xl font-bold text-violet-900 tabular-nums">{formatInt(campaignMetrics.totalReplied)}</p>
+                  <p className="text-[11px] text-violet-600">avg {formatPct(campaignMetrics.avgReplyRate)} reply rate</p>
+                </div>
+                {campaignMetrics.best && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 shadow-sm">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600">Best Campaign</p>
+                    <p className="mt-1 truncate text-sm font-bold text-amber-900">{campaignMetrics.best.templateName}</p>
+                    <p className="text-[11px] text-amber-700">{formatPct(campaignMetrics.best.replyRate)} reply rate</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {campaigns.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center text-sm text-slate-500">
+                No campaigns in this period.
               </div>
             ) : (
-              <div className="space-y-2">
-                {data.templateDeliveryStats.map((row) => {
-                  const isExpanded = expandedTemplate === row.template
-                  const isLoadingThis = templateLoading === row.template
-                  const recData = templateRecipients[row.template]
-                  const total = row.total || 1
-                  const readRate = ((row.read / total) * 100)
-                  const deliverRate = (((row.delivered + row.read) / total) * 100)
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                {/* Table header */}
+                <div className="hidden grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-4 border-b border-slate-100 bg-slate-50/80 px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:grid">
+                  <span>Template · Date</span>
+                  <span className="text-right">Recipients</span>
+                  <span className="text-right">Sent</span>
+                  <span className="text-right">Failed</span>
+                  <span className="text-right">Replied</span>
+                  <span className="text-right">Reply Rate</span>
+                  <span className="text-right">Status</span>
+                </div>
 
-                  return (
-                    <div key={row.template} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                      {/* Template header row */}
-                      <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-900 truncate">{row.template}</span>
-                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                              {formatInt(row.total)} total
+                <div className="divide-y divide-slate-100">
+                  {campaigns.map((c) => {
+                    const expanded = expandedCampaignId === c.id
+                    const replyRate = c.sent > 0 ? (c.repliedCount / c.sent) * 100 : 0
+                    return (
+                      <div key={c.id}>
+                        <button type="button" onClick={() => toggleCampaign(c)}
+                          className="grid w-full grid-cols-1 gap-2 px-5 py-3.5 text-left transition hover:bg-slate-50 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] sm:items-center sm:gap-4">
+                          {/* Template + date */}
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-1.5">
+                              {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+                              <span className="truncate font-semibold text-slate-900 text-sm">{c.templateName}</span>
                             </span>
-                          </div>
-                          {/* Delivery progress bar */}
-                          <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-100">
-                            <div className="h-full bg-sky-400 transition-all" style={{ width: `${Math.min(100, readRate)}%` }} title={`Read: ${formatPct(readRate)}`} />
-                            <div className="h-full bg-teal-400 transition-all" style={{ width: `${Math.min(100, deliverRate - readRate)}%` }} title={`Delivered: ${formatPct(deliverRate - readRate)}`} />
-                            <div className="h-full bg-emerald-400 transition-all" style={{ width: `${Math.min(100, ((row.sent / total) * 100))}%` }} />
-                            {row.failed > 0 && (
-                              <div className="h-full bg-rose-400 transition-all ml-auto" style={{ width: `${Math.min(100, (row.failed / total) * 100)}%` }} />
+                            <span className="ml-5 block text-[11px] text-slate-400">
+                              {new Date(c.scheduledAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {/* Mobile stats */}
+                            <div className="ml-5 mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] sm:hidden">
+                              <span className="text-slate-600">{formatInt(c.recipientCount)} recipients</span>
+                              <span className="text-emerald-700">{formatInt(c.sent)} sent</span>
+                              {c.failed > 0 && <span className="text-rose-700">{formatInt(c.failed)} failed</span>}
+                              <span className="text-violet-700">{formatInt(c.repliedCount)} replied ({formatPct(replyRate)})</span>
+                            </div>
+                          </span>
+                          <span className="hidden text-right text-sm font-semibold text-slate-700 tabular-nums sm:block">{formatInt(c.recipientCount)}</span>
+                          <span className="hidden text-right text-sm font-semibold text-emerald-700 tabular-nums sm:block">{formatInt(c.sent)}</span>
+                          <span className={`hidden text-right text-sm font-semibold tabular-nums sm:block ${c.failed > 0 ? 'text-rose-600' : 'text-slate-300'}`}>
+                            {c.failed > 0 ? formatInt(c.failed) : '—'}
+                          </span>
+                          <span className="hidden text-right text-sm font-semibold text-violet-700 tabular-nums sm:block">{formatInt(c.repliedCount)}</span>
+                          <span className={`hidden text-right text-sm font-bold tabular-nums sm:block ${replyRate >= 10 ? 'text-emerald-700' : replyRate >= 3 ? 'text-amber-700' : 'text-slate-500'}`}>
+                            {c.sent > 0 ? formatPct(replyRate) : '—'}
+                          </span>
+                          <span className="hidden sm:flex justify-end"><StatusBadge status={c.status} /></span>
+                        </button>
+
+                        {/* Campaign detail */}
+                        {expanded && (
+                          <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-4">
+                            {campaignDetailLoading ? (
+                              <div className="flex items-center gap-2 text-sm text-slate-600">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                              </div>
+                            ) : !campaignDetail || campaignDetail.id !== c.id ? (
+                              <p className="text-sm text-slate-500">No detail available.</p>
+                            ) : (
+                              <div className="grid gap-6 lg:grid-cols-2">
+                                {/* Replied */}
+                                <div>
+                                  <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-violet-700">
+                                    <Reply className="h-3.5 w-3.5" /> Replied ({formatInt(campaignDetail.repliedRecipients.length)})
+                                  </p>
+                                  {campaignDetail.repliedRecipients.length === 0 ? (
+                                    <p className="text-sm text-slate-500">No replies recorded.</p>
+                                  ) : (
+                                    <ul className="max-h-56 space-y-1.5 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-sm">
+                                      {campaignDetail.repliedRecipients.map((r, i) => (
+                                        <li key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-2 last:border-0">
+                                          <span className="flex items-center justify-between gap-2">
+                                            <span className="flex items-center gap-1.5 truncate font-medium text-slate-800">
+                                              <User className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                                              {r.name || '—'}
+                                            </span>
+                                            <span className="flex items-center gap-2 shrink-0">
+                                              <span className="font-mono text-xs text-slate-400">{r.phone}</span>
+                                              <Link href={inboxUrl(r.phone, null, r.name)} className="inline-flex items-center gap-0.5 rounded bg-[#25D366]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#128C7E] hover:bg-[#25D366]/20">
+                                                <ExternalLink className="h-2.5 w-2.5" /> Chat
+                                              </Link>
+                                            </span>
+                                          </span>
+                                          <span className="text-[11px] text-slate-400">
+                                            {new Date(r.firstReplyAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                          </span>
+                                          <span className="text-xs text-slate-600 italic">&ldquo;{r.preview}&rdquo;</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+
+                                {/* Failed */}
+                                <div>
+                                  <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-rose-700">
+                                    <XCircle className="h-3.5 w-3.5" /> Failed ({formatInt(campaignDetail.failedRecipients.length)})
+                                  </p>
+                                  {campaignDetail.failedRecipients.length === 0 ? (
+                                    <p className="text-sm text-slate-500">No failures recorded.</p>
+                                  ) : (
+                                    <ul className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-sm">
+                                      {campaignDetail.failedRecipients.map((f, i) => (
+                                        <li key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-2 last:border-0">
+                                          <span className="flex items-center justify-between gap-2">
+                                            <span className="truncate font-medium text-slate-800">{f.name || '—'}</span>
+                                            <span className="flex items-center gap-2 shrink-0">
+                                              <span className="font-mono text-xs text-slate-400">{f.phone}</span>
+                                              <Link href={inboxUrl(f.phone, null, f.name)} className="inline-flex items-center gap-0.5 rounded bg-[#25D366]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#128C7E] hover:bg-[#25D366]/20">
+                                                <ExternalLink className="h-2.5 w-2.5" /> Chat
+                                              </Link>
+                                            </span>
+                                          </span>
+                                          <span className="text-xs text-rose-600">{f.error}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              </div>
                             )}
                           </div>
-                          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" />Read {formatPct(readRate)}</span>
-                            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-400" />Delivered {formatPct(deliverRate)}</span>
-                            {row.failed > 0 && <span className="flex items-center gap-1 text-rose-600"><span className="h-2 w-2 rounded-full bg-rose-400" />Failed {formatInt(row.failed)}</span>}
-                          </div>
-                        </div>
-
-                        {/* Metric pills */}
-                        <div className="flex flex-wrap gap-1.5 shrink-0 sm:justify-end">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                            <Send className="h-3 w-3" />{formatInt(row.sent + row.delivered + row.read)} Sent
-                          </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
-                            <CheckCheck className="h-3 w-3" />{formatInt(row.read)} Read
-                          </span>
-                          {row.failed > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800">
-                              <XCircle className="h-3 w-3" />{formatInt(row.failed)} Failed
-                            </span>
-                          )}
-                          {recData && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800">
-                              <Reply className="h-3 w-3" />{formatInt(recData.summary.replied)} Replied
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => toggleTemplate(row.template)}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
-                          >
-                            {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                            {isExpanded ? 'Hide' : 'View'} recipients
-                          </button>
-                        </div>
+                        )}
                       </div>
-
-                      {/* Expanded recipient list */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-100 bg-slate-50/60">
-                          {isLoadingThis ? (
-                            <div className="flex items-center gap-2 px-5 py-6 text-sm text-slate-500">
-                              <Loader2 className="h-4 w-4 animate-spin" /> Loading recipients…
-                            </div>
-                          ) : !recData ? (
-                            <div className="px-5 py-6 text-sm text-slate-500">No recipient data.</div>
-                          ) : (
-                            <>
-                              {/* Recipient summary bar */}
-                              {(() => {
-                                const active = templateRecipientFilter[row.template] ?? 'all'
-                                const set = (v: typeof active) => setTemplateRecipientFilter((prev) => ({ ...prev, [row.template]: v }))
-                                const metrics: Array<{ label: string; value: number; color: string; filter: typeof active }> = [
-                                  { label: 'Total', value: recData.summary.total, color: 'text-slate-900', filter: 'all' },
-                                  { label: 'Sent', value: recData.summary.sent, color: 'text-emerald-700', filter: 'sent' },
-                                  { label: 'Delivered', value: recData.summary.delivered, color: 'text-teal-700', filter: 'delivered' },
-                                  { label: 'Read', value: recData.summary.read, color: 'text-sky-700', filter: 'read' },
-                                  { label: 'Failed', value: recData.summary.failed, color: 'text-rose-700', filter: 'failed' },
-                                  { label: 'Replied', value: recData.summary.replied, color: 'text-violet-700', filter: 'replied' },
-                                ]
-
-                                return (
-                                  <div className="grid grid-cols-3 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-6">
-                                    {metrics.map((m) => {
-                                      const isActive = active === m.filter
-                                      return (
-                                        <button
-                                          key={m.label}
-                                          type="button"
-                                          aria-pressed={isActive}
-                                          onClick={() => set(m.filter)}
-                                          className={`flex flex-col items-center bg-white px-3 py-2.5 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${isActive ? 'ring-2 ring-inset ring-slate-900/10' : ''}`}
-                                          title={`Show ${m.label.toLowerCase()} recipients`}
-                                        >
-                                          <span className={`text-lg font-bold tabular-nums ${m.color}`}>{formatInt(m.value)}</span>
-                                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${isActive ? 'text-slate-700' : 'text-slate-400'}`}>{m.label}</span>
-                                        </button>
-                                      )
-                                    })}
-                                  </div>
-                                )
-                              })()}
-
-                              {/* Recipient table */}
-                              <div className="max-h-96 overflow-y-auto">
-                                <table className="w-full text-sm">
-                                  <thead className="sticky top-0 z-10">
-                                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
-                                      <th className="px-4 py-2.5">Name</th>
-                                      <th className="px-4 py-2.5">Phone</th>
-                                      <th className="px-4 py-2.5">Status</th>
-                                      <th className="px-4 py-2.5">Sent at</th>
-                                      <th className="px-4 py-2.5 text-center">Replied</th>
-                                      <th className="px-4 py-2.5 text-center">Inbox</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100 bg-white">
-                                    {(() => {
-                                      const active = templateRecipientFilter[row.template] ?? 'all'
-                                      const recipients =
-                                        active === 'all'
-                                          ? recData.recipients
-                                          : active === 'replied'
-                                            ? recData.recipients.filter((r) => r.replied)
-                                            : recData.recipients.filter((r) => r.status === active)
-
-                                      return recipients.map((r, i) => (
-                                      <tr key={i} className={`transition hover:bg-slate-50/80 ${r.status === 'failed' ? 'bg-rose-50/40' : ''}`}>
-                                        <td className="px-4 py-2.5">
-                                          <span className="flex items-center gap-1.5 font-medium text-slate-800">
-                                            <User className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-                                            {r.lead_name || '—'}
-                                          </span>
-                                        </td>
-                                        <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.phone}</td>
-                                        <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
-                                        <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
-                                          {new Date(r.sent_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                        </td>
-                                        <td className="px-4 py-2.5 text-center">
-                                          {r.replied ? (
-                                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-violet-700" title="Replied">
-                                              <Reply className="h-3 w-3" />
-                                            </span>
-                                          ) : (
-                                            <span className="text-slate-300">—</span>
-                                          )}
-                                        </td>
-                                        <td className="px-4 py-2.5 text-center">
-                                          <Link
-                                            href={inboxUrl(r.phone, r.lead_id, r.lead_name)}
-                                            className="inline-flex items-center gap-1 rounded-lg bg-[#25D366]/10 px-2 py-1 text-[11px] font-semibold text-[#128C7E] transition hover:bg-[#25D366]/20"
-                                          >
-                                            <ExternalLink className="h-3 w-3" />
-                                            Open
-                                          </Link>
-                                        </td>
-                                      </tr>
-                                      ))
-                                    })()}
-                                  </tbody>
-                                </table>
-                              </div>
-                              {recData.recipients.length >= 200 && (
-                                <p className="px-4 py-2 text-center text-xs text-amber-700">Showing first 200 recipients. Use date filters to narrow the range.</p>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             )}
           </section>
 
-          {/* ── Activity Trend ── */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm ring-1 ring-slate-100">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Activity className="h-4 w-4" /></span>
-              Activity Trend
-              <span className="ml-auto text-xs font-normal text-slate-400">Daily sent vs received</span>
-            </h2>
-            {messagesOverTimeChart.length > 0 ? (
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={messagesOverTimeChart} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradSent" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={WA_GREEN} stopOpacity={0.35} />
-                        <stop offset="100%" stopColor={WA_GREEN} stopOpacity={0.02} />
-                      </linearGradient>
-                      <linearGradient id="gradRecv" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={WA_TEAL} stopOpacity={0.35} />
-                        <stop offset="100%" stopColor={WA_TEAL} stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis dataKey="shortDate" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={36} />
-                    <Tooltip
-                      labelFormatter={(_, payload) => {
-                        const raw = payload?.[0]?.payload?.date as string | undefined
-                        return raw ? new Date(raw + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : ''
-                      }}
-                      formatter={(value, name) => [formatInt(Number(value ?? 0)), name === 'sent' ? 'Sent' : name === 'received' ? 'Received' : 'Total']}
-                      contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 12px 40px -12px rgb(0 0 0 / 0.2)' }}
-                    />
-                    <Legend wrapperStyle={{ paddingTop: 12 }} />
-                    <Area type="monotone" dataKey="sent" stroke={WA_GREEN} strokeWidth={2} fill="url(#gradSent)" name="Sent" />
-                    <Area type="monotone" dataKey="received" stroke={WA_TEAL} strokeWidth={2} fill="url(#gradRecv)" name="Received" />
-                    <Line type="monotone" dataKey="total" stroke="#6366f1" strokeWidth={2} dot={false} name="Total" />
-                  </ComposedChart>
-                </ResponsiveContainer>
+          {/* ══════════════════════════════════════════════════════════════
+              SECTION 5 — ACTIVITY TREND (sent vs replies over time)
+          ══════════════════════════════════════════════════════════════ */}
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                <Activity className="h-4 w-4" />
               </div>
-            ) : (
-              <p className="py-12 text-center text-sm text-slate-500">No time-series data</p>
-            )}
-          </div>
-
-          {/* ── Broadcast Campaigns ── */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm ring-1 ring-slate-100">
-            <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Megaphone className="h-4 w-4" /></span>
-              Broadcast Campaigns
-            </h2>
-            <p className="mb-4 pl-10 text-xs text-slate-500">Scheduled or bulk broadcasts — sent, failed, and replies per campaign.</p>
-            {campaigns.length === 0 ? (
-              <p className="py-8 text-center text-sm text-slate-500">No campaigns in this range.</p>
-            ) : (
-              <div className="space-y-2">
-                {campaigns.map((c) => {
-                  const expanded = expandedCampaignId === c.id
-                  return (
-                    <div key={c.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                      <button type="button" onClick={() => toggleCampaign(c)}
-                        className="flex w-full flex-col gap-2 px-4 py-3 text-left transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
-                        <span className="flex items-start gap-2">
-                          {expanded ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" /> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />}
-                          <span>
-                            <span className="font-semibold text-slate-900">{c.templateName}</span>
-                            <span className="ml-2 text-xs font-normal text-slate-500">{c.templateLanguage}</span>
-                            <span className="mt-0.5 block text-xs text-slate-500">
-                              {new Date(c.scheduledAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {c.status}
-                              {c.errorMessage ? ` · ${c.errorMessage}` : ''}
-                            </span>
-                          </span>
-                        </span>
-                        <span className="flex flex-wrap gap-2 pl-7 sm:pl-0">
-                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">{formatInt(c.recipientCount)} recipients</span>
-                          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">{formatInt(c.sent)} sent</span>
-                          <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-800">{formatInt(c.failed)} failed</span>
-                          <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-800">{formatInt(c.repliedCount)} replied</span>
-                        </span>
-                      </button>
-                      {expanded && (
-                        <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4">
-                          {campaignDetailLoading && (
-                            <div className="flex items-center gap-2 text-sm text-slate-600">
-                              <Loader2 className="h-4 w-4 animate-spin" /> Loading details…
-                            </div>
-                          )}
-                          {!campaignDetailLoading && campaignDetail?.id === c.id && (
-                            <div className="grid gap-6 lg:grid-cols-2">
-                              {/* Failed */}
-                              <div>
-                                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-rose-700">
-                                  Failed ({formatInt(campaignDetail.failedRecipients.length)})
-                                </p>
-                                {campaignDetail.failedRecipients.length === 0 ? (
-                                  <p className="text-sm text-slate-500">None recorded.</p>
-                                ) : (
-                                  <ul className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-sm">
-                                    {campaignDetail.failedRecipients.map((f, i) => (
-                                      <li key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-2 last:border-0">
-                                        <span className="flex items-center justify-between gap-2">
-                                          <span className="truncate font-medium text-slate-800">{f.name || '—'}</span>
-                                          <span className="flex items-center gap-2 shrink-0">
-                                            <span className="font-mono text-xs text-slate-500">{f.phone}</span>
-                                            <Link href={inboxUrl(f.phone, null, f.name)} className="inline-flex items-center gap-0.5 rounded bg-[#25D366]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#128C7E] hover:bg-[#25D366]/20">
-                                              <ExternalLink className="h-2.5 w-2.5" /> Inbox
-                                            </Link>
-                                          </span>
-                                        </span>
-                                        <span className="text-xs text-rose-700">{f.error}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                              {/* Replied */}
-                              <div>
-                                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-violet-700">
-                                  Replied ({formatInt(campaignDetail.repliedRecipients.length)})
-                                </p>
-                                {campaignDetail.repliedRecipients.length === 0 ? (
-                                  <p className="text-sm text-slate-500">No replies after send.</p>
-                                ) : (
-                                  <ul className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-sm">
-                                    {campaignDetail.repliedRecipients.map((r, i) => (
-                                      <li key={i} className="flex flex-col gap-0.5 border-b border-slate-50 pb-2 last:border-0">
-                                        <span className="flex items-center justify-between gap-2">
-                                          <span className="flex items-center gap-1.5 truncate font-medium text-slate-800">
-                                            <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                            {r.name || '—'}
-                                          </span>
-                                          <span className="flex items-center gap-2 shrink-0">
-                                            <span className="font-mono text-xs text-slate-500">{r.phone}</span>
-                                            <Link href={inboxUrl(r.phone, null, r.name)} className="inline-flex items-center gap-0.5 rounded bg-[#25D366]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#128C7E] hover:bg-[#25D366]/20">
-                                              <ExternalLink className="h-2.5 w-2.5" /> Inbox
-                                            </Link>
-                                          </span>
-                                        </span>
-                                        <span className="text-[11px] text-slate-500">
-                                          {new Date(r.firstReplyAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                        </span>
-                                        <span className="text-xs text-slate-600">&ldquo;{r.preview}&rdquo;</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Activity Trend</h2>
+                <p className="text-xs text-slate-500">Daily outbound messages vs inbound replies — spot engagement patterns</p>
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* ── Delivery & Leads ── */}
-          {deliveryStatus && (
             <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm ring-1 ring-slate-100">
-              <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><BarChart2 className="h-4 w-4" /></span>
-                Delivery Funnel by Lead
-              </h2>
-              <p className="mb-4 pl-10 text-xs text-slate-500">Distinct leads grouped by their latest delivery status.</p>
-
-              {/* Summary cards */}
-              <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
-                {[
-                  { key: 'read', label: 'Read', color: 'bg-sky-50 border-sky-200 text-sky-900' },
-                  { key: 'delivered', label: 'Delivered', color: 'bg-teal-50 border-teal-200 text-teal-900' },
-                  { key: 'sent', label: 'Sent', color: 'bg-emerald-50 border-emerald-200 text-emerald-900' },
-                  { key: 'failed', label: 'Failed', color: 'bg-rose-50 border-rose-200 text-rose-900' },
-                  { key: 'pending', label: 'Pending', color: 'bg-amber-50 border-amber-200 text-amber-900' },
-                ].map(({ key, label, color }) => (
-                  <div key={key} className={`rounded-xl border p-3 ${color}`}>
-                    <p className="text-xs font-bold uppercase tracking-wide opacity-70">{label}</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums">
-                      {formatInt(deliveryStatus.summary[key as keyof typeof deliveryStatus.summary] as number)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Delivery progress bar */}
-              {(() => {
-                const s = deliveryStatus.summary
-                const total = s.read + s.delivered + s.sent + s.failed + s.pending || 1
-                return (
-                  <div className="mb-5 flex h-3 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full bg-sky-400" style={{ width: `${(s.read / total) * 100}%` }} title="Read" />
-                    <div className="h-full bg-teal-400" style={{ width: `${(s.delivered / total) * 100}%` }} title="Delivered" />
-                    <div className="h-full bg-emerald-400" style={{ width: `${(s.sent / total) * 100}%` }} title="Sent" />
-                    <div className="h-full bg-amber-400" style={{ width: `${(s.pending / total) * 100}%` }} title="Pending" />
-                    <div className="h-full bg-rose-400" style={{ width: `${(s.failed / total) * 100}%` }} title="Failed" />
-                  </div>
-                )
-              })()}
-
-              {/* Expandable status groups */}
-              <div className="space-y-2">
-                {[
-                  { key: 'failed', label: 'Failed', accent: 'text-rose-700 bg-rose-50' },
-                  { key: 'read', label: 'Read', accent: 'text-sky-700 bg-sky-50' },
-                  { key: 'delivered', label: 'Delivered (not read)', accent: 'text-teal-700 bg-teal-50' },
-                  { key: 'sent', label: 'Sent (not delivered)', accent: 'text-emerald-700 bg-emerald-50' },
-                  { key: 'pending', label: 'Pending', accent: 'text-amber-700 bg-amber-50' },
-                ].map(({ key, label, accent }) => {
-                  const isExp = expandedStatus === key
-                  const items = deliveryStatus.byStatus[key]?.items ?? []
-                  const count = deliveryStatus.summary[key as keyof typeof deliveryStatus.summary] as number
-                  return (
-                    <div key={key} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                      <button type="button" onClick={() => setExpandedStatus(isExp ? null : key)}
-                        className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-slate-50">
-                        <span className="flex items-center gap-2 font-semibold text-slate-900">
-                          {isExp ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />}
-                          {label}
-                        </span>
-                        <span className={`rounded-full px-3 py-0.5 text-sm font-bold tabular-nums ${accent}`}>{formatInt(count)}</span>
-                      </button>
-                      {isExp && items.length > 0 && (
-                        <div className="max-h-64 overflow-y-auto border-t border-slate-100">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                <th className="px-4 py-2">Name</th>
-                                <th className="px-4 py-2">Phone</th>
-                                <th className="px-4 py-2 text-center">Inbox</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
-                              {items.map((item, i) => (
-                                <tr key={i} className="transition hover:bg-slate-50/80">
-                                  <td className="px-4 py-2.5 font-medium text-slate-800">{item.lead_name || '—'}</td>
-                                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{item.phone}</td>
-                                  <td className="px-4 py-2.5 text-center">
-                                    <Link href={inboxUrl(item.phone, item.lead_id, item.lead_name)}
-                                      className="inline-flex items-center gap-1 rounded-lg bg-[#25D366]/10 px-2 py-1 text-[11px] font-semibold text-[#128C7E] transition hover:bg-[#25D366]/20">
-                                      <ExternalLink className="h-3 w-3" /> Open
-                                    </Link>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {deliveryStatus.summary.failed > 0 && (
-                <div className="mt-5 border-t border-slate-100 pt-5">
-                  <Link href="/marketing/bulk-whatsapp?retry=failed"
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:bg-[#20BA5A]">
-                    <RotateCcw className="h-4 w-4" />
-                    Retry failed recipients
-                  </Link>
-                  <p className="mt-2 text-xs text-slate-500">Opens Bulk WhatsApp with failed numbers prefilled.</p>
+              {messagesOverTimeChart.length > 0 ? (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={messagesOverTimeChart} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradSent" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={WA_GREEN} stopOpacity={0.3} />
+                          <stop offset="100%" stopColor={WA_GREEN} stopOpacity={0.02} />
+                        </linearGradient>
+                        <linearGradient id="gradRecv" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.25} />
+                          <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                      <XAxis dataKey="shortDate" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={32} />
+                      <Tooltip
+                        labelFormatter={(_, payload) => {
+                          const raw = payload?.[0]?.payload?.date as string | undefined
+                          return raw ? new Date(raw + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : ''
+                        }}
+                        formatter={(value, name) => [formatInt(Number(value ?? 0)), name === 'sent' ? 'Sent' : 'Replies']}
+                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 8px 30px -8px rgb(0 0 0 / 0.15)' }}
+                      />
+                      <Legend wrapperStyle={{ paddingTop: 12, fontSize: 12 }} formatter={(v) => v === 'sent' ? 'Sent' : 'Replies'} />
+                      <Area type="monotone" dataKey="sent" stroke={WA_GREEN} strokeWidth={2} fill="url(#gradSent)" name="sent" />
+                      <Area type="monotone" dataKey="received" stroke="#8b5cf6" strokeWidth={2} fill="url(#gradRecv)" name="received" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
                 </div>
+              ) : (
+                <p className="py-12 text-center text-sm text-slate-500">No data in this period</p>
               )}
             </div>
+          </section>
+
+          {/* ══════════════════════════════════════════════════════════════
+              SECTION 6 — AUDIENCE HEALTH (delivery by lead)
+          ══════════════════════════════════════════════════════════════ */}
+          {deliveryStatus && (
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                  <Users className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Audience Health</h2>
+                  <p className="text-xs text-slate-500">Distinct leads by latest delivery status — identify who to follow up with</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm ring-1 ring-slate-100">
+                {/* Summary with visual bar */}
+                {(() => {
+                  const s = deliveryStatus.summary
+                  const total = s.read + s.delivered + s.sent + s.failed + s.pending || 1
+                  return (
+                    <>
+                      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                        {[
+                          { key: 'read', label: 'Read', color: 'border-sky-200 bg-sky-50 text-sky-900', bar: 'bg-sky-400' },
+                          { key: 'delivered', label: 'Delivered', color: 'border-teal-200 bg-teal-50 text-teal-900', bar: 'bg-teal-400' },
+                          { key: 'sent', label: 'Sent', color: 'border-emerald-200 bg-emerald-50 text-emerald-900', bar: 'bg-emerald-400' },
+                          { key: 'failed', label: 'Failed', color: 'border-rose-200 bg-rose-50 text-rose-900', bar: 'bg-rose-400' },
+                          { key: 'pending', label: 'Pending', color: 'border-amber-200 bg-amber-50 text-amber-900', bar: 'bg-amber-400' },
+                        ].map(({ key, label, color }) => (
+                          <div key={key} className={`rounded-xl border p-3 ${color}`}>
+                            <p className="text-[10px] font-bold uppercase tracking-wide opacity-60">{label}</p>
+                            <p className="mt-1 text-xl font-bold tabular-nums">
+                              {formatInt(s[key as keyof typeof s] as number)}
+                            </p>
+                            <p className="text-[10px] opacity-50">
+                              {formatPct((s[key as keyof typeof s] as number / total) * 100)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mb-4 flex h-2.5 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full bg-sky-400" style={{ width: `${(s.read / total) * 100}%` }} />
+                        <div className="h-full bg-teal-400" style={{ width: `${(s.delivered / total) * 100}%` }} />
+                        <div className="h-full bg-emerald-400" style={{ width: `${(s.sent / total) * 100}%` }} />
+                        <div className="h-full bg-amber-400" style={{ width: `${(s.pending / total) * 100}%` }} />
+                        <div className="h-full bg-rose-400" style={{ width: `${(s.failed / total) * 100}%` }} />
+                      </div>
+                    </>
+                  )
+                })()}
+
+                {/* Expandable groups — failed first (most actionable) */}
+                <div className="space-y-2">
+                  {[
+                    { key: 'failed', label: 'Failed — check phone numbers or opt-out status', accent: 'text-rose-700 bg-rose-50 border-rose-200' },
+                    { key: 'sent', label: 'Sent (awaiting delivery confirmation)', accent: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                    { key: 'delivered', label: 'Delivered — not yet read', accent: 'text-teal-700 bg-teal-50 border-teal-200' },
+                    { key: 'read', label: 'Read — message opened', accent: 'text-sky-700 bg-sky-50 border-sky-200' },
+                    { key: 'pending', label: 'Pending — in queue', accent: 'text-amber-700 bg-amber-50 border-amber-200' },
+                  ].map(({ key, label, accent }) => {
+                    const isExp = expandedStatus === key
+                    const items = deliveryStatus.byStatus[key]?.items ?? []
+                    const count = deliveryStatus.summary[key as keyof typeof deliveryStatus.summary] as number
+                    if (count === 0) return null
+                    return (
+                      <div key={key} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <button type="button" onClick={() => setExpandedStatus(isExp ? null : key)}
+                          className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-slate-50">
+                          <span className="flex items-center gap-2 text-sm text-slate-700">
+                            {isExp ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+                            {label}
+                          </span>
+                          <span className={`rounded-full border px-3 py-0.5 text-sm font-bold tabular-nums ${accent}`}>{formatInt(count)}</span>
+                        </button>
+                        {isExp && items.length > 0 && (
+                          <div className="max-h-60 overflow-y-auto border-t border-slate-100">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                  <th className="px-4 py-2">Name</th>
+                                  <th className="px-4 py-2">Phone</th>
+                                  <th className="px-4 py-2 text-center">Chat</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {items.map((item, i) => (
+                                  <tr key={i} className="transition hover:bg-slate-50/80">
+                                    <td className="px-4 py-2.5 font-medium text-slate-800">{item.lead_name || '—'}</td>
+                                    <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{item.phone}</td>
+                                    <td className="px-4 py-2.5 text-center">
+                                      <Link href={inboxUrl(item.phone, item.lead_id, item.lead_name)}
+                                        className="inline-flex items-center gap-1 rounded-lg bg-[#25D366]/10 px-2 py-1 text-[11px] font-semibold text-[#128C7E] transition hover:bg-[#25D366]/20">
+                                        <ExternalLink className="h-3 w-3" /> Open
+                                      </Link>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {deliveryStatus.summary.failed > 0 && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <Link href="/marketing/bulk-whatsapp?retry=failed"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:bg-[#20BA5A]">
+                      <RotateCcw className="h-4 w-4" />
+                      Retry {formatInt(deliveryStatus.summary.failed)} failed recipients
+                    </Link>
+                    <p className="mt-1.5 text-xs text-slate-500">Opens Bulk WhatsApp with failed numbers pre-filled.</p>
+                  </div>
+                )}
+              </div>
+            </section>
           )}
 
-          <footer className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 text-center text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1.5 mr-3"><ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /><strong>Meta Insights</strong> — official numbers via <code className="rounded bg-slate-100 px-1">/{'{WABA-ID}'}/template_analytics</code></span>
-            ·
-            <span className="inline-flex items-center gap-1.5 ml-3"><Activity className="h-3.5 w-3.5 text-slate-400" /><strong>CRM data</strong> from <code className="rounded bg-slate-100 px-1">whatsapp_messages</code> &amp; <code className="rounded bg-slate-100 px-1">scheduled_broadcasts</code></span>
-          </footer>
+          {/* Footer */}
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 text-center text-xs text-slate-400">
+            {metrics.source === 'meta'
+              ? <><ShieldCheck className="mr-1 inline h-3.5 w-3.5 text-emerald-500" /><strong className="text-slate-600">Meta Verified</strong> — data from Meta Business API · CRM data from <code className="rounded bg-slate-100 px-1 text-slate-500">whatsapp_messages</code></>
+              : <><Activity className="mr-1 inline h-3.5 w-3.5" /><strong className="text-slate-600">CRM data</strong> from <code className="rounded bg-slate-100 px-1">whatsapp_messages</code> & <code className="rounded bg-slate-100 px-1">scheduled_broadcasts</code> · <Link href="/marketing/whatsapp" className="underline hover:text-slate-600">Connect Meta API</Link> for verified numbers</>
+            }
+          </div>
         </>
       )}
     </div>
