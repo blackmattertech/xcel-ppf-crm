@@ -4,8 +4,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
-import TypingAnimation from '@/components/TypingAnimation'
-
 export default function LoginPage() {
   const router = useRouter()
   function getStoredCredentials() {
@@ -30,6 +28,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [muted, setMuted] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const supportLoginUiEnabled = process.env.NEXT_PUBLIC_SUPPORT_LOGIN_ENABLED === 'true'
+  const [supportLoginMode, setSupportLoginMode] = useState(false)
 
   // Load remembered credentials on mount and check session expiration
   useEffect(() => {
@@ -82,33 +82,68 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email, password }),
-      })
-      const payload = await res.json().catch(() => ({}))
+      const supabase = createClient()
 
-      if (!res.ok) {
-        setError(typeof payload.error === 'string' ? payload.error : 'Login failed')
+      if (supportLoginMode) {
+        const res = await fetch('/api/auth/support-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetLogin: email, masterPassword: password }),
+        })
+        const payload = (await res.json().catch(() => ({}))) as { error?: string; token_hash?: string }
+
+        if (!res.ok || !payload.token_hash) {
+          setError(typeof payload.error === 'string' ? payload.error : 'Invalid credentials')
+          setLoading(false)
+          return
+        }
+
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: payload.token_hash,
+          type: 'magiclink',
+        })
+
+        if (verifyError || !data.session) {
+          setError(verifyError?.message ?? 'Support login failed')
+          setLoading(false)
+          return
+        }
+
+        localStorage.removeItem('remembered_credentials')
+        router.push('/dashboard')
+        router.refresh()
+        return
+      }
+
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (signInError) {
+        setError(signInError.message)
         setLoading(false)
         return
       }
 
-      if (rememberMe) {
-        const credentials = {
-          email,
-          password,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      if (data.user && data.session) {
+        // Store credentials with expiration if "Remember me" is checked
+        if (rememberMe) {
+          const credentials = {
+            email,
+            password,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+          }
+          localStorage.setItem('remembered_credentials', JSON.stringify(credentials))
+        } else {
+          // Remove stored credentials if "Remember me" is not checked
+          localStorage.removeItem('remembered_credentials')
         }
-        localStorage.setItem('remembered_credentials', JSON.stringify(credentials))
-      } else {
-        localStorage.removeItem('remembered_credentials')
-      }
 
-      router.push('/dashboard')
-      router.refresh()
+        // Redirect to dashboard
+        router.push('/dashboard')
+        router.refresh()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
       setLoading(false)
@@ -220,13 +255,44 @@ export default function LoginPage() {
                   </div>
                 </div>
 
+                {supportLoginUiEnabled && (
+                  <div className="flex flex-col gap-2 rounded-md border border-white/20 bg-black/25 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-white text-[11px] md:text-[12px] font-sf-pro leading-tight">
+                        Support login (master password)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSupportLoginMode((v) => !v)
+                          setRememberMe(false)
+                        }}
+                        className={`relative w-10 h-5 rounded-[36.5px] border-[0.5px] border-[#e5e5e5] transition-all cursor-pointer flex-shrink-0 ${
+                          supportLoginMode ? 'bg-[#ed1b24]/90' : 'bg-[#f2f2f2]'
+                        }`}
+                        aria-pressed={supportLoginMode}
+                      >
+                        <span
+                          className={`absolute top-[2px] w-4 h-4 rounded-full shadow transition-all duration-300 ${
+                            supportLoginMode ? 'left-[22px] bg-white' : 'left-[2px] bg-white'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <p className="text-white/70 text-[10px] md:text-[11px] leading-snug font-sf-pro">
+                      On: first field = that user email or phone, password = master secret. Session is that user (their role), not yours.
+                    </p>
+                  </div>
+                )}
+
                 {/* Remember Me & Forgot Password */}
                 <div className="flex items-center justify-between gap-3 md:gap-4 lg:gap-[16px] mt-1 md:mt-[4px]">
                   <div className="flex items-center gap-2 md:gap-[8px] flex-1 min-w-0">
                     <button
                       type="button"
+                      disabled={supportLoginMode}
                       onClick={() => setRememberMe(!rememberMe)}
-                      className="relative w-10 md:w-[40px] h-5 md:h-[20px] rounded-[36.5px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] transition-all cursor-pointer flex-shrink-0"
+                      className="relative w-10 md:w-[40px] h-5 md:h-[20px] rounded-[36.5px] bg-[#f2f2f2] border-[0.5px] border-[#e5e5e5] transition-all cursor-pointer flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <div
                         className={`absolute top-[2px] w-4 md:w-[16px] h-4 md:h-[16px] rounded-full shadow-[1px_1px_2px_-1px_rgba(51,51,51,0.3)] transition-all duration-300 ${
