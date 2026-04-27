@@ -100,7 +100,7 @@ function BulkWhatsAppPageContent() {
     processed: number
     results?: Array<{ id: string; status: string; sent?: number; failed?: number; error?: string }>
     message?: string
-    debug?: { pendingCount?: number; dueCount?: number }
+    debug?: { pendingCount?: number; dueCount?: number; remainingDue?: number; drainRounds?: number }
   } | null>(null)
   const searchParams = useSearchParams()
 
@@ -389,30 +389,73 @@ function BulkWhatsAppPageContent() {
   const processScheduledNow = async () => {
     setProcessingScheduled(true)
     setProcessScheduledResult(null)
+    const params = new URLSearchParams({
+      maxJobs: '30',
+      maxRuntimeMs: '240000',
+    })
+    const aggregatedResults: Array<{
+      id: string
+      status: string
+      sent?: number
+      failed?: number
+      error?: string
+      note?: string
+    }> = []
+    let totalProcessed = 0
+    let lastMessage: string | undefined
+    let lastDebug: Record<string, unknown> | undefined
+    const maxRounds = 50
+    let roundsRun = 0
     try {
-      const res = await cachedFetch('/api/marketing/whatsapp/process-scheduled', {
-        method: 'GET',
-        credentials: 'include',
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setProcessScheduledResult({
-          processed: 0,
-          results: [{ id: '', status: 'error', error: data?.error ?? `HTTP ${res.status}` }],
-          message: data?.error,
+      for (let round = 0; round < maxRounds; round++) {
+        roundsRun = round + 1
+        const res = await cachedFetch(`/api/marketing/whatsapp/process-scheduled?${params}`, {
+          method: 'GET',
+          credentials: 'include',
         })
-        return
+        const data = (await res.json().catch(() => ({}))) as {
+          processed?: number
+          results?: typeof aggregatedResults
+          message?: string
+          debug?: Record<string, unknown>
+          error?: string
+        }
+        if (!res.ok) {
+          setProcessScheduledResult({
+            processed: totalProcessed,
+            results: [
+              ...aggregatedResults,
+              { id: '', status: 'error', error: data?.error ?? `HTTP ${res.status}` },
+            ],
+            message: data?.error,
+            debug: lastDebug,
+          })
+          return
+        }
+        lastMessage = data.message
+        lastDebug = data.debug
+        const n = data.processed ?? 0
+        totalProcessed += n
+        if (Array.isArray(data.results)) aggregatedResults.push(...data.results)
+        const remainingDue = typeof data.debug?.remainingDue === 'number' ? data.debug.remainingDue : 0
+        if (remainingDue === 0) break
+        if (n === 0) break
+        await new Promise((r) => setTimeout(r, 500))
       }
       setProcessScheduledResult({
-        processed: data.processed ?? 0,
-        results: data.results ?? [],
-        message: data.message,
-        debug: data.debug,
+        processed: totalProcessed,
+        results: aggregatedResults,
+        message: lastMessage,
+        debug: lastDebug ? { ...lastDebug, drainRounds: roundsRun } : undefined,
       })
     } catch (e) {
       setProcessScheduledResult({
-        processed: 0,
-        results: [{ id: '', status: 'error', error: e instanceof Error ? e.message : 'Request failed' }],
+        processed: totalProcessed,
+        results: [
+          ...aggregatedResults,
+          { id: '', status: 'error', error: e instanceof Error ? e.message : 'Request failed' },
+        ],
+        debug: lastDebug,
       })
     } finally {
       setProcessingScheduled(false)
@@ -929,10 +972,24 @@ function BulkWhatsAppPageContent() {
                   )}
                   {processScheduledResult.message && <p className="text-slate-700">{processScheduledResult.message}</p>}
                   {processScheduledResult.debug &&
-                    (processScheduledResult.debug.pendingCount != null || processScheduledResult.debug.dueCount != null) && (
+                    (processScheduledResult.debug.pendingCount != null ||
+                      processScheduledResult.debug.dueCount != null ||
+                      processScheduledResult.debug.remainingDue != null ||
+                      processScheduledResult.debug.drainRounds != null) && (
                       <p className="text-xs text-slate-500">
-                        Pending: {processScheduledResult.debug.pendingCount ?? 0}, due now:{' '}
-                        {processScheduledResult.debug.dueCount ?? 0}
+                        {(processScheduledResult.debug.pendingCount != null ||
+                          processScheduledResult.debug.dueCount != null) && (
+                          <>
+                            Pending: {processScheduledResult.debug.pendingCount ?? 0}, due now:{' '}
+                            {processScheduledResult.debug.dueCount ?? 0}
+                          </>
+                        )}
+                        {processScheduledResult.debug.remainingDue != null && (
+                          <> · still due after last round: {processScheduledResult.debug.remainingDue}</>
+                        )}
+                        {processScheduledResult.debug.drainRounds != null && (
+                          <> · drain rounds: {processScheduledResult.debug.drainRounds}</>
+                        )}
                       </p>
                     )}
                   {processScheduledResult.processed > 0 && (

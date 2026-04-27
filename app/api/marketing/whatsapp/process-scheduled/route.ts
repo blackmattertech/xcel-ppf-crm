@@ -133,7 +133,9 @@ export async function GET(request: NextRequest) {
       const templateRow = await getTemplateByNameAndLanguage(payload.templateName, payload.templateLanguage)
       const metaTemplateId = templateRow?.meta_id ?? null
 
-      const globalDeadlineMs = startedAt + maxRuntimeMs
+      // Per job: up to ~4m of sending from claim time, but never past this HTTP request's total budget.
+      const perJobCapMs = Math.min(240_000, Math.max(30_000, maxRuntimeMs))
+      const globalDeadlineMs = Math.min(startedAt + maxRuntimeMs, Date.now() + perJobCapMs)
       const outcome = await advanceScheduledBroadcastJob({
         supabase,
         jobId: claimedRow.id,
