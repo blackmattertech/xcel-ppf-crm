@@ -5,11 +5,22 @@ import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.se
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
 import { z } from 'zod'
 
+const uuidLoose = /^[0-9a-f-]{36}$/i
+/** Only real CRM lead UUIDs link to `leads`; inbox-only threads may send junk here from older clients — drop it, save by phone. */
+const optionalLeadId = z
+  .string()
+  .optional()
+  .transform((s) => {
+    if (s == null || !String(s).trim()) return undefined
+    const t = String(s).trim()
+    return uuidLoose.test(t) ? t : undefined
+  })
+
 const sendSchema = z.object({
   recipients: z.array(z.object({ phone: z.string().min(1), name: z.string().optional() })).min(1).max(100),
   message: z.string().max(4096).optional().default(''),
   defaultCountryCode: z.string().max(4).optional().default('91'),
-  leadId: z.string().uuid().optional(),
+  leadId: optionalLeadId,
   /** WhatsApp message ID (wamid) to reply to – sends as contextual reply. */
   contextMessageId: z.string().min(1).optional(),
   messageType: z.enum(['text', 'image', 'video', 'document']).optional().default('text'),

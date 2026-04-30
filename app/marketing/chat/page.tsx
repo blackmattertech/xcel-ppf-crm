@@ -824,7 +824,9 @@ function ChatWithLeadsPageInner() {
               ? attachment.fileName?.replace(/\.[^.]+$/, '') || attachment.fileName || 'Document'
               : ''),
           defaultCountryCode: '91',
-          ...(selectedContact.type === 'lead' ? { leadId: selectedContact.id } : {}),
+          ...(selectedContact.type === 'lead' && /^[0-9a-f-]{36}$/i.test(selectedContact.id)
+            ? { leadId: selectedContact.id }
+            : {}),
           messageType: attachment?.messageType ?? 'text',
           ...(attachment ? {
             attachment: {
@@ -946,14 +948,24 @@ function ChatWithLeadsPageInner() {
       ) {
         continue
       }
+      const normalizedThreadPhone = normalizePhoneForStorage(conv.phone)
+      const leadUuid =
+        conv.lead_id && /^[0-9a-f-]{36}$/i.test(conv.lead_id) ? conv.lead_id : null
       base.push({
         key: conv.conversation_key,
-        contact: {
-          id: conv.lead_id || conv.conversation_key,
-          name: conv.lead_name || conv.phone,
-          phone: conv.phone,
-          type: 'lead' as const,
-        },
+        contact: leadUuid
+          ? {
+              id: leadUuid,
+              name: conv.lead_name || conv.phone,
+              phone: conv.phone,
+              type: 'lead' as const,
+            }
+          : {
+              id: `inbox-thread-${normalizedThreadPhone}`,
+              name: conv.lead_name || conv.phone,
+              phone: conv.phone,
+              type: 'customer' as const,
+            },
         conversation: conv,
       })
       covered.add(conv.conversation_key)
