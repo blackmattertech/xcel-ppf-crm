@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       message.trim() || (attachment?.fileName?.trim() ?? '') || (messageType !== 'text' ? 'Document' : '')
     const bodyForHistory = message.trim() || (messageType !== 'text' ? mediaCaption : '')
     const result = messageType === 'text'
-      ? await sendWhatsAppText(r.phone, message, config, contextMessageId ?? null)
+      ? await sendWhatsAppText(r.phone, message, config, contextMessageId ?? null, defaultCountryCode)
       : await sendWhatsAppMedia(
           r.phone,
           {
@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
             fileName: attachment?.fileName,
             caption: mediaCaption,
             contextMessageId: contextMessageId ?? null,
+            defaultCountryCode,
           },
           config
         )

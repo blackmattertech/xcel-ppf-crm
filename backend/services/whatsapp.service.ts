@@ -317,14 +317,16 @@ export async function sendWhatsAppText(
   to: string,
   body: string,
   config?: WhatsAppConfig | null,
-  contextMessageId?: string | null
+  contextMessageId?: string | null,
+  /** Must match inbox/bulk sends and `normalizePhoneForStorage` default for this org (request body `defaultCountryCode`). */
+  defaultCountryCode = '91'
 ): Promise<SendTextResult> {
   const cfg = config ?? getWhatsAppConfig()
   if (!cfg) {
     return { success: false, error: 'WhatsApp API not configured (missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN)' }
   }
 
-  const digits = toE164Digits(to)
+  const digits = toE164Digits(to, defaultCountryCode)
   if (digits.length < 10) {
     return { success: false, error: 'Invalid phone number' }
   }
@@ -390,13 +392,15 @@ export async function sendWhatsAppMedia(
     caption?: string
     /** WhatsApp message ID (wamid) — send as contextual reply to that message. */
     contextMessageId?: string | null
+    /** Same as `sendWhatsAppText` when `to` is national format. */
+    defaultCountryCode?: string
   },
   config?: WhatsAppConfig | null
 ): Promise<SendMediaResult> {
   const cfg = config ?? getWhatsAppConfig()
   if (!cfg) return { success: false, error: 'WhatsApp API not configured (missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN)' }
 
-  const digits = toE164Digits(to)
+  const digits = toE164Digits(to, options.defaultCountryCode ?? '91')
   if (digits.length < 10) return { success: false, error: 'Invalid phone number' }
   if (!options.mediaUrl?.trim()) return { success: false, error: 'mediaUrl is required' }
 
@@ -433,10 +437,15 @@ export async function sendWhatsAppMedia(
     error?: { message?: string; code?: number }
   }
   if (!res.ok) {
+    const err = data?.error
+    let errorMessage = err?.message ?? `HTTP ${res.status}`
+    if (err?.code === 131047 || /re-engagement|template required|24.?hour|session.*expired/i.test(errorMessage)) {
+      errorMessage += ' Use an approved template for this recipient (they have not messaged you in the last 24 hours).'
+    }
     return {
       success: false,
-      error: data?.error?.message ?? `HTTP ${res.status}`,
-      errorCode: data?.error?.code,
+      error: errorMessage,
+      errorCode: err?.code,
     }
   }
   return { success: true, messageId: data?.messages?.[0]?.id }
@@ -508,7 +517,7 @@ export async function sendWhatsAppBulk(
       failed++
       continue
     }
-    const result = await sendWhatsAppText(phone, message, config)
+    const result = await sendWhatsAppText(phone, message, config, null, defaultCountryCode)
     results.push({
       phone: r.phone,
       success: result.success,

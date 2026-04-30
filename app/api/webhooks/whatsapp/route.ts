@@ -378,6 +378,11 @@ export async function POST(request: NextRequest) {
               errors: errs,
               hint: '131047=user not opted in / 24h window closed | 131026=template rejected | 131031=recipient blocked | 131053=media upload error (bad URL, wrong MIME type, file too large, or unsupported format)',
             }, null, 2))
+            if (errs.some((e) => e.code === 131047)) {
+              console.error(
+                '[webhooks/whatsapp] 131047 — Customer care window closed (>24h since their last message). Meta only allows approved template messages until they reply again. In CRM: Marketing → Chat → pick a template, send that first; then normal chat works after they respond.'
+              )
+            }
             updateMessageStatus(wamid, 'failed').catch((err) =>
               console.warn('[webhooks/whatsapp] updateMessageStatus failed:', err)
             )
