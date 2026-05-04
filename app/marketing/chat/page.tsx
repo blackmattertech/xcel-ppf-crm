@@ -63,6 +63,42 @@ function findConversationForNormalizedKey(
   return null
 }
 
+function startOfLocalDay(d: Date): Date {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+function calendarDayKey(iso: string): string {
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Centered thread labels like WhatsApp: Today / Yesterday / weekday or full date. */
+function formatInboxDaySeparatorLabel(messageDate: Date): string {
+  const now = new Date()
+  const todayStart = startOfLocalDay(now)
+  const yesterdayStart = new Date(todayStart)
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+  const msgStart = startOfLocalDay(messageDate)
+  if (msgStart.getTime() === todayStart.getTime()) return 'Today'
+  if (msgStart.getTime() === yesterdayStart.getTime()) return 'Yesterday'
+  const sixDaysAgo = new Date(todayStart)
+  sixDaysAgo.setDate(sixDaysAgo.getDate() - 6)
+  if (msgStart >= sixDaysAgo && msgStart < todayStart) {
+    return messageDate.toLocaleDateString(undefined, { weekday: 'long' })
+  }
+  if (msgStart.getFullYear() === now.getFullYear()) {
+    return messageDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+  }
+  return messageDate.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 function lastActivityMs(conv: ConversationSummary | null | undefined): number {
   const raw = conv?.last_message?.created_at
   if (!raw) return 0
@@ -1537,7 +1573,26 @@ function ChatWithLeadsPageInner() {
                   <p className="text-xs text-gray-400 text-center py-4">No messages yet. Say hi — messages you send and lead replies will appear here.</p>
                 ) : (
                   <>
-                    {messages.map((msg) => (
+                    {messages.flatMap((msg, idx) => {
+                      const prev = idx > 0 ? messages[idx - 1] : null
+                      const dayKey = calendarDayKey(msg.created_at)
+                      const prevDay = prev ? calendarDayKey(prev.created_at) : null
+                      const showDaySep = dayKey && dayKey !== prevDay
+                      const msgDate = new Date(msg.created_at)
+                      const daySepLabel = showDaySep ? formatInboxDaySeparatorLabel(msgDate) : ''
+                      const sep = showDaySep ? (
+                        <div
+                          key={`inbox-day-${dayKey}-${msg.id}`}
+                          className="flex w-full shrink-0 justify-center py-2"
+                          role="separator"
+                          aria-label={daySepLabel}
+                        >
+                          <span className="rounded-lg bg-white/90 px-3 py-1 text-[11px] font-medium text-gray-600 shadow-sm ring-1 ring-gray-200/80">
+                            {daySepLabel}
+                          </span>
+                        </div>
+                      ) : null
+                      const row = (
                       <div
                         key={msg.id}
                         id={`inbox-msg-${msg.id}`}
@@ -1778,7 +1833,9 @@ function ChatWithLeadsPageInner() {
                         </div>
                       </div>
                     </div>
-                    ))}
+                      )
+                      return sep ? [sep, row] : [row]
+                    })}
                     <div ref={messagesEndRef} />
                   </>
                 )}
