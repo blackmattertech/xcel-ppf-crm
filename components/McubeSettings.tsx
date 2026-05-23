@@ -73,6 +73,11 @@ export default function McubeSettings() {
         <p className="text-sm text-gray-600 mt-1">
           Control how call outcomes are shown in lead status updates.
         </p>
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 mt-3">
+          <strong>Per-caller MCUBE numbers:</strong> set each tele-caller&apos;s{' '}
+          <strong>Phone (MCUBE executive)</strong> under Teams. Outbound calls use that user&apos;s number.
+          Do not set <code className="text-xs">MCUBE_EXECUTIVE_NUMBER</code> in server env (it overrides everyone).
+        </p>
       </div>
 
       {error && (

@@ -1174,13 +1174,19 @@ export default function TeamsPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Phone (MCUBE executive)
+                      </label>
                       <input
                         type="tel"
                         value={formData.phone}
                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        placeholder="10-digit MCUBE outbound number for this caller"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Must match this agent&apos;s executive in MCUBE. Each caller uses their own number when placing calls.
+                      </p>
                     </div>
                   </div>
 
@@ -1465,13 +1471,19 @@ export default function TeamsPage() {
                                 </div>
                               )}
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Phone (MCUBE executive)
+                                </label>
                                 <input
                                   type="tel"
                                   value={detailFormData.phone}
                                   onChange={(e) => setDetailFormData({ ...detailFormData, phone: e.target.value })}
+                                  placeholder="10-digit MCUBE outbound number for this caller"
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#de0510] focus:border-[#de0510]"
                                 />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Must match this agent&apos;s executive in MCUBE. Each caller uses their own number when placing calls.
+                                </p>
                               </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Role *</label>

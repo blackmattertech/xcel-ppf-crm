@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuth } from '@/backend/middleware/auth'
 import { createServiceClient } from '@/lib/supabase/service'
-import { triggerMcubeOutbound, resolveMcubeRefurl, formatPhoneForMcubeDial } from '@/backend/services/mcube.service'
+import {
+  triggerMcubeOutbound,
+  resolveMcubeRefurl,
+  formatPhoneForMcubeDial,
+  resolveMcubeOutboundExenumber,
+  getLegacyMcubeExecutiveOverride,
+} from '@/backend/services/mcube.service'
 
 const bodySchema = z.object({ lead_id: z.string().uuid() })
 
@@ -77,8 +83,15 @@ export async function POST(request: NextRequest) {
   }
 
   const sessionId = (session as { id: string }).id
-  const forcedExec = process.env.MCUBE_EXECUTIVE_NUMBER?.trim()
-  const exenumber = formatPhoneForMcubeDial(forcedExec && forcedExec.length > 0 ? forcedExec : agentPhone)
+
+  const legacyOverride = getLegacyMcubeExecutiveOverride()
+  if (legacyOverride) {
+    console.warn(
+      '[mcube/outbound] MCUBE_EXECUTIVE_NUMBER is set but ignored. Remove it so each caller uses their Teams phone (MCUBE executive). See docs/MCUBE.md.'
+    )
+  }
+
+  const exenumber = resolveMcubeOutboundExenumber(agentPhone)
   const custnumber = formatPhoneForMcubeDial(lead.phone)
 
   if (custnumber.length < 10) {
@@ -96,7 +109,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          'Executive number sent to MCUBE is invalid (need 10 digits). Set your user phone in profile or configure MCUBE_EXECUTIVE_NUMBER.',
+          'Executive number sent to MCUBE is invalid (need 10 digits). Set your MCUBE executive number in Teams (Phone field, same as MCUBE).',
       },
       { status: 400 }
     )

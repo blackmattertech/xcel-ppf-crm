@@ -15,6 +15,20 @@ export function formatPhoneForMcubeDial(phone: string): string {
   return digits
 }
 
+/**
+ * Outbound MCUBE `exenumber` for the logged-in user.
+ * Always uses the caller's profile phone — never a shared env override (see MCUBE.md).
+ */
+export function resolveMcubeOutboundExenumber(agentPhone: string): string {
+  return formatPhoneForMcubeDial(agentPhone.trim())
+}
+
+/** @deprecated Single shared executive; do not set when each caller has their own MCUBE number. */
+export function getLegacyMcubeExecutiveOverride(): string | null {
+  const forced = process.env.MCUBE_EXECUTIVE_NUMBER?.trim()
+  return forced && forced.length > 0 ? forced : null
+}
+
 /** MCUBE timestamps are typically IST (Asia/Kolkata) without offset. */
 export function parseMcubeTimestamp(value: string | undefined | null): string | null {
   if (!value || !String(value).trim()) return null

@@ -290,17 +290,8 @@ async function resolveLeadAndAgent(
 
   let calledById = await findUserIdByAgentPhone(supabase, payload.emp_phone ?? null)
 
-  if (!calledById) {
-    const configuredExec = process.env.MCUBE_EXECUTIVE_NUMBER?.trim()
-    if (configuredExec) {
-      calledById = await findUserIdByAgentPhone(supabase, configuredExec)
-    }
-  }
-
-  if (!calledById) {
-    if (initiatedBy) {
-      calledById = initiatedBy
-    }
+  if (!calledById && initiatedBy) {
+    calledById = initiatedBy
   }
 
   if (!calledById) {
