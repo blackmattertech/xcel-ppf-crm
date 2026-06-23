@@ -5,13 +5,13 @@ import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 import { z } from 'zod'
 
-const MAX_RANGE_MS = 8 * 24 * 60 * 60 * 1000 // 8 days (inclusive buffer for TZ + week view later)
+const MAX_REPORT_RANGE_DAYS = 30
 
-const querySchema = z.object({
-  start: z.string().min(1),
-  end: z.string().min(1),
-  user_id: z.string().uuid().optional(),
-})
+function inclusiveCalendarDays(start: Date, end: Date): number {
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+  return Math.round((endDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000)) + 1
+}
 
 function parseIsoBounds(startRaw: string, endRaw: string): { start: Date; end: Date } | { error: string } {
   const start = new Date(startRaw)
@@ -22,11 +22,18 @@ function parseIsoBounds(startRaw: string, endRaw: string): { start: Date; end: D
   if (end.getTime() < start.getTime()) {
     return { error: 'end must be on or after start' }
   }
-  if (end.getTime() - start.getTime() > MAX_RANGE_MS) {
-    return { error: 'Date range cannot exceed 7 days' }
+  const days = inclusiveCalendarDays(start, end)
+  if (days > MAX_REPORT_RANGE_DAYS) {
+    return { error: `Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days` }
   }
   return { start, end }
 }
+
+const querySchema = z.object({
+  start: z.string().min(1),
+  end: z.string().min(1),
+  user_id: z.string().uuid().optional(),
+})
 
 function canViewAllCallers(roleName: string | undefined): boolean {
   const r = roleName?.toLowerCase() ?? ''

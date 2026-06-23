@@ -73,3 +73,18 @@ Bucket analytics for Reports page.
 **Auth:** admin, `reports.read`, or `buckets.read`
 
 **Note:** Does not modify `leads.status`, assignment, or `meta_data`.
+
+## `GET /api/reports/daily-calls`
+
+MCUBE call report for Reports → Call reports tab.
+
+| Query | Description |
+|-------|-------------|
+| `start` | ISO datetime (start of from day, local → UTC) |
+| `end` | ISO datetime (end of to day) |
+| `user_id` | Optional UUID — admin/marketing filter by caller |
+
+**Max range:** 30 calendar days (inclusive).
+
+**Auth:** `reports.read` or admin. Tele-callers with `reports.read` see only their own calls.
+

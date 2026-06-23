@@ -41,13 +41,24 @@ function localDateRangeBoundsIso(fromStr: string, toStr: string): { start: strin
   return { start: from.start, end: to.end }
 }
 
+function inclusiveCalendarDaysFromYmd(fromStr: string, toStr: string): number {
+  const [y1, m1, d1] = fromStr.split('-').map(Number)
+  const [y2, m2, d2] = toStr.split('-').map(Number)
+  if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2) return 0
+  const start = new Date(y1, m1 - 1, d1)
+  const end = new Date(y2, m2 - 1, d2)
+  return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
+}
+
 function reportRangeError(fromStr: string, toStr: string): string | null {
-  const { start, end } = localDateRangeBoundsIso(fromStr, toStr)
-  const startMs = new Date(start).getTime()
-  const endMs = new Date(end).getTime()
-  if (endMs < startMs) return 'To date must be on or after from date'
-  const spanMs = endMs - startMs
-  if (spanMs > MAX_REPORT_RANGE_DAYS * 24 * 60 * 60 * 1000) {
+  const [y1, m1, d1] = fromStr.split('-').map(Number)
+  const [y2, m2, d2] = toStr.split('-').map(Number)
+  if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2) return 'Invalid date'
+  const start = new Date(y1, m1 - 1, d1)
+  const end = new Date(y2, m2 - 1, d2)
+  if (end.getTime() < start.getTime()) return 'To date must be on or after from date'
+  const days = inclusiveCalendarDaysFromYmd(fromStr, toStr)
+  if (days > MAX_REPORT_RANGE_DAYS) {
     return `Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days`
   }
   return null
