@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isProcessScheduledCronAuthorized } from '@/lib/cron-request-auth'
+import { isExternalCronAuthorized } from '@/lib/cron-request-auth'
 import { runWhatsAppAutomationJob } from '@/backend/jobs/whatsapp-automation.job'
 
 /**
@@ -7,8 +7,14 @@ import { runWhatsAppAutomationJob } from '@/backend/jobs/whatsapp-automation.job
  * Schedule: every 15 minutes recommended (cron: star-slash-15 star star star star).
  */
 export async function GET(request: NextRequest) {
-  if (!isProcessScheduledCronAuthorized(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isExternalCronAuthorized(request)) {
+    return NextResponse.json(
+      {
+        error: 'Unauthorized',
+        hint: 'Set CRON_SECRET on the web app. FastCron: add header Authorization: Bearer <CRON_SECRET> or use ?secret=<CRON_SECRET> in the URL.',
+      },
+      { status: 401 }
+    )
   }
 
   try {

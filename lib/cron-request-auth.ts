@@ -13,37 +13,80 @@ function trimSecret(value: string | undefined): string | undefined {
   return t || undefined
 }
 
+/** All configured cron secrets (trimmed, deduped). */
+export function getCronSecrets(): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of [
+    process.env.WHATSAPP_PROCESS_SCHEDULED_SECRET,
+    process.env.CRON_SECRET,
+  ]) {
+    const s = trimSecret(raw)
+    if (s && !seen.has(s)) {
+      seen.add(s)
+      out.push(s)
+    }
+  }
+  return out
+}
+
 /**
  * Prefer WhatsApp-specific cron secret, then shared CRON_SECRET (trimmed).
  * Use for server-to-server URLs that pass `?secret=` to internal routes.
  */
 export function primaryProcessScheduledSecret(): string | undefined {
-  return trimSecret(process.env.WHATSAPP_PROCESS_SCHEDULED_SECRET) ?? trimSecret(process.env.CRON_SECRET)
+  return getCronSecrets()[0]
+}
+
+function tokenMatchesCandidates(token: string | undefined | null, candidates: string[]): boolean {
+  if (!token) return false
+  const t = token.trim()
+  return t.length > 0 && candidates.includes(t)
 }
 
 /**
- * Authorize cron HTTP calls. Production: FastCron with Bearer CRON_SECRET (or WHATSAPP_PROCESS_SCHEDULED_SECRET).
- * Vercel `x-vercel-cron` header still accepted when present.
- */
-export function isProcessScheduledCronAuthorized(request: NextRequest): boolean {
-  if (request.headers.get('x-vercel-cron') === '1') return true
-  const auth = request.headers.get('authorization')
-  if (!auth?.startsWith('Bearer ')) return false
-  const token = auth.slice(7).trim()
-  const candidates = [
-    trimSecret(process.env.WHATSAPP_PROCESS_SCHEDULED_SECRET),
-    trimSecret(process.env.CRON_SECRET),
-  ].filter(Boolean) as string[]
-  if (candidates.length === 0) return false
-  return candidates.includes(token)
-}
-
-/**
- * Authorize scheduled cron HTTP calls.
+ * Authorize external cron HTTP calls (FastCron, curl, etc.).
  *
- * - FastCron (production): `Authorization: Bearer <CRON_SECRET>`
- * - Vercel Cron: `x-vercel-cron: 1` (optional legacy)
- * - Manual curl: same Bearer header
+ * Accepts (in order):
+ * - `x-vercel-cron: 1` (Vercel Cron)
+ * - `Authorization: Bearer <CRON_SECRET>`
+ * - `X-Cron-Secret: <CRON_SECRET>` (some schedulers use custom header)
+ * - `?secret=<CRON_SECRET>` query param (FastCron-friendly when headers are awkward)
+ *
+ * Requires `CRON_SECRET` or `WHATSAPP_PROCESS_SCHEDULED_SECRET` in env for non-Vercel callers.
+ */
+export function isExternalCronAuthorized(request: NextRequest): boolean {
+  if (request.headers.get('x-vercel-cron') === '1') return true
+
+  const candidates = getCronSecrets()
+  if (candidates.length === 0) return false
+
+  const auth = request.headers.get('authorization')
+  if (auth?.startsWith('Bearer ') && tokenMatchesCandidates(auth.slice(7), candidates)) {
+    return true
+  }
+
+  if (tokenMatchesCandidates(request.headers.get('x-cron-secret'), candidates)) {
+    return true
+  }
+
+  try {
+    const querySecret = new URL(request.url).searchParams.get('secret')
+    if (tokenMatchesCandidates(querySecret, candidates)) return true
+  } catch {
+    /* ignore */
+  }
+
+  return false
+}
+
+/** @deprecated Use isExternalCronAuthorized */
+export function isProcessScheduledCronAuthorized(request: NextRequest): boolean {
+  return isExternalCronAuthorized(request)
+}
+
+/**
+ * Authorize scheduled cron HTTP calls (legacy helper for routes that pass explicit secret).
  */
 export function isCronRequestAuthorized(
   request: NextRequest,

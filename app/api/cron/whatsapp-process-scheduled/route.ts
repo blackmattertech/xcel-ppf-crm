@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isProcessScheduledCronAuthorized, primaryProcessScheduledSecret } from '@/lib/cron-request-auth'
+import { isExternalCronAuthorized, primaryProcessScheduledSecret } from '@/lib/cron-request-auth'
 
 /**
  * Cron entrypoint for due WhatsApp scheduled broadcasts (FastCron every 5 min).
@@ -7,7 +7,7 @@ import { isProcessScheduledCronAuthorized, primaryProcessScheduledSecret } from 
  * Set CRON_SECRET (or WHATSAPP_PROCESS_SCHEDULED_SECRET) in env.
  */
 export async function GET(request: NextRequest) {
-  if (!isProcessScheduledCronAuthorized(request)) {
+  if (!isExternalCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

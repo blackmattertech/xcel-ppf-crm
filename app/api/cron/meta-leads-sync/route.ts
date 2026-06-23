@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isExternalCronAuthorized } from '@/lib/cron-request-auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import { syncMetaLeadsForUser } from '@/backend/jobs/meta-leads-sync.job'
 
@@ -9,11 +10,7 @@ import { syncMetaLeadsForUser } from '@/backend/jobs/meta-leads-sync.job'
  * FastCron: schedule every 6h and GET this URL with Authorization Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
-
-  if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!isExternalCronAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
