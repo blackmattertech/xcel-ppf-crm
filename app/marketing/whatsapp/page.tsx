@@ -37,6 +37,14 @@ const featureCards = [
     hoverBorder: 'hover:border-sky-300/50 hover:shadow-sky-500/10',
   },
   {
+    href: '/marketing/whatsapp/automation',
+    title: 'Automation flows',
+    description: 'Build 30-day drip loops with template or media messages; callers enroll leads and buckets.',
+    icon: Sparkles,
+    iconWrap: 'from-rose-500/15 to-pink-600/10 text-rose-700 ring-rose-500/20',
+    hoverBorder: 'hover:border-rose-300/50 hover:shadow-rose-500/10',
+  },
+  {
     href: '/marketing/chat',
     title: 'Inbox',
     description: 'Open WhatsApp-style inbox to view conversations, send templates, and share attachments.',

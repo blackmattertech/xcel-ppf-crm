@@ -22,8 +22,8 @@ export function primaryProcessScheduledSecret(): string | undefined {
 }
 
 /**
- * Vercel Cron + GitHub Actions may use CRON_SECRET while the app also defines
- * WHATSAPP_PROCESS_SCHEDULED_SECRET. Accept Bearer if it matches any configured value (trimmed).
+ * Authorize cron HTTP calls. Production: Render Cron with Bearer CRON_SECRET (or WHATSAPP_PROCESS_SCHEDULED_SECRET).
+ * Vercel `x-vercel-cron` header still accepted when present.
  */
 export function isProcessScheduledCronAuthorized(request: NextRequest): boolean {
   if (request.headers.get('x-vercel-cron') === '1') return true
@@ -41,9 +41,9 @@ export function isProcessScheduledCronAuthorized(request: NextRequest): boolean 
 /**
  * Authorize scheduled cron HTTP calls.
  *
- * - Vercel Cron: sends `x-vercel-cron: 1`; when `CRON_SECRET` is set in the project, Vercel also sends
- *   `Authorization: Bearer <CRON_SECRET>` (see https://vercel.com/docs/cron-jobs/manage-cron-jobs).
- * - GitHub Actions / manual: send the same `Authorization` header.
+ * - Render Cron (production): `Authorization: Bearer <CRON_SECRET>`
+ * - Vercel Cron: `x-vercel-cron: 1` (optional legacy)
+ * - Manual curl: same Bearer header
  */
 export function isCronRequestAuthorized(
   request: NextRequest,

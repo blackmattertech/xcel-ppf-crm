@@ -9,6 +9,7 @@ import { cachedFetch } from '@/lib/api-client'
 import { BUCKET_COLORS } from '@/components/leads/LeadBucketPicker'
 import { Layers, Plus, X, Pencil, Trash2, Users, Eye } from 'lucide-react'
 import { LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
+import { BucketAutomationLinks } from '@/components/whatsapp/BucketAutomationLinks'
 
 interface LeadBucket {
   id: string
@@ -44,6 +45,7 @@ export default function BucketsPage() {
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [canManage, setCanManage] = useState(false)
+  const [canEnrollAutomation, setCanEnrollAutomation] = useState(false)
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingBucket, setEditingBucket] = useState<LeadBucket | null>(null)
@@ -121,6 +123,13 @@ export default function BucketsPage() {
         roleName === 'admin' ||
         permissions.includes('buckets.create') ||
         permissions.includes('buckets.manage')
+    )
+    setCanEnrollAutomation(
+      roleName === 'super_admin' ||
+        roleName === 'admin' ||
+        permissions.includes('whatsapp_automation.enroll') ||
+        permissions.includes('whatsapp_automation.manage') ||
+        permissions.includes('leads.update')
     )
   }
 
@@ -369,6 +378,7 @@ export default function BucketsPage() {
                     ))}
                   </div>
                 )}
+                <BucketAutomationLinks bucketId={detailBucket.id} canEnroll={canEnrollAutomation} />
               </div>
             )}
           </div>

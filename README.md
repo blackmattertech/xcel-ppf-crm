@@ -201,7 +201,7 @@ Subscribe to **message_templates** (or template status updates) in Meta App Dash
 
 ### Template sync cron
 
-Optional: call `GET` or `POST /api/cron/whatsapp-template-sync` (e.g. with `Authorization: Bearer <CRON_SECRET>`) to poll Meta and reconcile template status. Set `CRON_SECRET` in env to protect the route.
+Optional: Render cron calls `GET` or `POST /api/cron/whatsapp-template-sync` hourly with `Authorization: Bearer <CRON_SECRET>`. See `render.yaml` and `docs/DEPLOYMENT.md`.
 
 ## License
 

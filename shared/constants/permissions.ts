@@ -63,6 +63,14 @@ export const PERMISSIONS = {
   BUCKETS_DELETE: 'buckets.delete',
   BUCKETS_MANAGE: 'buckets.manage',
 
+  // WhatsApp automation flows
+  WHATSAPP_AUTOMATION_READ: 'whatsapp_automation.read',
+  WHATSAPP_AUTOMATION_CREATE: 'whatsapp_automation.create',
+  WHATSAPP_AUTOMATION_UPDATE: 'whatsapp_automation.update',
+  WHATSAPP_AUTOMATION_DELETE: 'whatsapp_automation.delete',
+  WHATSAPP_AUTOMATION_MANAGE: 'whatsapp_automation.manage',
+  WHATSAPP_AUTOMATION_ENROLL: 'whatsapp_automation.enroll',
+
   // Follow-ups
   FOLLOWUPS_CREATE: 'followups.create',
   FOLLOWUPS_READ: 'followups.read',

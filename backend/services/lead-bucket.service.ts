@@ -273,6 +273,9 @@ export async function setLeadBuckets(
     if (invalid.length > 0) throw new Error('One or more bucket IDs are invalid or inactive')
   }
 
+  const previousBuckets = await getBucketsForLead(leadId)
+  const previousIds = new Set(previousBuckets.map((b) => b.id))
+
   const { error: deleteError } = await supabase.from('lead_bucket_assignments').delete().eq('lead_id', leadId)
   if (deleteError) throw new Error(`Failed to clear bucket assignments: ${deleteError.message}`)
 
@@ -287,6 +290,18 @@ export async function setLeadBuckets(
       // @ts-ignore
       .insert(rows)
     if (insertError) throw new Error(`Failed to assign buckets: ${insertError.message}`)
+  }
+
+  const newlyAdded = uniqueIds.filter((id) => !previousIds.has(id))
+  if (newlyAdded.length > 0) {
+    const { autoEnrollLeadFromBucketTag } = await import('@/backend/services/whatsapp-automation.service')
+    for (const bucketId of newlyAdded) {
+      try {
+        await autoEnrollLeadFromBucketTag(leadId, bucketId, assignedBy)
+      } catch (e) {
+        console.error('WhatsApp automation auto-enroll failed', leadId, bucketId, e)
+      }
+    }
   }
 
   return getBucketsForLead(leadId)

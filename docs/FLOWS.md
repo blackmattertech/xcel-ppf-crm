@@ -33,3 +33,34 @@
 | Inactive bucket | Hidden from picker; existing assignments remain until user changes tags |
 | Duplicate tag | Unique constraint prevents duplicate rows |
 | Unassigned lead | Admin can tag; tele-caller cannot view unless assigned |
+
+---
+
+# Flows — WhatsApp automation
+
+## Admin builds flow
+
+1. **Trigger:** `/marketing/whatsapp/automation`
+2. **Entry:** `POST /api/automation/whatsapp/flows` (max 2 active)
+3. **Triggers:** `PUT .../flows/[id]/triggers` — day offset + template or text/image/video
+4. **Exit:** Flow active; callers can enroll
+
+## Caller enrolls lead
+
+1. Lead detail → WhatsApp automation → pick flow → Enroll
+2. `POST /api/automation/whatsapp/enrollments`
+3. Day 0 batch queued if trigger exists
+4. Cron sends messages on schedule (IST calendar days)
+
+## Caller links bucket
+
+1. `/buckets` → bucket detail → Link to flow
+2. `POST /api/automation/whatsapp/bucket-links`
+3. All current bucket leads enrolled; new tags auto-enroll via `setLeadBuckets` hook
+
+## Cron processing
+
+1. Render cron every 15 min → `GET /api/cron/whatsapp-automation`
+2. `queueDueTriggerBatches()` → `advanceTriggerBatch()` in chunks
+3. `remainingRecipients` persisted until all leads sent or permanent fail
+4. Cycle end: `completed` or restart per `restart_on_complete`

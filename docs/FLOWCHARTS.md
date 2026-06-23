@@ -33,3 +33,40 @@ sequenceDiagram
   S-->>API: Updated buckets
   API-->>UI: 200 OK
 ```
+
+---
+
+# Flowcharts — WhatsApp automation
+
+```mermaid
+flowchart TD
+  Admin[Admin] --> FlowUI[/marketing/whatsapp/automation]
+  FlowUI --> FlowAPI[POST /api/automation/whatsapp/flows]
+  FlowAPI --> FlowDB[(whatsapp_automation_flows)]
+
+  Caller[Caller] --> EnrollAPI[POST enrollments or bucket-links]
+  EnrollAPI --> EnrollDB[(lead_enrollments)]
+
+  RenderCron[Render cron 15m] --> CronRoute[/api/cron/whatsapp-automation]
+  CronRoute --> Job[whatsapp-automation.job]
+  Job --> BatchDB[(trigger_batches)]
+  Job --> Meta[Meta WhatsApp API]
+```
+
+```mermaid
+sequenceDiagram
+  participant Cron
+  participant Batch as trigger_batches
+  participant Meta
+
+  Cron->>Batch: claim pending batch
+  loop chunks until time budget
+    Cron->>Meta: send template or media
+    Cron->>Batch: update remainingRecipients
+  end
+  alt queue not empty
+    Cron->>Batch: status pending for next tick
+  else done
+    Cron->>Batch: status completed
+  end
+```

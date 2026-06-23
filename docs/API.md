@@ -88,3 +88,57 @@ MCUBE call report for Reports → Call reports tab.
 
 **Auth:** `reports.read` or admin. Tele-callers with `reports.read` see only their own calls.
 
+---
+
+# API — WhatsApp automation
+
+Base: `/api/automation/whatsapp/*` and cron `/api/cron/whatsapp-automation`
+
+## Flows (admin)
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/automation/whatsapp/flows` | `whatsapp_automation.read` |
+| POST | `/api/automation/whatsapp/flows` | `whatsapp_automation.manage` |
+| GET/PUT/DELETE | `/api/automation/whatsapp/flows/[id]` | read / manage |
+| PUT | `/api/automation/whatsapp/flows/[id]/triggers` | manage — replace trigger set |
+
+**Limits:** max 2 active flows; `cycle_days` 1–30; triggers on days `0 … cycle_days-1`.
+
+**Trigger `message_type`:** `template` | `text` | `image` | `video`
+
+## Enrollments (callers)
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/automation/whatsapp/enrollments?leadId=` | read |
+| POST | `/api/automation/whatsapp/enrollments` | `whatsapp_automation.enroll` or `leads.update` |
+| DELETE | `/api/automation/whatsapp/enrollments?enrollmentId=` | enroll |
+
+Body (POST): `{ "flow_id", "lead_id" }`
+
+## Bucket links
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/automation/whatsapp/bucket-links?bucketId=` | read |
+| POST | `/api/automation/whatsapp/bucket-links` | enroll — `{ flow_id, bucket_id }` |
+| DELETE | `?flowId=&bucketId=` | enroll |
+
+## Logs (admin)
+
+`GET /api/automation/whatsapp/logs?flowId=&limit=`
+
+## Cron (Render only)
+
+All schedulers use `Authorization: Bearer CRON_SECRET`. Configure in [`render.yaml`](../render.yaml) and [`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
+
+| Endpoint | Schedule |
+|----------|----------|
+| `GET /api/cron/whatsapp-process-scheduled` | every 5 min |
+| `GET /api/cron/meta-leads-sync` | every 6 h |
+| `GET /api/cron/whatsapp-automation` | every 15 min |
+| `GET /api/cron/whatsapp-template-sync` | hourly |
+
+Manual: `GET /api/marketing/whatsapp/process-automation?secret=`
+

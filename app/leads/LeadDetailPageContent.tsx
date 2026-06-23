@@ -49,6 +49,7 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { cachedFetch, invalidateLeadGetCache, invalidateLeadsListGetCache } from '@/lib/api-client'
+import { LeadAutomationEnroll } from '@/components/whatsapp/LeadAutomationEnroll'
 import { useQuery } from '@tanstack/react-query'
 import { differenceInCalendarDays, format, isToday, isYesterday } from 'date-fns'
 
@@ -2310,6 +2311,12 @@ export default function LeadDetailPageContent({
                     )}
                     {savingLeadBuckets && (
                       <p className="text-[10px] text-[#717d8a] mt-1">Saving buckets…</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-2">WhatsApp automation</p>
+                    {leadId && (
+                      <LeadAutomationEnroll leadId={leadId} canEnroll={canUpdateStatus} />
                     )}
                   </div>
                   <div>

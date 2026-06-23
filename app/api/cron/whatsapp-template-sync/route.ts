@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runTemplateSync } from '@/backend/jobs/whatsapp-template-sync.job'
 
 /**
- * Cron: sync WhatsApp template status/category from Meta.
- * Secure with CRON_SECRET or Authorization header if needed.
+ * Cron: sync WhatsApp template status/category from Meta (Render cron hourly).
+ * Secure with Authorization: Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')

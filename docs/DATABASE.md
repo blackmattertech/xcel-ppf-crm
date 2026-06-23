@@ -42,3 +42,18 @@ Many-to-many: leads ↔ buckets.
 - Bucket counts: `SELECT bucket_id, COUNT(*) FROM lead_bucket_assignments GROUP BY bucket_id`
 - Leads in bucket: join `lead_bucket_assignments` → `leads` on `lead_id`
 - Tele-caller scope: filter `leads.assigned_to = current_user_id` when listing bucket leads
+
+---
+
+## WhatsApp automation (migration `051`)
+
+| Table | Purpose |
+|-------|---------|
+| `whatsapp_automation_flows` | Named loops, cycle_days 1–30, restart_on_complete |
+| `whatsapp_automation_triggers` | Per-day messages (template/text/image/video) |
+| `whatsapp_automation_bucket_links` | Bucket ↔ flow auto-enroll rule |
+| `whatsapp_automation_lead_enrollments` | Per-lead enrollment + cycle_number |
+| `whatsapp_automation_trigger_batches` | Chunked send jobs with `broadcastProgress` |
+| `whatsapp_automation_send_log` | Per-lead delivery audit |
+
+**Migration:** `database/migrations/051_whatsapp_automation.sql`

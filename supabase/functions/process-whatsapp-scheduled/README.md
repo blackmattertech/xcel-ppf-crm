@@ -7,13 +7,16 @@ Supabase Edge Function that processes **scheduled WhatsApp broadcasts** from the
 1. **Schedule in the app**  
    In **Marketing → Bulk WhatsApp**, set "Schedule for" and click "Schedule broadcast". The Next.js app writes one row to `scheduled_broadcasts` with a resolved payload (template, recipients, delay, etc.).
 
-2. **Cron runs every minute**  
-   **pg_cron** (see migration `032_pg_cron_whatsapp_scheduled.sql`) calls this Edge Function every minute via **pg_net** (HTTP POST to your project’s `/functions/v1/process-whatsapp-scheduled`).
+2. **Cron (production)**  
+   **Render Cron Job** hits `GET /api/cron/whatsapp-process-scheduled` every 5 minutes (see repo `render.yaml` and `docs/DEPLOYMENT.md`). Do not use GitHub Actions or pg_cron in production.
+
+2b. **Legacy (optional, not production)**  
+   **pg_cron** (migration `032`) can call this Edge Function via **pg_net** — superseded by Render cron + Next.js API route.
 
 3. **This function**  
    Runs when invoked: reads due jobs, gets WhatsApp config (DB or env), sends each message with the configured delay, and updates job status to `completed` or `failed`.
 
-So you can **schedule multiple messages at once** in the app; Supabase cron + this function send them at the scheduled time.
+So you can **schedule multiple messages at once** in the app; Render cron + `/api/cron/whatsapp-process-scheduled` send them at the scheduled time.
 
 ## Deploy
 

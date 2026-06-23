@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     // Do not embed formatted time in message — server timezone (often UTC) confuses users in other zones.
     // Client should format `scheduledAt` (ISO) with toLocaleString in the browser.
     const processorHint =
-      'Your GitHub Actions workflow (every 5 minutes, UTC) or "Process scheduled broadcasts now" will send it.'
+      'Render cron (every 5 minutes) or "Process scheduled broadcasts now" will send it.'
 
     return NextResponse.json({
       id: inserted.id,

@@ -1,0 +1,64 @@
+# Render Blueprint — scheduled jobs run ONLY on Render Cron (not GitHub Actions / Vercel / pg_cron).
+# Set APP_BASE_URL (web service URL, no trailing slash) and CRON_SECRET on the web service and each cron job.
+# Dashboard: https://dashboard.render.com
+
+envVarGroups:
+  - name: crm-cron-env
+    envVars:
+      - key: APP_BASE_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+services:
+  # WhatsApp scheduled broadcasts (due rows in scheduled_broadcasts)
+  - type: cron
+    name: cron-whatsapp-process-scheduled
+    runtime: node
+    schedule: "*/5 * * * *"
+    buildCommand: echo "cron — no build"
+    startCommand: >-
+      curl -fsSL -X GET
+      -H "Authorization: Bearer ${CRON_SECRET}"
+      "${APP_BASE_URL}/api/cron/whatsapp-process-scheduled"
+    envVars:
+      - fromGroup: crm-cron-env
+
+  # Meta Lead Ads pull (all connected Facebook pages)
+  - type: cron
+    name: cron-meta-leads-sync
+    runtime: node
+    schedule: "0 */6 * * *"
+    buildCommand: echo "cron — no build"
+    startCommand: >-
+      curl -fsSL -X GET
+      -H "Authorization: Bearer ${CRON_SECRET}"
+      "${APP_BASE_URL}/api/cron/meta-leads-sync"
+    envVars:
+      - fromGroup: crm-cron-env
+
+  # WhatsApp automation drip flows (trigger batches)
+  - type: cron
+    name: cron-whatsapp-automation
+    runtime: node
+    schedule: "*/15 * * * *"
+    buildCommand: echo "cron — no build"
+    startCommand: >-
+      curl -fsSL -X GET
+      -H "Authorization: Bearer ${CRON_SECRET}"
+      "${APP_BASE_URL}/api/cron/whatsapp-automation"
+    envVars:
+      - fromGroup: crm-cron-env
+
+  # WhatsApp template status sync from Meta
+  - type: cron
+    name: cron-whatsapp-template-sync
+    runtime: node
+    schedule: "0 */1 * * *"
+    buildCommand: echo "cron — no build"
+    startCommand: >-
+      curl -fsSL -X GET
+      -H "Authorization: Bearer ${CRON_SECRET}"
+      "${APP_BASE_URL}/api/cron/whatsapp-template-sync"
+    envVars:
+      - fromGroup: crm-cron-env
