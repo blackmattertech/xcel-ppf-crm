@@ -1,25 +1,38 @@
 /**
- * When admin enables MCube failed-call WhatsApp in settings, send an approved template
+ * When admin enables MCube failed-call WhatsApp in settings, send a configured message
  * after outbound MCube hangup with outcome not_reachable (no answer, busy, cancel, etc.).
  */
 
 import { createServiceClient } from '@/lib/supabase/service'
 import type { CallOutcome } from '@/shared/constants/lead-status'
+import type { AutomationMessageType } from '@/shared/whatsapp-automation-types'
 import { mapDialStatusToOutcome } from '@/backend/services/mcube.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import {
   BroadcastValidationError,
   resolveBroadcastPayload,
 } from '@/backend/services/whatsapp-broadcast-resolve'
-import { sendTemplateMessage } from '@/backend/services/whatsapp.service'
+import {
+  sendTemplateMessage,
+  sendWhatsAppMedia,
+  sendWhatsAppText,
+} from '@/backend/services/whatsapp.service'
 import { getTemplateById } from '@/backend/services/whatsapp-template.service'
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
 
+export type McubeFailedCallMessageType = AutomationMessageType
+
 export interface McubeFailedCallWhatsAppSettings {
   enabled: boolean
+  messageType: McubeFailedCallMessageType
   templateId: string | null
   bodyParameters: string[]
   headerParameters: string[]
+  messageBody: string | null
+  mediaUrl: string | null
+  mediaMimeType: string | null
+  mediaFileName: string | null
+  mediaMetaId: string | null
 }
 
 export interface MaybeSendFailedCallWhatsAppParams {
@@ -38,12 +51,59 @@ function parseStringArrayJson(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === 'string')
 }
 
+function parseMessageType(value: unknown): McubeFailedCallMessageType {
+  if (value === 'text' || value === 'image' || value === 'video') return value
+  return 'template'
+}
+
+export function applyLeadNameToText(text: string, leadName: string | null): string {
+  const name = leadName?.trim() || 'there'
+  return text.replace(/\{\{lead_name\}\}/gi, name)
+}
+
+function applyLeadNameToken(params: string[], leadName: string | null): string[] {
+  return params.map((p) => applyLeadNameToText(p, leadName))
+}
+
+export function validateMcubeFailedCallWhatsAppConfig(
+  settings: Pick<
+    McubeFailedCallWhatsAppSettings,
+    'messageType' | 'templateId' | 'messageBody' | 'mediaUrl'
+  >
+): string | null {
+  switch (settings.messageType) {
+    case 'template':
+      if (!settings.templateId) return 'Select an approved WhatsApp template'
+      return null
+    case 'text':
+      if (!settings.messageBody?.trim()) return 'Enter a text message (use {{lead_name}} for the lead name)'
+      return null
+    case 'image':
+    case 'video':
+      if (!settings.mediaUrl?.trim()) return `Upload a ${settings.messageType} file before enabling`
+      return null
+    default:
+      return 'Invalid message type'
+  }
+}
+
 export async function getMcubeFailedCallWhatsAppSettings(): Promise<McubeFailedCallWhatsAppSettings> {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('mcube_settings')
     .select(
-      'failed_call_whatsapp_enabled, failed_call_whatsapp_template_id, failed_call_whatsapp_body_parameters, failed_call_whatsapp_header_parameters'
+      `
+      failed_call_whatsapp_enabled,
+      failed_call_whatsapp_message_type,
+      failed_call_whatsapp_template_id,
+      failed_call_whatsapp_body_parameters,
+      failed_call_whatsapp_header_parameters,
+      failed_call_whatsapp_message_body,
+      failed_call_whatsapp_media_url,
+      failed_call_whatsapp_media_mime_type,
+      failed_call_whatsapp_media_file_name,
+      failed_call_whatsapp_media_meta_id
+    `
     )
     .eq('id', true)
     .maybeSingle()
@@ -52,16 +112,28 @@ export async function getMcubeFailedCallWhatsAppSettings(): Promise<McubeFailedC
 
   const row = data as {
     failed_call_whatsapp_enabled?: boolean
+    failed_call_whatsapp_message_type?: string
     failed_call_whatsapp_template_id?: string | null
     failed_call_whatsapp_body_parameters?: unknown
     failed_call_whatsapp_header_parameters?: unknown
+    failed_call_whatsapp_message_body?: string | null
+    failed_call_whatsapp_media_url?: string | null
+    failed_call_whatsapp_media_mime_type?: string | null
+    failed_call_whatsapp_media_file_name?: string | null
+    failed_call_whatsapp_media_meta_id?: string | null
   } | null
 
   return {
     enabled: Boolean(row?.failed_call_whatsapp_enabled),
+    messageType: parseMessageType(row?.failed_call_whatsapp_message_type),
     templateId: row?.failed_call_whatsapp_template_id ?? null,
     bodyParameters: parseStringArrayJson(row?.failed_call_whatsapp_body_parameters),
     headerParameters: parseStringArrayJson(row?.failed_call_whatsapp_header_parameters),
+    messageBody: row?.failed_call_whatsapp_message_body ?? null,
+    mediaUrl: row?.failed_call_whatsapp_media_url ?? null,
+    mediaMimeType: row?.failed_call_whatsapp_media_mime_type ?? null,
+    mediaFileName: row?.failed_call_whatsapp_media_file_name ?? null,
+    mediaMetaId: row?.failed_call_whatsapp_media_meta_id ?? null,
   }
 }
 
@@ -75,20 +147,120 @@ export function shouldSendFailedCallWhatsApp(params: {
   if (params.skipBecauseManualMerge) return false
   if (params.outcome !== 'not_reachable') return false
   if (params.direction === 'inbound') return false
-  // Only CRM-initiated outbound (session exists) or explicit outbound direction.
   if (!params.sessionId && params.direction !== 'outbound') return false
-  // Belt-and-suspenders: dial status must map to not_reachable (excludes ANSWER/ANSWERED).
   if (mapDialStatusToOutcome(params.dialStatus) !== 'not_reachable') return false
   return true
 }
 
-function applyLeadNameToken(params: string[], leadName: string | null): string[] {
-  const name = leadName?.trim() || 'there'
-  return params.map((p) => p.replace(/\{\{lead_name\}\}/gi, name))
-}
+type SendResult = { success: boolean; messageId?: string; error?: string }
 
-function toTemplatePreviewBody(templateName: string): string {
-  return `[MCube failed call · Template: ${templateName}]`
+async function sendConfiguredMessage(params: {
+  settings: McubeFailedCallWhatsAppSettings
+  phone: string
+  leadName: string | null
+  config: NonNullable<Awaited<ReturnType<typeof getResolvedWhatsAppConfig>>['config']>
+  wabaConfig: NonNullable<Awaited<ReturnType<typeof getResolvedWhatsAppConfig>>['wabaConfig']>
+}): Promise<{
+  result: SendResult
+  chatBody: string
+  templateName?: string
+  metaTemplateId?: string | null
+  messageType: McubeFailedCallMessageType
+  attachmentUrl?: string
+}> {
+  const { settings, phone, leadName, config, wabaConfig } = params
+  const messageType = settings.messageType
+
+  if (messageType === 'template') {
+    if (!settings.templateId) {
+      return { result: { success: false, error: 'No template configured' }, chatBody: '', messageType }
+    }
+
+    const bodyParameters = applyLeadNameToken(settings.bodyParameters, leadName)
+    const headerParameters =
+      settings.headerParameters.length > 0
+        ? applyLeadNameToken(settings.headerParameters, leadName)
+        : undefined
+
+    let payload
+    try {
+      payload = await resolveBroadcastPayload(
+        {
+          templateId: settings.templateId,
+          recipients: [{ phone, name: leadName ?? undefined }],
+          bodyParameters,
+          headerParameters,
+          defaultCountryCode: '91',
+        },
+        wabaConfig
+      )
+    } catch (err) {
+      const message =
+        err instanceof BroadcastValidationError
+          ? String(err.body.error ?? err.message)
+          : err instanceof Error
+            ? err.message
+            : 'Template validation failed'
+      return { result: { success: false, error: message }, chatBody: '', messageType }
+    }
+
+    const recipient = payload.recipients[0]
+    const result = await sendTemplateMessage(phone, payload.templateName, payload.templateLanguage, {
+      bodyParameters: recipient?.bodyParameters,
+      headerParameters: payload.headerParameters,
+      headerFormat: payload.headerFormat,
+      headerMediaId: payload.headerMediaId ?? undefined,
+      defaultCountryCode: payload.defaultCountryCode,
+      config,
+    })
+
+    const templateRow = await getTemplateById(settings.templateId)
+    return {
+      result,
+      chatBody: `[MCube failed call · Template: ${payload.templateName}]`,
+      templateName: payload.templateName,
+      metaTemplateId: templateRow?.meta_id ?? null,
+      messageType,
+    }
+  }
+
+  if (messageType === 'text') {
+    const body = applyLeadNameToText(settings.messageBody?.trim() || '', leadName)
+    if (!body) {
+      return { result: { success: false, error: 'Text message is empty' }, chatBody: '', messageType }
+    }
+    const result = await sendWhatsAppText(phone, body, config, null, '91')
+    return { result, chatBody: body, messageType }
+  }
+
+  const mediaUrl = settings.mediaUrl?.trim()
+  if (!mediaUrl) {
+    return { result: { success: false, error: 'Media URL missing' }, chatBody: '', messageType }
+  }
+
+  const caption = settings.messageBody?.trim()
+    ? applyLeadNameToText(settings.messageBody, leadName)
+    : undefined
+
+  const result = await sendWhatsAppMedia(
+    phone,
+    {
+      mediaType: messageType === 'video' ? 'video' : 'image',
+      mediaUrl,
+      fileName: settings.mediaFileName ?? undefined,
+      caption,
+      defaultCountryCode: '91',
+    },
+    config
+  )
+
+  const chatBody = caption || `[${messageType === 'video' ? 'Video' : 'Image'} · MCube failed call]`
+  return {
+    result,
+    chatBody,
+    messageType,
+    attachmentUrl: mediaUrl,
+  }
 }
 
 export async function maybeSendFailedCallWhatsAppTemplate(
@@ -100,7 +272,9 @@ export async function maybeSendFailedCallWhatsAppTemplate(
 
   const settings = await getMcubeFailedCallWhatsAppSettings()
   if (!settings.enabled) return { sent: false, skipped: 'disabled' }
-  if (!settings.templateId) return { sent: false, skipped: 'no_template' }
+
+  const configError = validateMcubeFailedCallWhatsAppConfig(settings)
+  if (configError) return { sent: false, skipped: 'not_configured', error: configError }
 
   const supabase = createServiceClient()
 
@@ -120,12 +294,15 @@ export async function maybeSendFailedCallWhatsAppTemplate(
   if (!lead) return { sent: false, skipped: 'lead_not_found' }
 
   const phone = (lead as { phone: string }).phone?.trim()
+  const leadName = (lead as { name?: string | null }).name ?? null
+
   if (!phone) {
     await recordFailedCallWhatsAppLog({
       callId: params.callId,
       mcubeCallId: params.mcubeCallId,
       leadId: params.leadId,
       templateId: settings.templateId,
+      messageType: settings.messageType,
       dialStatus: params.dialStatus,
       status: 'failed',
       error: 'Lead has no phone number',
@@ -140,6 +317,7 @@ export async function maybeSendFailedCallWhatsAppTemplate(
       mcubeCallId: params.mcubeCallId,
       leadId: params.leadId,
       templateId: settings.templateId,
+      messageType: settings.messageType,
       dialStatus: params.dialStatus,
       status: 'failed',
       error: 'WhatsApp API not configured',
@@ -147,75 +325,44 @@ export async function maybeSendFailedCallWhatsAppTemplate(
     return { sent: false, error: 'WhatsApp API not configured' }
   }
 
-  const leadName = (lead as { name?: string | null }).name ?? null
-  const bodyParameters = applyLeadNameToken(settings.bodyParameters, leadName)
-  const headerParameters =
-    settings.headerParameters.length > 0
-      ? applyLeadNameToken(settings.headerParameters, leadName)
-      : undefined
-
-  let payload
-  try {
-    payload = await resolveBroadcastPayload(
-      {
-        templateId: settings.templateId,
-        recipients: [{ phone, name: leadName ?? undefined }],
-        bodyParameters,
-        headerParameters,
-        defaultCountryCode: '91',
-      },
-      wabaConfig
-    )
-  } catch (err) {
-    const message =
-      err instanceof BroadcastValidationError
-        ? String(err.body.error ?? err.message)
-        : err instanceof Error
-          ? err.message
-          : 'Template validation failed'
-    await recordFailedCallWhatsAppLog({
-      callId: params.callId,
-      mcubeCallId: params.mcubeCallId,
-      leadId: params.leadId,
-      templateId: settings.templateId,
-      dialStatus: params.dialStatus,
-      status: 'failed',
-      error: message,
-    })
-    return { sent: false, error: message }
-  }
-
-  const recipient = payload.recipients[0]
-  const result = await sendTemplateMessage(phone, payload.templateName, payload.templateLanguage, {
-    bodyParameters: recipient?.bodyParameters,
-    headerParameters: payload.headerParameters,
-    headerFormat: payload.headerFormat,
-    headerMediaId: payload.headerMediaId ?? undefined,
-    defaultCountryCode: payload.defaultCountryCode,
+  const sent = await sendConfiguredMessage({
+    settings,
+    phone,
+    leadName,
     config,
+    wabaConfig,
   })
 
-  if (!result.success) {
+  if (!sent.result.success) {
     await recordFailedCallWhatsAppLog({
       callId: params.callId,
       mcubeCallId: params.mcubeCallId,
       leadId: params.leadId,
       templateId: settings.templateId,
+      messageType: settings.messageType,
       dialStatus: params.dialStatus,
       status: 'failed',
-      error: result.error ?? 'Send failed',
+      error: sent.result.error ?? 'Send failed',
     })
-    return { sent: false, error: result.error ?? 'Send failed' }
+    return { sent: false, error: sent.result.error ?? 'Send failed' }
   }
 
-  const templateRow = await getTemplateById(settings.templateId)
   await saveOutgoingMessage({
     leadId: params.leadId,
     phone,
-    body: toTemplatePreviewBody(payload.templateName),
-    metaMessageId: result.messageId ?? undefined,
-    templateName: payload.templateName,
-    metaTemplateId: templateRow?.meta_id ?? null,
+    body: sent.chatBody,
+    metaMessageId: sent.result.messageId ?? undefined,
+    templateName: sent.templateName ?? null,
+    metaTemplateId: sent.metaTemplateId ?? null,
+    messageType:
+      sent.messageType === 'image' || sent.messageType === 'video'
+        ? sent.messageType
+        : sent.messageType === 'text'
+          ? 'text'
+          : undefined,
+    attachmentUrl: sent.attachmentUrl ?? null,
+    attachmentMimeType: settings.mediaMimeType,
+    attachmentFileName: settings.mediaFileName,
   })
 
   await recordFailedCallWhatsAppLog({
@@ -223,9 +370,10 @@ export async function maybeSendFailedCallWhatsAppTemplate(
     mcubeCallId: params.mcubeCallId,
     leadId: params.leadId,
     templateId: settings.templateId,
+    messageType: settings.messageType,
     dialStatus: params.dialStatus,
     status: 'sent',
-    wamid: result.messageId ?? null,
+    wamid: sent.result.messageId ?? null,
   })
 
   return { sent: true }
@@ -235,7 +383,8 @@ async function recordFailedCallWhatsAppLog(row: {
   callId: string
   mcubeCallId: string
   leadId: string
-  templateId: string
+  templateId: string | null
+  messageType: McubeFailedCallMessageType
   dialStatus: string | null
   status: 'sent' | 'failed'
   wamid?: string | null
@@ -248,6 +397,7 @@ async function recordFailedCallWhatsAppLog(row: {
       mcube_call_id: row.mcubeCallId,
       lead_id: row.leadId,
       template_id: row.templateId,
+      message_type: row.messageType,
       dial_status: row.dialStatus,
       status: row.status,
       wamid: row.wamid ?? null,

@@ -73,8 +73,8 @@
 
 1. **Trigger:** Settings → MCUBE Call Rules (admin)
 2. **Entry:** `PUT /api/integrations/mcube/settings`
-3. **Body:** `failedCallWhatsappEnabled`, `failedCallWhatsappTemplateId`, optional `failedCallWhatsappBodyParameters`
-4. **Validation:** Template must be `approved`; enable requires template selected
+3. **Body:** `failedCallWhatsappEnabled`, `failedCallWhatsappMessageType` (`template`|`text`|`image`|`video`), template id or message body or media fields
+4. **Validation:** Template must be `approved`; text needs body; image/video need `mediaUrl`; `{{lead_name}}` token supported
 5. **Exit:** Settings saved in `mcube_settings`
 
 ## Automatic send on failed outbound call

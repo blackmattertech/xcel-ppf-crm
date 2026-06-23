@@ -157,11 +157,15 @@ Manual: `GET /api/marketing/whatsapp/process-automation?secret=`
 {
   "hideConnectedWhenLastMcubeNotConnected": true,
   "failedCallWhatsappEnabled": true,
+  "failedCallWhatsappMessageType": "template",
   "failedCallWhatsappTemplateId": "<uuid>",
   "failedCallWhatsappBodyParameters": ["{{lead_name}}"],
-  "failedCallWhatsappHeaderParameters": []
+  "failedCallWhatsappMessageBody": "Hi {{lead_name}}, we tried calling you…",
+  "failedCallWhatsappMediaUrl": "https://…",
+  "failedCallWhatsappMediaMimeType": "image/jpeg",
+  "failedCallWhatsappMediaFileName": "followup.jpg"
 }
 ```
 
-When `failedCallWhatsappEnabled` is true, failed **outbound** MCube hangups (`not_reachable`) trigger automatic WhatsApp template send via webhook handler.
+`failedCallWhatsappMessageType`: `template` | `text` | `image` | `video`. Use `{{lead_name}}` in text, captions, or template params — replaced with the lead name when the message sends.
 

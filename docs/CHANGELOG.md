@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-23 — MCube failed-call message types (text, image, video)
+
+**Enhancement:** Failed-call WhatsApp settings support template, text, image, and video with automatic `{{lead_name}}` substitution.
+
+**Migration:** `053_mcube_failed_call_whatsapp_message_types.sql`
+
 ## 2026-06-23 — MCube failed-call WhatsApp automation
 
 **Feature:** Admin can enable automatic WhatsApp template send when outbound MCube call is not answered / not connected / not reachable.

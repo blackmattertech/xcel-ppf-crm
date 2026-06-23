@@ -70,6 +70,12 @@ Many-to-many: leads ↔ buckets.
 | `failed_call_whatsapp_template_id` | UUID → whatsapp_templates | Approved template |
 | `failed_call_whatsapp_body_parameters` | JSONB | Array of strings; `{{lead_name}}` token |
 | `failed_call_whatsapp_header_parameters` | JSONB | Optional header params |
+| `failed_call_whatsapp_message_type` | TEXT | `template` \| `text` \| `image` \| `video` |
+| `failed_call_whatsapp_message_body` | TEXT | Text or caption; `{{lead_name}}` token |
+| `failed_call_whatsapp_media_url` | TEXT | Public URL for image/video |
+| `failed_call_whatsapp_media_mime_type` | TEXT | MIME type |
+| `failed_call_whatsapp_media_file_name` | TEXT | Filename |
+| `failed_call_whatsapp_media_meta_id` | TEXT | Meta handle (optional) |
 
 ### `mcube_failed_call_whatsapp_log`
 
@@ -80,8 +86,9 @@ Many-to-many: leads ↔ buckets.
 | `mcube_call_id` | TEXT UNIQUE | Idempotency key |
 | `lead_id` | UUID → leads | |
 | `template_id` | UUID → whatsapp_templates | |
+| `message_type` | TEXT | `template` \| `text` \| `image` \| `video` |
 | `status` | TEXT | `sent` \| `failed` |
 | `wamid`, `error`, `dial_status` | TEXT | Audit |
 | `created_at` | TIMESTAMPTZ | |
 
-**Migration:** `database/migrations/052_mcube_failed_call_whatsapp.sql`
+**Migrations:** `052_mcube_failed_call_whatsapp.sql`, `053_mcube_failed_call_whatsapp_message_types.sql`

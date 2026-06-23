@@ -1,8 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, MessageCircle, Save } from 'lucide-react'
+import {
+  AlertTriangle,
+  Image as ImageIcon,
+  LayoutTemplate,
+  Loader2,
+  MessageCircle,
+  MessageSquare,
+  Save,
+  Video,
+} from 'lucide-react'
 import { cachedFetch } from '@/lib/api-client'
+
+type MessageType = 'template' | 'text' | 'image' | 'video'
 
 interface WhatsAppTemplateOption {
   id: string
@@ -11,15 +22,25 @@ interface WhatsAppTemplateOption {
   status: string
 }
 
+const DEFAULT_TEXT_MESSAGE =
+  'Hi {{lead_name}}, we tried calling you but could not reach you. Please reply when you are available.'
+
 export default function McubeSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [hideConnectedWhenLastMcubeNotConnected, setHideConnectedWhenLastMcubeNotConnected] = useState(true)
   const [failedCallWhatsappEnabled, setFailedCallWhatsappEnabled] = useState(false)
+  const [messageType, setMessageType] = useState<MessageType>('template')
   const [failedCallWhatsappTemplateId, setFailedCallWhatsappTemplateId] = useState('')
   const [failedCallWhatsappBodyParameters, setFailedCallWhatsappBodyParameters] = useState('')
+  const [messageBody, setMessageBody] = useState(DEFAULT_TEXT_MESSAGE)
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null)
+  const [mediaMimeType, setMediaMimeType] = useState<string | null>(null)
+  const [mediaFileName, setMediaFileName] = useState<string | null>(null)
+  const [mediaMetaId, setMediaMetaId] = useState<string | null>(null)
   const [templates, setTemplates] = useState<WhatsAppTemplateOption[]>([])
 
   useEffect(() => {
@@ -51,15 +72,95 @@ export default function McubeSettings() {
       const s = data?.settings ?? {}
       setHideConnectedWhenLastMcubeNotConnected(Boolean(s.hideConnectedWhenLastMcubeNotConnected ?? true))
       setFailedCallWhatsappEnabled(Boolean(s.failedCallWhatsappEnabled))
+      setMessageType(
+        s.failedCallWhatsappMessageType === 'text' ||
+          s.failedCallWhatsappMessageType === 'image' ||
+          s.failedCallWhatsappMessageType === 'video'
+          ? s.failedCallWhatsappMessageType
+          : 'template'
+      )
       setFailedCallWhatsappTemplateId(s.failedCallWhatsappTemplateId || '')
       const bodyParams = Array.isArray(s.failedCallWhatsappBodyParameters)
         ? s.failedCallWhatsappBodyParameters.join(', ')
         : ''
       setFailedCallWhatsappBodyParameters(bodyParams)
+      setMessageBody(s.failedCallWhatsappMessageBody || DEFAULT_TEXT_MESSAGE)
+      setMediaUrl(s.failedCallWhatsappMediaUrl || null)
+      setMediaMimeType(s.failedCallWhatsappMediaMimeType || null)
+      setMediaFileName(s.failedCallWhatsappMediaFileName || null)
+      setMediaMetaId(s.failedCallWhatsappMediaMetaId || null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load MCUBE settings')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function uploadMedia(file: File, mediaType: 'image' | 'video') {
+    setUploading(true)
+    setError(null)
+    try {
+      const signRes = await cachedFetch('/api/marketing/whatsapp/upload-media/signed-url', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, mimeType: file.type }),
+      })
+      const signData = (await signRes.json()) as {
+        signedUrl?: string
+        path?: string
+        error?: string
+      }
+      if (!signRes.ok || !signData.path || !signData.signedUrl) {
+        throw new Error(signData.error || 'Failed to create upload URL')
+      }
+
+      const storageUpload = await fetch(signData.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      })
+      if (!storageUpload.ok) throw new Error('Failed to upload file to storage')
+
+      const res = await cachedFetch('/api/marketing/whatsapp/upload-media', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storagePath: signData.path,
+          mimeType: file.type,
+          fileName: file.name,
+        }),
+      })
+      const data = (await res.json()) as {
+        url?: string
+        handle?: string
+        id?: string
+        error?: string
+      }
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+
+      const publicUrl = data.url?.trim()
+      if (!publicUrl) {
+        throw new Error('Upload succeeded but no public media URL was returned')
+      }
+
+      setMediaUrl(publicUrl)
+      setMediaMimeType(file.type || null)
+      setMediaFileName(file.name)
+      setMediaMetaId(data.handle || data.id || null)
+      setMessageType(mediaType)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function handleMessageTypeChange(mt: MessageType) {
+    setMessageType(mt)
+    if (mt === 'text' && !messageBody.trim()) {
+      setMessageBody(DEFAULT_TEXT_MESSAGE)
     }
   }
 
@@ -80,9 +181,23 @@ export default function McubeSettings() {
         body: JSON.stringify({
           hideConnectedWhenLastMcubeNotConnected,
           failedCallWhatsappEnabled,
-          failedCallWhatsappTemplateId: failedCallWhatsappTemplateId || null,
-          failedCallWhatsappBodyParameters: bodyParams,
+          failedCallWhatsappMessageType: messageType,
+          failedCallWhatsappTemplateId:
+            messageType === 'template' ? failedCallWhatsappTemplateId || null : null,
+          failedCallWhatsappBodyParameters: messageType === 'template' ? bodyParams : [],
           failedCallWhatsappHeaderParameters: [],
+          failedCallWhatsappMessageBody:
+            messageType === 'text' || messageType === 'image' || messageType === 'video'
+              ? messageBody.trim() || null
+              : null,
+          failedCallWhatsappMediaUrl:
+            messageType === 'image' || messageType === 'video' ? mediaUrl : null,
+          failedCallWhatsappMediaMimeType:
+            messageType === 'image' || messageType === 'video' ? mediaMimeType : null,
+          failedCallWhatsappMediaFileName:
+            messageType === 'image' || messageType === 'video' ? mediaFileName : null,
+          failedCallWhatsappMediaMetaId:
+            messageType === 'image' || messageType === 'video' ? mediaMetaId : null,
         }),
       })
       const data = await response.json().catch(() => ({}))
@@ -148,12 +263,13 @@ export default function McubeSettings() {
       <div className="border-t border-gray-100 pt-6 space-y-4">
         <div className="flex items-center gap-2">
           <MessageCircle className="h-5 w-5 text-[#128C7E]" />
-          <h4 className="text-base font-semibold text-gray-900">Failed-call WhatsApp template</h4>
+          <h4 className="text-base font-semibold text-gray-900">Failed-call WhatsApp message</h4>
         </div>
         <p className="text-sm text-gray-600">
           When a caller dials a lead via MCUBE and the call is <strong>not answered</strong>,{' '}
-          <strong>not connected</strong>, or <strong>not reachable</strong> (busy, no answer, cancel),
-          automatically send the selected approved WhatsApp template to that lead.
+          <strong>not connected</strong>, or <strong>not reachable</strong>, automatically send the
+          configured WhatsApp message. Use <code className="text-xs">{'{{lead_name}}'}</code> — it is
+          replaced with the lead&apos;s name when the message sends.
         </p>
 
         <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-md">
@@ -168,45 +284,145 @@ export default function McubeSettings() {
           </span>
         </label>
 
-        <label className="block text-sm">
-          <span className="font-medium text-gray-800">WhatsApp template</span>
-          <select
-            className="mt-1 w-full max-w-md rounded-md border border-gray-300 px-3 py-2"
-            value={failedCallWhatsappTemplateId}
-            onChange={(e) => setFailedCallWhatsappTemplateId(e.target.value)}
-            disabled={!failedCallWhatsappEnabled}
-          >
-            <option value="">Select approved template</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.language})
-              </option>
+        <div className={`space-y-4 ${failedCallWhatsappEnabled ? '' : 'opacity-60 pointer-events-none'}`}>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { id: 'template' as const, label: 'Template', icon: LayoutTemplate },
+                { id: 'text' as const, label: 'Text', icon: MessageSquare },
+                { id: 'image' as const, label: 'Image', icon: ImageIcon },
+                { id: 'video' as const, label: 'Video', icon: Video },
+              ] as const
+            ).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => handleMessageTypeChange(id)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium capitalize ${
+                  messageType === id
+                    ? 'border-[#128C7E] bg-[#128C7E]/10 text-[#128C7E]'
+                    : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
 
-        <label className="block text-sm max-w-xl">
-          <span className="font-medium text-gray-800">Template body parameters (optional)</span>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Comma-separated values for {'{{1}}'}, {'{{2}}'}, etc. Use{' '}
-            <code className="text-xs">{'{{lead_name}}'}</code> for the lead&apos;s name. If empty, the lead
-            name is used for the first variable.
-          </p>
-          <input
-            type="text"
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
-            placeholder="{{lead_name}}"
-            value={failedCallWhatsappBodyParameters}
-            onChange={(e) => setFailedCallWhatsappBodyParameters(e.target.value)}
-            disabled={!failedCallWhatsappEnabled}
-          />
-        </label>
+          {(messageType === 'text' || messageType === 'image' || messageType === 'video') && (
+            <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Text, image, and video only work if the lead messaged you in the last 24 hours. Use{' '}
+              <strong>Template</strong> for cold leads.
+            </div>
+          )}
+
+          {messageType === 'template' && (
+            <>
+              <label className="block text-sm">
+                <span className="font-medium text-gray-800">WhatsApp template</span>
+                <select
+                  className="mt-1 w-full max-w-md rounded-md border border-gray-300 px-3 py-2"
+                  value={failedCallWhatsappTemplateId}
+                  onChange={(e) => setFailedCallWhatsappTemplateId(e.target.value)}
+                >
+                  <option value="">Select approved template</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.language})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm max-w-xl">
+                <span className="font-medium text-gray-800">Template body parameters (optional)</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Comma-separated for {'{{1}}'}, {'{{2}}'}, etc. Use{' '}
+                  <code className="text-xs">{'{{lead_name}}'}</code> for lead name. Default: lead name
+                  for first variable.
+                </p>
+                <input
+                  type="text"
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                  placeholder="{{lead_name}}"
+                  value={failedCallWhatsappBodyParameters}
+                  onChange={(e) => setFailedCallWhatsappBodyParameters(e.target.value)}
+                />
+              </label>
+            </>
+          )}
+
+          {messageType === 'text' && (
+            <label className="block text-sm max-w-xl">
+              <span className="font-medium text-gray-800">Message text</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                <code className="text-xs">{'{{lead_name}}'}</code> is replaced with the lead&apos;s name
+                automatically when the call fails.
+              </p>
+              <textarea
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                rows={4}
+                value={messageBody}
+                onChange={(e) => setMessageBody(e.target.value)}
+                placeholder={DEFAULT_TEXT_MESSAGE}
+              />
+            </label>
+          )}
+
+          {(messageType === 'image' || messageType === 'video') && (
+            <div className="space-y-3 max-w-xl">
+              <label className="block text-sm">
+                <span className="font-medium text-gray-800">
+                  {messageType === 'image' ? 'Image' : 'Video'} file <span className="text-red-600">*</span>
+                </span>
+                <input
+                  type="file"
+                  className="mt-2 block w-full text-sm"
+                  accept={messageType === 'image' ? 'image/*' : 'video/*'}
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) void uploadMedia(f, messageType)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              {uploading && (
+                <p className="inline-flex items-center gap-2 text-xs text-gray-600">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Uploading…
+                </p>
+              )}
+              {!uploading && mediaUrl && (
+                <p className="text-xs text-emerald-700">
+                  Uploaded ✓ {mediaFileName || 'media ready'}
+                </p>
+              )}
+
+              <label className="block text-sm">
+                <span className="font-medium text-gray-800">Caption (optional)</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Use <code className="text-xs">{'{{lead_name}}'}</code> for lead name.
+                </p>
+                <textarea
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                  rows={3}
+                  value={messageBody}
+                  onChange={(e) => setMessageBody(e.target.value)}
+                  placeholder="Hi {{lead_name}}, we tried calling you…"
+                />
+              </label>
+            </div>
+          )}
+        </div>
       </div>
 
       <div>
         <button
           onClick={saveSettings}
-          disabled={saving}
+          disabled={saving || uploading}
           className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
