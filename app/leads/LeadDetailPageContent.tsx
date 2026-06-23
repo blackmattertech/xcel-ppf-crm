@@ -582,6 +582,8 @@ export default function LeadDetailPageContent({
   const [hideConnectedWhenLastMcubeNotConnected, setHideConnectedWhenLastMcubeNotConnected] = useState(true)
   const [syncingInboundCalls, setSyncingInboundCalls] = useState(false)
   const [savingInterestedProduct, setSavingInterestedProduct] = useState(false)
+  const [leadBucketIds, setLeadBucketIds] = useState<string[]>([])
+  const [savingLeadBuckets, setSavingLeadBuckets] = useState(false)
   // Quotation shared / negotiation: call outcome (accepted | not_accepted | negotiation)
   const [quotationCallOutcome, setQuotationCallOutcome] = useState<'accepted' | 'not_accepted' | 'negotiation' | ''>('')
   // Order created after "Accepted" → used to update order payment when user submits payment modal
@@ -592,6 +594,17 @@ export default function LeadDetailPageContent({
     queryFn: async () => {
       const response = await cachedFetch('/api/products')
       if (!response.ok) throw new Error('Failed to load products')
+      const data = await response.json()
+      return Array.isArray(data) ? data : []
+    },
+    staleTime: 60_000,
+  })
+
+  const { data: allBuckets = [] } = useQuery({
+    queryKey: ['crm', 'buckets', 'active'],
+    queryFn: async () => {
+      const response = await cachedFetch('/api/buckets?active_only=true')
+      if (!response.ok) return []
       const data = await response.json()
       return Array.isArray(data) ? data : []
     },
@@ -798,6 +811,7 @@ export default function LeadDetailPageContent({
         warmLeadIdRef.current = requestedId
         setLead(merged)
         setNewStatus(min.lead.status)
+        void fetchLeadBuckets(requestedId)
       } else {
         warmLeadIdRef.current = null
         const errorData = await minRes.json().catch(() => ({}))
@@ -1799,6 +1813,52 @@ export default function LeadDetailPageContent({
     return stripCarModelFromProductString(getRawProductInterest())
   }
 
+  async function fetchLeadBuckets(requestedLeadId: string) {
+    try {
+      const res = await cachedFetch(`/api/leads/${requestedLeadId}/buckets`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (leadIdRef.current !== requestedLeadId) return
+      const ids = Array.isArray(data.buckets) ? data.buckets.map((b: { id: string }) => b.id) : []
+      setLeadBucketIds(ids)
+    } catch (e) {
+      console.error('Failed to fetch lead buckets:', e)
+    }
+  }
+
+  async function saveLeadBuckets(nextIds: string[]) {
+    if (!canUpdateStatus || !leadId) return
+    setSavingLeadBuckets(true)
+    try {
+      const res = await cachedFetch(`/api/leads/${leadId}/buckets`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket_ids: nextIds }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(typeof err.error === 'string' ? err.error : 'Failed to update buckets')
+        return
+      }
+      const data = await res.json()
+      const ids = Array.isArray(data.buckets) ? data.buckets.map((b: { id: string }) => b.id) : nextIds
+      setLeadBucketIds(ids)
+    } catch (e) {
+      console.error(e)
+      alert('Failed to update buckets')
+    } finally {
+      setSavingLeadBuckets(false)
+    }
+  }
+
+  function toggleLeadBucket(bucketId: string) {
+    const next = leadBucketIds.includes(bucketId)
+      ? leadBucketIds.filter((id) => id !== bucketId)
+      : [...leadBucketIds, bucketId]
+    setLeadBucketIds(next)
+    void saveLeadBuckets(next)
+  }
+
   async function saveInterestedProduct(selectedProductId: string) {
     if (!canUpdateStatus) return
     setSavingInterestedProduct(true)
@@ -2222,6 +2282,37 @@ export default function LeadDetailPageContent({
                     </div>
                   )}
                   <div>
+                    <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-2">Buckets</p>
+                    {allBuckets.length === 0 ? (
+                      <p className="text-[11px] text-[#717d8a]">No buckets yet. Admin can create them under Lead Buckets.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {allBuckets.map((bucket: { id: string; name: string; color: string }) => {
+                          const selected = leadBucketIds.includes(bucket.id)
+                          return (
+                            <button
+                              key={bucket.id}
+                              type="button"
+                              disabled={!canUpdateStatus || savingLeadBuckets}
+                              onClick={() => toggleLeadBucket(bucket.id)}
+                              className={`px-3 py-1.5 rounded-[3px] text-[11px] font-medium leading-none border transition-colors disabled:opacity-60 ${
+                                selected
+                                  ? 'text-white border-transparent'
+                                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                              }`}
+                              style={selected ? { backgroundColor: bucket.color } : undefined}
+                            >
+                              {bucket.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {savingLeadBuckets && (
+                      <p className="text-[10px] text-[#717d8a] mt-1">Saving buckets…</p>
+                    )}
+                  </div>
+                  <div>
                     <p className="text-[10px] text-[#717d8a] leading-[1.3]">Car model</p>
                     <p className="text-[12px] font-semibold text-black leading-[1.3]">{getLeadCarModel() || '—'}</p>
                   </div>
@@ -2253,7 +2344,7 @@ export default function LeadDetailPageContent({
                       </p>
                     )}
                   </div>
-                  {getInterests().length === 0 && !getLeadCarModel() && !getLeadProductInterest() && (
+                  {getInterests().length === 0 && !getLeadCarModel() && !getLeadProductInterest() && leadBucketIds.length === 0 && (
                     <p className="text-[11px] text-[#717d8a]">No interests recorded</p>
                   )}
                 </div>

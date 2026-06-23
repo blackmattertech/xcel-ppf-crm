@@ -56,6 +56,13 @@ export const PERMISSIONS = {
   PRODUCTS_DELETE: 'products.delete',
   PRODUCTS_MANAGE: 'products.manage',
   
+  // Lead buckets (sidebar resource `lead_buckets`)
+  LEAD_BUCKETS_CREATE: 'lead_buckets.create',
+  LEAD_BUCKETS_READ: 'lead_buckets.read',
+  LEAD_BUCKETS_UPDATE: 'lead_buckets.update',
+  LEAD_BUCKETS_DELETE: 'lead_buckets.delete',
+  LEAD_BUCKETS_MANAGE: 'lead_buckets.manage',
+
   // Follow-ups
   FOLLOWUPS_CREATE: 'followups.create',
   FOLLOWUPS_READ: 'followups.read',

@@ -103,6 +103,14 @@ export const SIDEBAR_MENU_ITEMS: SidebarMenuItem[] = [
     requiresPermissions: true,
   },
   {
+    name: 'Lead Buckets',
+    href: '/buckets',
+    icon: '🗂️',
+    resource: 'lead_buckets',
+    roles: ['super_admin', 'admin', 'tele_caller'],
+    requiresPermissions: true,
+  },
+  {
     name: 'Integrations',
     href: '/integrations',
     icon: '🔌',

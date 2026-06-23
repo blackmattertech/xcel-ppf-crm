@@ -18,6 +18,8 @@ function todayLocalYmd(): string {
   return `${y}-${m}-${day}`
 }
 
+const MAX_REPORT_RANGE_DAYS = 30
+
 /** Interpret `YYYY-MM-DD` as the user's local calendar day → UTC ISO bounds for the API. */
 function localDayBoundsIso(dateStr: string): { start: string; end: string } {
   const [y, m, d] = dateStr.split('-').map(Number)
@@ -27,6 +29,25 @@ function localDayBoundsIso(dateStr: string): { start: string; end: string } {
   const start = new Date(y, m - 1, d, 0, 0, 0, 0)
   const end = new Date(y, m - 1, d, 23, 59, 59, 999)
   return { start: start.toISOString(), end: end.toISOString() }
+}
+
+/** Inclusive local from/to dates → API `start` (start of from day) and `end` (end of to day). */
+function localDateRangeBoundsIso(fromStr: string, toStr: string): { start: string; end: string } {
+  const from = localDayBoundsIso(fromStr)
+  const to = localDayBoundsIso(toStr)
+  return { start: from.start, end: to.end }
+}
+
+function reportRangeError(fromStr: string, toStr: string): string | null {
+  const { start, end } = localDateRangeBoundsIso(fromStr, toStr)
+  const startMs = new Date(start).getTime()
+  const endMs = new Date(end).getTime()
+  if (endMs < startMs) return 'To date must be on or after from date'
+  const spanMs = endMs - startMs
+  if (spanMs > MAX_REPORT_RANGE_DAYS * 24 * 60 * 60 * 1000) {
+    return `Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days`
+  }
+  return null
 }
 
 function formatOutcome(outcome: string): string {
@@ -73,7 +94,8 @@ interface SummaryByUser {
 export default function ReportsPage() {
   const router = useRouter()
   const { isAuthenticated, loading: authLoading, role } = useAuthContext()
-  const [selectedDate, setSelectedDate] = useState(todayLocalYmd)
+  const [fromDate, setFromDate] = useState(todayLocalYmd)
+  const [toDate, setToDate] = useState(todayLocalYmd)
   const [agentFilter, setAgentFilter] = useState<string>('')
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [calls, setCalls] = useState<CallRow[]>([])
@@ -131,10 +153,15 @@ export default function ReportsPage() {
 
   const fetchReport = useCallback(async () => {
     if (!canAccessReports) return
+    const rangeErr = reportRangeError(fromDate, toDate)
+    if (rangeErr) {
+      setError(rangeErr)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
-      const { start, end } = localDayBoundsIso(selectedDate)
+      const { start, end } = localDateRangeBoundsIso(fromDate, toDate)
       const sp = new URLSearchParams({ start, end })
       if (canViewAllCallers && agentFilter) {
         sp.set('user_id', agentFilter)
@@ -156,7 +183,9 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedDate, agentFilter, canAccessReports, canViewAllCallers])
+  }, [fromDate, toDate, agentFilter, canAccessReports, canViewAllCallers])
+
+  const showDateInTimeColumn = fromDate !== toDate
 
   useEffect(() => {
     if (!authLoading && isAuthenticated && canAccessReports) {
@@ -183,18 +212,45 @@ export default function ReportsPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-end bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <div className="flex flex-col gap-1 min-w-[160px]">
-            <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" />
-              Date
-            </label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white"
-            />
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col gap-1 min-w-[160px]">
+              <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" />
+                From date
+              </label>
+              <input
+                type="date"
+                value={fromDate}
+                max={toDate}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setFromDate(next)
+                  if (next && toDate && next > toDate) setToDate(next)
+                }}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white"
+              />
+            </div>
+            <div className="flex flex-col gap-1 min-w-[160px]">
+              <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" />
+                To date
+              </label>
+              <input
+                type="date"
+                value={toDate}
+                min={fromDate}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setToDate(next)
+                  if (next && fromDate && next < fromDate) setFromDate(next)
+                }}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white"
+              />
+            </div>
           </div>
+          <p className="text-[11px] text-gray-400 sm:self-center sm:pb-2">
+            Up to {MAX_REPORT_RANGE_DAYS} days per report
+          </p>
           {canViewAllCallers ? (
             <div className="flex flex-col gap-1 min-w-[200px] flex-1 sm:max-w-xs">
               <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
@@ -354,10 +410,17 @@ export default function ReportsPage() {
                 <tbody className="divide-y divide-gray-100">
                   {visibleCalls.map((call) => {
                     const when = new Date(call.created_at)
-                    const timeStr = when.toLocaleTimeString(undefined, {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
+                    const timeStr = showDateInTimeColumn
+                      ? when.toLocaleString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : when.toLocaleTimeString(undefined, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
                     const dur =
                       call.answered_duration_seconds ?? call.call_duration ?? null
                     const rec = call.recording_url?.trim()
