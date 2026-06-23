@@ -27,8 +27,15 @@ import {
 } from 'recharts'
 import { cachedFetch } from '@/lib/api-client'
 import type { AutomationFlow } from '@/shared/whatsapp-automation-types'
+import { istDateToUtcStart, todayIstDateString, toIstDateString } from '@/shared/whatsapp-automation-ist'
 
 const WA_TEAL = '#128C7E'
+
+function defaultIstStartDate(): string {
+  const end = todayIstDateString()
+  const startMs = istDateToUtcStart(end).getTime() - 30 * 24 * 60 * 60 * 1000
+  return toIstDateString(new Date(startMs))
+}
 
 interface AnalyticsData {
   flow: {
@@ -38,12 +45,13 @@ interface AnalyticsData {
     is_active: boolean
     restart_on_complete: boolean
   }
-  period: { startDate: string; endDate: string }
+  period: { startDate: string; endDate: string; timezone: 'Asia/Kolkata' }
   enrollments: {
     active: number
     completed: number
     cancelled: number
     total: number
+    inPeriod: number
     direct: number
     bucket: number
   }
@@ -119,12 +127,8 @@ function StatCard({
 export default function AutomationAnalyticsPage() {
   const [flows, setFlows] = useState<AutomationFlow[]>([])
   const [flowId, setFlowId] = useState('')
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - 30)
-    return d.toISOString().slice(0, 10)
-  })
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [startDate, setStartDate] = useState(defaultIstStartDate)
+  const [endDate, setEndDate] = useState(todayIstDateString)
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -186,7 +190,9 @@ export default function AutomationAnalyticsPage() {
             <BarChart3 className="h-7 w-7 text-[#128C7E]" />
             Flow analytics
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Enrollments, sends per trigger day, and delivery outcomes</p>
+          <p className="mt-1 text-sm text-slate-500">
+            IST calendar dates · sends and charts use selected range · active enrollments are current totals
+          </p>
         </div>
         <button
           type="button"
@@ -247,13 +253,13 @@ export default function AutomationAnalyticsPage() {
             <StatCard
               label="Active enrollments"
               value={data.enrollments.active}
-              sub={`${data.enrollments.total} total · ${data.enrollments.direct} direct · ${data.enrollments.bucket} bucket`}
+              sub={`${data.enrollments.inPeriod} new in period · ${data.enrollments.total} all-time`}
               icon={Users}
             />
             <StatCard
               label="Messages sent"
               value={data.sends.sent}
-              sub={`${data.sends.successRate}% success rate`}
+              sub={`${data.sends.successRate}% success · ${data.period.startDate}–${data.period.endDate} IST`}
               icon={Send}
               accent="#25D366"
             />

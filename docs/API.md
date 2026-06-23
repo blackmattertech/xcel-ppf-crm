@@ -125,7 +125,7 @@ Body (POST): `{ "flow_id", "lead_id" }`
 | POST | `/api/automation/whatsapp/bucket-links` | enroll — `{ flow_id, bucket_id }` |
 | DELETE | `?flowId=&bucketId=` | enroll |
 
-| GET | `/api/automation/whatsapp/analytics?flowId=&startDate=&endDate=` | read — enrollments, sends, per-day stats |
+| GET | `/api/automation/whatsapp/analytics?flowId=&startDate=&endDate=` | read — enrollments, sends, per-day stats (IST calendar dates; `startDate`/`endDate` as `YYYY-MM-DD` in Asia/Kolkata) |
 
 ## Logs (admin)
 

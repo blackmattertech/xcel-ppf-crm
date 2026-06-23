@@ -292,22 +292,40 @@ async function writeSendLog(params: {
   attemptCount: number
 }): Promise<void> {
   const { supabase, batchId, triggerId, recipient, status, wamid, error, attemptCount } = params
-  await supabase.from('whatsapp_automation_send_log').upsert(
-    {
-      batch_id: batchId,
-      enrollment_id: recipient.enrollmentId,
-      trigger_id: triggerId,
-      lead_id: recipient.leadId,
-      phone: recipient.phone,
-      status,
-      wamid: wamid ?? null,
-      error: error ?? null,
-      attempt_count: attemptCount,
-      cycle_number: recipient.cycleNumber,
-      sent_at: new Date().toISOString(),
-    } as never,
-    { onConflict: 'batch_id,lead_id', ignoreDuplicates: false }
-  )
+  const row = {
+    batch_id: batchId,
+    enrollment_id: recipient.enrollmentId,
+    trigger_id: triggerId,
+    lead_id: recipient.leadId,
+    phone: recipient.phone,
+    status,
+    wamid: wamid ?? null,
+    error: error ?? null,
+    attempt_count: attemptCount,
+    cycle_number: recipient.cycleNumber,
+    sent_at: new Date().toISOString(),
+  }
+
+  const { data: existing, error: findErr } = await supabase
+    .from('whatsapp_automation_send_log')
+    .select('id')
+    .eq('batch_id', batchId)
+    .eq('lead_id', recipient.leadId)
+    .maybeSingle()
+
+  if (findErr) throw new Error(`send_log lookup failed: ${findErr.message}`)
+
+  if (existing) {
+    const { error: updateErr } = await supabase
+      .from('whatsapp_automation_send_log')
+      .update(row as never)
+      .eq('id', (existing as { id: string }).id)
+    if (updateErr) throw new Error(`send_log update failed: ${updateErr.message}`)
+    return
+  }
+
+  const { error: insertErr } = await supabase.from('whatsapp_automation_send_log').insert(row as never)
+  if (insertErr) throw new Error(`send_log insert failed: ${insertErr.message}`)
 }
 
 async function sendChunk(

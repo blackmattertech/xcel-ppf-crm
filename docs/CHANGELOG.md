@@ -16,6 +16,23 @@
 
 **Documentation:** `docs/API.md`, `docs/FLOWS.md`, `docs/DATABASE.md`, `docs/DEPLOYMENT.md`, `docs/DEBUGGING.md`, `docs/FLOWCHARTS.md`
 
+## 2026-06-23 — Automation analytics accuracy fix
+
+**Bug fix:** WhatsApp flow analytics under-counted or mis-dated sends.
+
+**Causes:**
+- Date filters used UTC midnight instead of IST (automation runs on IST calendar days)
+- Supabase default 1000-row cap on `send_log` queries
+- `send_log` upsert failed against partial unique index `(batch_id, lead_id)` so rows were never written
+- Enrollment totals were all-time while sends were period-scoped (looked inconsistent)
+
+**Fix:**
+- `whatsapp-automation-analytics.service.ts` — IST period boundaries, paginated send_log fetch, batch `run_date` filter, fallback from `result_json` when logs missing
+- `whatsapp-automation-processor.service.ts` — update-then-insert for `send_log` instead of upsert
+- Analytics UI — IST default date range, clearer period labels
+
+**Documentation:** `docs/API.md`, `docs/DEBUGGING.md`
+
 ## 2026-06-23 — Automation flow analytics
 
 **Feature:** Analytics dashboard at `/marketing/whatsapp/automation/analytics` — enrollments, sends over time, per trigger day stats, recent failures.
