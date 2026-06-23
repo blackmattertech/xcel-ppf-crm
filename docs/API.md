@@ -144,3 +144,24 @@ All schedulers use `Authorization: Bearer CRON_SECRET`. Configure in [`docs/DEPL
 
 Manual: `GET /api/marketing/whatsapp/process-automation?secret=`
 
+## MCube settings (admin)
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/integrations/mcube/settings` | authenticated |
+| PUT | `/api/integrations/mcube/settings` | admin / super_admin |
+
+**PUT body (partial):**
+
+```json
+{
+  "hideConnectedWhenLastMcubeNotConnected": true,
+  "failedCallWhatsappEnabled": true,
+  "failedCallWhatsappTemplateId": "<uuid>",
+  "failedCallWhatsappBodyParameters": ["{{lead_name}}"],
+  "failedCallWhatsappHeaderParameters": []
+}
+```
+
+When `failedCallWhatsappEnabled` is true, failed **outbound** MCube hangups (`not_reachable`) trigger automatic WhatsApp template send via webhook handler.
+

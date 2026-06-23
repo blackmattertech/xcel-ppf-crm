@@ -64,3 +64,35 @@
 2. `queueDueTriggerBatches()` → `advanceTriggerBatch()` in chunks
 3. `remainingRecipients` persisted until all leads sent or permanent fail
 4. Cycle end: `completed` or restart per `restart_on_complete`
+
+---
+
+# Flows — MCube failed-call WhatsApp
+
+## Admin configures
+
+1. **Trigger:** Settings → MCUBE Call Rules (admin)
+2. **Entry:** `PUT /api/integrations/mcube/settings`
+3. **Body:** `failedCallWhatsappEnabled`, `failedCallWhatsappTemplateId`, optional `failedCallWhatsappBodyParameters`
+4. **Validation:** Template must be `approved`; enable requires template selected
+5. **Exit:** Settings saved in `mcube_settings`
+
+## Automatic send on failed outbound call
+
+1. **Trigger:** Caller clicks Call via MCUBE → MCube hangup webhook
+2. **Entry:** `POST /api/webhooks/mcube` → `handleHangup()`
+3. **Conditions:** New MCube call row; `outcome = not_reachable`; outbound session or `direction = outbound`; not manual-call merge
+4. **Service:** `maybeSendFailedCallWhatsAppTemplate()` — load settings, idempotency check on `mcube_call_id`, resolve template, `sendTemplateMessage`, `saveOutgoingMessage`, log row
+5. **Failure:** Log `failed` in `mcube_failed_call_whatsapp_log`; webhook still returns 200 (WhatsApp errors do not fail MCube webhook)
+6. **Exit:** Lead receives template; message appears in WhatsApp chat history
+
+## Edge cases
+
+| Case | Behavior |
+|------|----------|
+| Webhook retry same `callid` | Unique `mcube_call_id` — no double send |
+| Lead has no phone | Log failed, skip send |
+| WhatsApp not configured | Log failed |
+| Call answered (`ANSWER`) | `outcome = connected` — no send |
+| Inbound MCube call | Skipped |
+| Manual call merged with MCube | Skipped (agent already logged outcome) |

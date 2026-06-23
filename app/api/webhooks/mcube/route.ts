@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyLeadJourneyAfterCall } from '@/backend/services/call-lead-journey.service'
+import { maybeSendFailedCallWhatsAppTemplate } from '@/backend/services/mcube-failed-call-whatsapp.service'
 import {
   parseMcubeTimestamp,
   parseAnsweredTimeToSeconds,
@@ -442,7 +443,9 @@ async function handleHangup(
     return {}
   }
 
-  const { error: insertError } = await supabase.from('calls').insert({
+  const { data: insertedCall, error: insertError } = await supabase
+    .from('calls')
+    .insert({
     lead_id: leadId,
     called_by: calledById,
     outcome,
@@ -462,16 +465,45 @@ async function handleHangup(
     mcube_session_id: sessionId,
     disposition: null,
   } as never)
+    .select('id')
+    .single()
 
   if (insertError) {
     throw new Error(insertError.message)
   }
+
+  const callId = (insertedCall as { id: string }).id
 
   await applyLeadJourneyAfterCall({
     leadId,
     outcome,
     changedByUserId: calledById,
   })
+
+  try {
+    const waResult = await maybeSendFailedCallWhatsAppTemplate({
+      leadId,
+      callId,
+      mcubeCallId: payload.callid,
+      outcome,
+      dialStatus: payload.dialstatus ?? null,
+      sessionId,
+      direction: dir,
+    })
+    if (waResult.sent) {
+      console.info('[webhooks/mcube] failed_call_whatsapp sent', {
+        callid: payload.callid,
+        leadId,
+      })
+    } else if (waResult.error) {
+      console.warn('[webhooks/mcube] failed_call_whatsapp error', {
+        callid: payload.callid,
+        error: waResult.error,
+      })
+    }
+  } catch (waErr) {
+    console.error('[webhooks/mcube] failed_call_whatsapp', waErr)
+  }
 
   if (sessionId) {
     await supabase

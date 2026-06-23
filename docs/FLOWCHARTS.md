@@ -70,3 +70,44 @@ sequenceDiagram
     Cron->>Batch: status completed
   end
 ```
+
+---
+
+# Flowcharts — MCube failed-call WhatsApp
+
+```mermaid
+flowchart TD
+  Admin[Admin] --> Settings[Settings MCUBE Call Rules]
+  Settings --> PutAPI[PUT /api/integrations/mcube/settings]
+  PutAPI --> McubeSettings[(mcube_settings)]
+
+  Caller[Tele-caller] --> Outbound[POST /api/integrations/mcube/outbound]
+  Outbound --> McubeAPI[MCube outbound API]
+  McubeAPI --> Webhook[POST /api/webhooks/mcube hangup]
+  Webhook --> Hangup[handleHangup]
+  Hangup --> Check{outbound + not_reachable?}
+  Check -->|no| Done[Skip WhatsApp]
+  Check -->|yes| Svc[maybeSendFailedCallWhatsAppTemplate]
+  Svc --> McubeSettings
+  Svc --> Log[(mcube_failed_call_whatsapp_log)]
+  Svc --> Meta[Meta WhatsApp template API]
+  Meta --> Chat[(whatsapp chat history)]
+```
+
+```mermaid
+sequenceDiagram
+  participant MC as MCube
+  participant WH as /api/webhooks/mcube
+  participant S as mcube-failed-call-whatsapp
+  participant WA as WhatsApp API
+  participant DB as Postgres
+
+  MC->>WH: hangup dialstatus NOANSWER
+  WH->>DB: INSERT calls outcome not_reachable
+  WH->>S: maybeSendFailedCallWhatsAppTemplate
+  S->>DB: check mcube_failed_call_whatsapp_log
+  S->>DB: load mcube_settings + lead
+  S->>WA: sendTemplateMessage
+  WA-->>S: messageId
+  S->>DB: INSERT log status sent
+```

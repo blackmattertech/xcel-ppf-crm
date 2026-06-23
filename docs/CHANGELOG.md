@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-23 — MCube failed-call WhatsApp automation
+
+**Feature:** Admin can enable automatic WhatsApp template send when outbound MCube call is not answered / not connected / not reachable.
+
+**Files:**
+- `database/migrations/052_mcube_failed_call_whatsapp.sql`
+- `backend/services/mcube-failed-call-whatsapp.service.ts`
+- `app/api/webhooks/mcube/route.ts` (hangup hook)
+- `app/api/integrations/mcube/settings/route.ts`, `components/McubeSettings.tsx`
+
+**Documentation:** `docs/MCUBE.md`, `docs/FLOWS.md`, `docs/DATABASE.md`, `docs/API.md`, `docs/DEBUGGING.md`, `docs/FLOWCHARTS.md`
+
 ## 2026-06-23 — WhatsApp automation flows
 
 **Feature:** Admin builds up to 2 active drip flows (1–30 days) with per-day template or text/image/video triggers. Callers enroll leads and link buckets; FastCron processes batches with chunked delivery until every lead is sent.

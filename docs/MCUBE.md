@@ -33,6 +33,16 @@ The MCUBE outbound API expects **domestic numbers without country code** (e.g. *
 
 Apply migration `034_mcube_integration.sql` so `calls` and `mcube_outbound_sessions` exist before using the feature.
 
+For **failed-call WhatsApp automation**, also apply `052_mcube_failed_call_whatsapp.sql`. Configure under **Settings → MCUBE Call Rules → Failed-call WhatsApp template** (admin only).
+
+## Failed-call WhatsApp (admin)
+
+When enabled, after an **outbound** MCUBE hangup where the lead was **not answered / not connected / not reachable** (`not_reachable` outcome — e.g. `NOANSWER`, `BUSY`, `CANCEL`), the CRM sends the selected **approved WhatsApp template** to the lead automatically.
+
+- Requires WhatsApp Business configured (Settings → Integrations).
+- One template per MCUBE account settings row; idempotent per `mcube_call_id` (no double-send on webhook retry).
+- Audit log: `mcube_failed_call_whatsapp_log`.
+
 ## Troubleshooting outbound (502 / MCUBE error text)
 
 If the API responds with something like:

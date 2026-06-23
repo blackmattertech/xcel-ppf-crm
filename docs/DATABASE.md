@@ -57,3 +57,31 @@ Many-to-many: leads ↔ buckets.
 | `whatsapp_automation_send_log` | Per-lead delivery audit |
 
 **Migration:** `database/migrations/051_whatsapp_automation.sql`
+
+---
+
+## MCube failed-call WhatsApp (migration `052`)
+
+### `mcube_settings` (extended)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `failed_call_whatsapp_enabled` | BOOLEAN | Master switch |
+| `failed_call_whatsapp_template_id` | UUID → whatsapp_templates | Approved template |
+| `failed_call_whatsapp_body_parameters` | JSONB | Array of strings; `{{lead_name}}` token |
+| `failed_call_whatsapp_header_parameters` | JSONB | Optional header params |
+
+### `mcube_failed_call_whatsapp_log`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `call_id` | UUID → calls | Nullable on call delete |
+| `mcube_call_id` | TEXT UNIQUE | Idempotency key |
+| `lead_id` | UUID → leads | |
+| `template_id` | UUID → whatsapp_templates | |
+| `status` | TEXT | `sent` \| `failed` |
+| `wamid`, `error`, `dial_status` | TEXT | Audit |
+| `created_at` | TIMESTAMPTZ | |
+
+**Migration:** `database/migrations/052_mcube_failed_call_whatsapp.sql`
