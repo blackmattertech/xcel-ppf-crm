@@ -567,7 +567,7 @@ function BulkWhatsAppPageContent() {
         })
         const hint =
           data.message ??
-          'Render cron (every 5 minutes) or "Process scheduled broadcasts now" will send it.'
+          'FastCron (every 5 minutes) or "Process scheduled broadcasts now" will send it.'
         const scheduleMessage = data.adjustedToNow
           ? `Your pick was in the past — queued to send now (${whenLocal} your time). ${hint}`
           : `Scheduled for ${whenLocal} (your time). ${hint}`
@@ -584,7 +584,7 @@ function BulkWhatsAppPageContent() {
         const SCHEDULE_CHUNK = 5000
         const scheduledAtIso = new Date().toISOString()
         const processorHint =
-          'Render cron (every 5 minutes) or "Process scheduled broadcasts now" will send it.'
+          'FastCron (every 5 minutes) or "Process scheduled broadcasts now" will send it.'
         const chunks: typeof recipients[] = []
         for (let i = 0; i < recipients.length; i += SCHEDULE_CHUNK) {
           chunks.push(recipients.slice(i, i + SCHEDULE_CHUNK))
@@ -938,7 +938,7 @@ function BulkWhatsAppPageContent() {
                   className={fieldInput}
                 />
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Leave empty to queue for immediate delivery (Render cron every 5 min or &quot;Process scheduled now&quot; below).
+                  Leave empty to queue for immediate delivery (FastCron every 5 min or &quot;Process scheduled now&quot; below).
                 </p>
               </div>
             </div>
@@ -948,11 +948,11 @@ function BulkWhatsAppPageContent() {
                 <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-slate-700 ring-1 ring-slate-200/80">
                   /api/marketing/whatsapp/process-scheduled
                 </code>
-                . Render cron calls{' '}
+                . FastCron calls{' '}
                 <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-slate-700 ring-1 ring-slate-200/80">
                   /api/cron/whatsapp-process-scheduled
                 </code>{' '}
-                every 5 minutes (see <code className="font-mono text-[11px]">render.yaml</code>), or run the processor manually below.
+                every 5 minutes (see <code className="font-mono text-[11px]">docs/DEPLOYMENT.md</code>), or run the processor manually below.
               </p>
               <button
                 type="button"

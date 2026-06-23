@@ -47,7 +47,7 @@ flowchart TD
   Caller[Caller] --> EnrollAPI[POST enrollments or bucket-links]
   EnrollAPI --> EnrollDB[(lead_enrollments)]
 
-  RenderCron[Render cron 15m] --> CronRoute[/api/cron/whatsapp-automation]
+  FastCron[FastCron 15m] --> CronRoute[/api/cron/whatsapp-automation]
   CronRoute --> Job[whatsapp-automation.job]
   Job --> BatchDB[(trigger_batches)]
   Job --> Meta[Meta WhatsApp API]

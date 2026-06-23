@@ -2,7 +2,7 @@
 
 ## 2026-06-23 — WhatsApp automation flows
 
-**Feature:** Admin builds up to 2 active drip flows (1–30 days) with per-day template or text/image/video triggers. Callers enroll leads and link buckets; Render cron processes batches with chunked delivery until every lead is sent.
+**Feature:** Admin builds up to 2 active drip flows (1–30 days) with per-day template or text/image/video triggers. Callers enroll leads and link buckets; FastCron processes batches with chunked delivery until every lead is sent.
 
 **Files:**
 - `database/migrations/051_whatsapp_automation.sql`
@@ -18,13 +18,11 @@
 
 **Migration required:** Yes — run `051_whatsapp_automation.sql`
 
-## 2026-06-23 — Cron jobs: Render only
+## 2026-06-23 — Cron jobs: FastCron
 
-**Change:** All scheduled tasks run on Render Cron Jobs via `render.yaml`. Removed GitHub Actions workflows.
+**Change:** All scheduled HTTP tasks use FastCron (`docs/DEPLOYMENT.md`). Removed `render.yaml` and GitHub Actions workflows.
 
-**Cron jobs:** `whatsapp-process-scheduled` (5m), `meta-leads-sync` (6h), `whatsapp-automation` (15m), `whatsapp-template-sync` (1h).
-
-**Documentation:** `docs/DEPLOYMENT.md`, `.env.example`
+**Jobs:** `whatsapp-process-scheduled` (5m), `meta-leads-sync` (6h), `whatsapp-automation` (15m), `whatsapp-template-sync` (1h).
 
 ## 2026-06-23 — Lead Buckets
 

@@ -6,7 +6,7 @@ import { syncMetaLeadsForUser } from '@/backend/jobs/meta-leads-sync.job'
  * Cron: pull Meta Lead Ads for every user with an active Facebook Page connection.
  * Secure with Authorization: Bearer CRON_SECRET (same pattern as whatsapp-template-sync).
  *
- * Render cron: schedule every 6h and GET this URL with APP_BASE_URL + CRON_SECRET.
+ * FastCron: schedule every 6h and GET this URL with Authorization Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')

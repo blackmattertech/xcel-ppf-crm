@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isProcessScheduledCronAuthorized, primaryProcessScheduledSecret } from '@/lib/cron-request-auth'
 
 /**
- * Cron entrypoint for due WhatsApp scheduled broadcasts (Render cron every 5 min).
+ * Cron entrypoint for due WhatsApp scheduled broadcasts (FastCron every 5 min).
  * Call with Authorization: Bearer CRON_SECRET.
  * Set CRON_SECRET (or WHATSAPP_PROCESS_SCHEDULED_SECRET) in env.
  */

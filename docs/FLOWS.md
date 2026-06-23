@@ -60,7 +60,7 @@
 
 ## Cron processing
 
-1. Render cron every 15 min → `GET /api/cron/whatsapp-automation`
+1. FastCron every 15 min → `GET /api/cron/whatsapp-automation`
 2. `queueDueTriggerBatches()` → `advanceTriggerBatch()` in chunks
 3. `remainingRecipients` persisted until all leads sent or permanent fail
 4. Cycle end: `completed` or restart per `restart_on_complete`

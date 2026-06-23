@@ -129,9 +129,9 @@ Body (POST): `{ "flow_id", "lead_id" }`
 
 `GET /api/automation/whatsapp/logs?flowId=&limit=`
 
-## Cron (Render only)
+## Cron (FastCron)
 
-All schedulers use `Authorization: Bearer CRON_SECRET`. Configure in [`render.yaml`](../render.yaml) and [`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
+All schedulers use `Authorization: Bearer CRON_SECRET`. Configure in [`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
 
 | Endpoint | Schedule |
 |----------|----------|

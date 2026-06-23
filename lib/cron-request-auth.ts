@@ -22,7 +22,7 @@ export function primaryProcessScheduledSecret(): string | undefined {
 }
 
 /**
- * Authorize cron HTTP calls. Production: Render Cron with Bearer CRON_SECRET (or WHATSAPP_PROCESS_SCHEDULED_SECRET).
+ * Authorize cron HTTP calls. Production: FastCron with Bearer CRON_SECRET (or WHATSAPP_PROCESS_SCHEDULED_SECRET).
  * Vercel `x-vercel-cron` header still accepted when present.
  */
 export function isProcessScheduledCronAuthorized(request: NextRequest): boolean {
@@ -41,7 +41,7 @@ export function isProcessScheduledCronAuthorized(request: NextRequest): boolean 
 /**
  * Authorize scheduled cron HTTP calls.
  *
- * - Render Cron (production): `Authorization: Bearer <CRON_SECRET>`
+ * - FastCron (production): `Authorization: Bearer <CRON_SECRET>`
  * - Vercel Cron: `x-vercel-cron: 1` (optional legacy)
  * - Manual curl: same Bearer header
  */

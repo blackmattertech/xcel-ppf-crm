@@ -3,7 +3,7 @@ import { isProcessScheduledCronAuthorized } from '@/lib/cron-request-auth'
 import { runWhatsAppAutomationJob } from '@/backend/jobs/whatsapp-automation.job'
 
 /**
- * Render cron entrypoint for WhatsApp automation batches (every 15 minutes recommended).
+ * FastCron entrypoint for WhatsApp automation batches (every 15 minutes recommended).
  * Schedule: every 15 minutes recommended (cron: star-slash-15 star star star star).
  */
 export async function GET(request: NextRequest) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runTemplateSync } from '@/backend/jobs/whatsapp-template-sync.job'
 
 /**
- * Cron: sync WhatsApp template status/category from Meta (Render cron hourly).
+ * Cron: sync WhatsApp template status/category from Meta (FastCron hourly).
  * Secure with Authorization: Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
