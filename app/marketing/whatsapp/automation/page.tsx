@@ -160,6 +160,20 @@ export default function WhatsAppAutomationPage() {
     setSaving(true)
     setError(null)
     try {
+      const triggersPayload = triggerDrafts
+        .filter((t) => t.day_offset < formCycleDays)
+        .map(({ _key: _k, ...rest }) => rest)
+
+      for (const t of triggersPayload) {
+        if (t.message_type === 'image' || t.message_type === 'video') {
+          if (!t.media_url?.trim()) {
+            throw new Error(
+              `Day ${t.day_offset}: choose and upload a ${t.message_type} file before saving`
+            )
+          }
+        }
+      }
+
       const res = await cachedFetch(`/api/automation/whatsapp/flows/${selectedId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -172,10 +186,6 @@ export default function WhatsAppAutomationPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Save failed')
-
-      const triggersPayload = triggerDrafts
-        .filter((t) => t.day_offset < formCycleDays)
-        .map(({ _key: _k, ...rest }) => rest)
 
       const trigRes = await cachedFetch(`/api/automation/whatsapp/flows/${selectedId}/triggers`, {
         method: 'PUT',
@@ -228,22 +238,63 @@ export default function WhatsAppAutomationPage() {
   }
 
   async function uploadMedia(file: File, mediaType: 'image' | 'video') {
-    if (!selectedDay && selectedDay !== 0) return
+    if (selectedDay === null) return
     setUploading(true)
+    setError(null)
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await fetch('/api/marketing/whatsapp/upload-media', {
+      const signRes = await cachedFetch('/api/marketing/whatsapp/upload-media/signed-url', {
         method: 'POST',
-        body: form,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, mimeType: file.type }),
       })
-      const data = await res.json()
+      const signData = (await signRes.json()) as {
+        signedUrl?: string
+        token?: string
+        path?: string
+        error?: string
+      }
+      if (!signRes.ok || !signData.path || !signData.signedUrl) {
+        throw new Error(signData.error || 'Failed to create upload URL')
+      }
+
+      const storageUpload = await fetch(signData.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      })
+      if (!storageUpload.ok) throw new Error('Failed to upload file to storage')
+
+      const res = await cachedFetch('/api/marketing/whatsapp/upload-media', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storagePath: signData.path,
+          mimeType: file.type,
+          fileName: file.name,
+        }),
+      })
+      const data = (await res.json()) as {
+        url?: string
+        handle?: string
+        id?: string
+        error?: string
+      }
       if (!res.ok) throw new Error(data.error || 'Upload failed')
-      upsertDayTrigger(selectedDay!, {
+
+      const mediaUrl = data.url?.trim()
+      if (!mediaUrl) {
+        throw new Error(
+          'Upload to Meta succeeded but no public media URL was stored. Ensure the template-media Supabase bucket exists and is public.'
+        )
+      }
+
+      upsertDayTrigger(selectedDay, {
         message_type: mediaType,
-        media_url: data.url || data.publicUrl,
-        media_meta_id: data.id || data.mediaId || null,
-        media_mime_type: file.type,
+        media_url: mediaUrl,
+        media_meta_id: data.handle || data.id || null,
+        media_mime_type: file.type || null,
         media_file_name: file.name,
       })
     } catch (e) {
@@ -417,7 +468,15 @@ export default function WhatsAppAutomationPage() {
                         onClick={() =>
                           upsertDayTrigger(selectedDay, {
                             message_type: mt,
-                            ...(mt === 'template' ? {} : { template_id: null }),
+                            template_id: mt === 'template' ? dayTrigger?.template_id ?? null : null,
+                            ...(mt !== dayTrigger?.message_type
+                              ? {
+                                  media_url: null,
+                                  media_meta_id: null,
+                                  media_mime_type: null,
+                                  media_file_name: null,
+                                }
+                              : {}),
                           })
                         }
                         className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs capitalize ${
@@ -492,17 +551,39 @@ export default function WhatsAppAutomationPage() {
 
                   {(dayTrigger?.message_type === 'image' || dayTrigger?.message_type === 'video') && (
                     <div className="space-y-2">
-                      <input
-                        type="file"
-                        accept={dayTrigger.message_type === 'image' ? 'image/*' : 'video/*'}
-                        disabled={uploading}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0]
-                          if (f) void uploadMedia(f, dayTrigger.message_type as 'image' | 'video')
-                        }}
-                      />
-                      {dayTrigger.media_url && (
-                        <p className="text-xs text-slate-500 truncate">Media: {dayTrigger.media_file_name || dayTrigger.media_url}</p>
+                      <label className="block text-sm">
+                        <span className="font-medium">
+                          {dayTrigger.message_type === 'image' ? 'Image' : 'Video'} file{' '}
+                          <span className="text-red-600">*</span>
+                        </span>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Required before save. File uploads to storage and Meta for WhatsApp delivery.
+                        </p>
+                        <input
+                          type="file"
+                          className="mt-2 block w-full text-sm"
+                          accept={dayTrigger.message_type === 'image' ? 'image/*' : 'video/*'}
+                          disabled={uploading}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) void uploadMedia(f, dayTrigger.message_type as 'image' | 'video')
+                            e.target.value = ''
+                          }}
+                        />
+                      </label>
+                      {uploading && (
+                        <p className="inline-flex items-center gap-2 text-xs text-slate-600">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Uploading…
+                        </p>
+                      )}
+                      {!uploading && dayTrigger.media_url && (
+                        <p className="text-xs text-emerald-700">
+                          Uploaded ✓ {dayTrigger.media_file_name || 'media ready'}
+                        </p>
+                      )}
+                      {!uploading && !dayTrigger.media_url && (
+                        <p className="text-xs text-amber-700">No file uploaded yet — save will fail until you upload.</p>
                       )}
                     </div>
                   )}

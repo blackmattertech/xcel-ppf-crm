@@ -16,6 +16,16 @@
 
 **Documentation:** `docs/API.md`, `docs/FLOWS.md`, `docs/DATABASE.md`, `docs/DEPLOYMENT.md`, `docs/DEBUGGING.md`, `docs/FLOWCHARTS.md`
 
+## 2026-06-23 — Automation image/video upload fix
+
+**Bug fix:** Saving image or video automation triggers failed with `media_url or media_meta_id is required`.
+
+**Cause:** Upload used raw multipart `fetch` (often no public URL); users could save before upload completed; sending requires `media_url` not Meta template handles.
+
+**Fix:** Signed Supabase upload flow (same as templates), require `media_url` before save, clearer UI labels.
+
+**Files:** `app/marketing/whatsapp/automation/page.tsx`, `backend/services/whatsapp-automation.service.ts`
+
 ## 2026-06-23 — Automation analytics accuracy fix
 
 **Bug fix:** WhatsApp flow analytics under-counted or mis-dated sends.

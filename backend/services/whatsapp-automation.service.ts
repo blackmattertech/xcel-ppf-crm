@@ -200,8 +200,10 @@ async function validateTriggerInput(
     }
     case 'image':
     case 'video': {
-      if (!input.media_url?.trim() && !input.media_meta_id?.trim()) {
-        throw new Error('media_url or media_meta_id is required for image/video triggers')
+      if (!input.media_url?.trim()) {
+        throw new Error(
+          `Upload a ${input.message_type} file for day ${input.day_offset} before saving (public media URL required for sending)`
+        )
       }
       break
     }
