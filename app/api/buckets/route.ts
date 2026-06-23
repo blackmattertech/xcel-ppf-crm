@@ -14,6 +14,7 @@ const createBucketSchema = z.object({
   color: z.string().max(20).optional(),
   is_active: z.boolean().optional().default(true),
   sort_order: z.number().int().optional().default(0),
+  parent_id: z.string().uuid().nullable().optional(),
 })
 
 function canReadBuckets(userRole: string | undefined, permissions: string[]) {
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
       color: validated.color,
       is_active: validated.is_active,
       sort_order: validated.sort_order,
+      parent_id: validated.parent_id ?? null,
       created_by: user.id,
     })
 

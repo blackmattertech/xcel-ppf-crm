@@ -18,6 +18,7 @@ interface LeadBucket {
   color: string | null
   is_active: boolean
   sort_order: number
+  parent_id: string | null
   lead_count: number
   created_at: string
 }
@@ -48,6 +49,7 @@ export default function BucketsPage() {
   const [canEnrollAutomation, setCanEnrollAutomation] = useState(false)
 
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createParentId, setCreateParentId] = useState<string | null>(null)
   const [editingBucket, setEditingBucket] = useState<LeadBucket | null>(null)
   const [detailBucket, setDetailBucket] = useState<LeadBucket | null>(null)
   const [detailLeads, setDetailLeads] = useState<BucketLead[]>([])
@@ -163,8 +165,9 @@ export default function BucketsPage() {
     }
   }
 
-  function openCreateModal() {
+  function openCreateModal(parentId: string | null = null) {
     setEditingBucket(null)
+    setCreateParentId(parentId)
     setFormData({
       name: '',
       description: '',
@@ -177,6 +180,7 @@ export default function BucketsPage() {
 
   function openEditModal(bucket: LeadBucket) {
     setEditingBucket(bucket)
+    setCreateParentId(bucket.parent_id)
     setFormData({
       name: bucket.name,
       description: bucket.description || '',
@@ -198,6 +202,7 @@ export default function BucketsPage() {
         color: formData.color,
         is_active: formData.is_active,
         sort_order: parseInt(formData.sort_order, 10) || 0,
+        parent_id: editingBucket ? editingBucket.parent_id : createParentId,
       }
 
       const url = editingBucket ? `/api/buckets/${editingBucket.id}` : '/api/buckets'
@@ -241,6 +246,86 @@ export default function BucketsPage() {
     [summary, buckets]
   )
 
+  const bucketTree = useMemo(() => {
+    const topLevel = buckets
+      .filter((b) => !b.parent_id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+    const childrenByParent = new Map<string, LeadBucket[]>()
+    for (const b of buckets) {
+      if (!b.parent_id) continue
+      const list = childrenByParent.get(b.parent_id) || []
+      list.push(b)
+      childrenByParent.set(b.parent_id, list)
+    }
+    for (const [parentId, children] of childrenByParent) {
+      childrenByParent.set(
+        parentId,
+        children.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+      )
+    }
+    return { topLevel, childrenByParent }
+  }, [buckets])
+
+  function renderBucketRow(bucket: LeadBucket, isSub = false) {
+    const childCount = bucketTree.childrenByParent.get(bucket.id)?.length ?? 0
+    return (
+      <div
+        key={bucket.id}
+        className={`bg-white border rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-colors ${
+          isSub ? 'ml-6 border-dashed' : ''
+        } ${
+          detailBucket?.id === bucket.id
+            ? 'border-[#dd3f3c] ring-1 ring-[rgba(248,229,231,0.8)]'
+            : 'border-gray-200 hover:border-[rgba(221,63,60,0.35)]'
+        }`}
+        onClick={() => void openBucketDetail(bucket)}
+      >
+        <span className="w-2 h-10 rounded-full shrink-0" style={{ backgroundColor: bucket.color || '#dd3f3c' }} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-gray-900 truncate">
+              {isSub ? `↳ ${bucket.name}` : bucket.name}
+            </p>
+            {!bucket.is_active && (
+              <span className="text-[10px] uppercase px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">Inactive</span>
+            )}
+            {!isSub && childCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
+                {childCount} sub
+              </span>
+            )}
+          </div>
+          {bucket.description && <p className="text-xs text-gray-500 truncate">{bucket.description}</p>}
+          <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+            <Users className="w-3 h-3" />
+            {bucket.lead_count} lead{bucket.lead_count !== 1 ? 's' : ''}
+          </p>
+        </div>
+        {canManage && (
+          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+            {!isSub && (
+              <button
+                type="button"
+                title="Add sub-bucket"
+                onClick={() => openCreateModal(bucket.id)}
+                className="p-2 text-gray-400 hover:text-[#dd3f3c] rounded-lg"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            )}
+            <button type="button" onClick={() => openEditModal(bucket)} className="p-2 text-gray-400 hover:text-[#dd3f3c] rounded-lg">
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button type="button" onClick={() => void handleDelete(bucket)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        <Eye className="w-4 h-4 text-[#dd3f3c] shrink-0" />
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <Layout>
@@ -259,7 +344,7 @@ export default function BucketsPage() {
               Lead Buckets
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Admin makes bucket names. Callers tag leads. Status journey not touched.{' '}
+              Admin makes buckets and sub-buckets. Callers tag leads to sub-buckets (or top-level when no subs).{' '}
               <Link href="/reports" className="text-[#dd3f3c] hover:underline font-medium">
                 View bucket analytics →
               </Link>
@@ -268,7 +353,7 @@ export default function BucketsPage() {
           {canManage && (
             <button
               type="button"
-              onClick={openCreateModal}
+              onClick={() => openCreateModal(null)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-[#dd3f3c] text-white text-sm font-medium rounded-lg hover:bg-[#c93532]"
             >
               <Plus className="w-4 h-4" />
@@ -302,39 +387,10 @@ export default function BucketsPage() {
                 No buckets yet.
               </div>
             ) : (
-              buckets.map((bucket) => (
-                <div
-                  key={bucket.id}
-                  className={`bg-white border rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-colors ${
-                    detailBucket?.id === bucket.id ? 'border-[#dd3f3c] ring-1 ring-[rgba(248,229,231,0.8)]' : 'border-gray-200 hover:border-[rgba(221,63,60,0.35)]'
-                  }`}
-                  onClick={() => void openBucketDetail(bucket)}
-                >
-                  <span className="w-2 h-10 rounded-full shrink-0" style={{ backgroundColor: bucket.color || '#dd3f3c' }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-gray-900 truncate">{bucket.name}</p>
-                      {!bucket.is_active && (
-                        <span className="text-[10px] uppercase px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">Inactive</span>
-                      )}
-                    </div>
-                    {bucket.description && <p className="text-xs text-gray-500 truncate">{bucket.description}</p>}
-                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                      <Users className="w-3 h-3" />
-                      {bucket.lead_count} lead{bucket.lead_count !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  {canManage && (
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => openEditModal(bucket)} className="p-2 text-gray-400 hover:text-[#dd3f3c] rounded-lg">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button type="button" onClick={() => void handleDelete(bucket)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                  <Eye className="w-4 h-4 text-[#dd3f3c] shrink-0" />
+              bucketTree.topLevel.map((bucket) => (
+                <div key={bucket.id} className="space-y-2">
+                  {renderBucketRow(bucket)}
+                  {(bucketTree.childrenByParent.get(bucket.id) || []).map((sub) => renderBucketRow(sub, true))}
                 </div>
               ))
             )}
@@ -351,7 +407,11 @@ export default function BucketsPage() {
                 <div className="p-4 border-b border-gray-100 flex items-center gap-3">
                   <span className="w-2 h-8 rounded-full" style={{ backgroundColor: detailBucket.color || '#dd3f3c' }} />
                   <div>
-                    <p className="font-semibold text-gray-900">{detailBucket.name}</p>
+                    <p className="font-semibold text-gray-900">
+                      {detailBucket.parent_id
+                        ? `${buckets.find((b) => b.id === detailBucket.parent_id)?.name ?? 'Parent'} › ${detailBucket.name}`
+                        : detailBucket.name}
+                    </p>
                     <p className="text-xs text-gray-500">{detailBucket.lead_count} leads tagged</p>
                   </div>
                 </div>
@@ -378,7 +438,11 @@ export default function BucketsPage() {
                     ))}
                   </div>
                 )}
-                <BucketAutomationLinks bucketId={detailBucket.id} canEnroll={canEnrollAutomation} />
+                <BucketAutomationLinks
+                  bucketId={detailBucket.id}
+                  canEnroll={canEnrollAutomation}
+                  isParentWithChildren={(bucketTree.childrenByParent.get(detailBucket.id)?.length ?? 0) > 0}
+                />
               </div>
             )}
           </div>
@@ -391,8 +455,23 @@ export default function BucketsPage() {
             <button type="button" onClick={() => setShowCreateModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
               <X className="w-5 h-5" />
             </button>
-            <h2 className="text-lg font-semibold mb-4">{editingBucket ? 'Edit bucket' : 'New bucket'}</h2>
+            <h2 className="text-lg font-semibold mb-4">
+              {editingBucket
+                ? 'Edit bucket'
+                : createParentId
+                  ? `New sub-bucket under ${buckets.find((b) => b.id === createParentId)?.name ?? 'parent'}`
+                  : 'New bucket'}
+            </h2>
             <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+              {createParentId && !editingBucket && (
+                <p className="text-xs text-gray-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  Sub-bucket lives under{' '}
+                  <span className="font-medium text-gray-800">
+                    {buckets.find((b) => b.id === createParentId)?.name ?? 'parent bucket'}
+                  </span>
+                  . Callers pick it from the lead dropdown.
+                </p>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                 <input

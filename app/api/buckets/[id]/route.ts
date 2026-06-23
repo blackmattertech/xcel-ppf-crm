@@ -15,6 +15,7 @@ const updateBucketSchema = z.object({
   color: z.string().max(20).optional().nullable(),
   is_active: z.boolean().optional(),
   sort_order: z.number().int().optional(),
+  parent_id: z.string().uuid().nullable().optional(),
 })
 
 function canReadBuckets(userRole: string | undefined, permissions: string[]) {

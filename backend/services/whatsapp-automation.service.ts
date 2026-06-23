@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { resolveAutomationBucketIdsForEnrollment } from '@/backend/services/bucket.service'
 import { computeEnrollmentDay, todayIstDateString } from '@/shared/whatsapp-automation-ist'
 import { getTemplateById } from '@/backend/services/whatsapp-template.service'
 import type {
@@ -432,10 +433,11 @@ export async function linkBucketToFlow(
 
   if (error) throw new Error(`Failed to link bucket: ${error.message}`)
 
+  const enrollmentBucketIds = await resolveAutomationBucketIdsForEnrollment(bucketId)
   const { data: assignments } = await supabase
     .from('lead_bucket_assignments')
     .select('lead_id')
-    .eq('bucket_id', bucketId)
+    .in('bucket_id', enrollmentBucketIds)
 
   for (const row of assignments || []) {
     const leadId = (row as { lead_id: string }).lead_id
@@ -473,20 +475,28 @@ export async function autoEnrollLeadFromBucketTag(
   bucketId: string,
   taggedBy: string
 ): Promise<void> {
-  const links = await listBucketLinks({ bucketId, activeOnly: true })
-  for (const link of links) {
-    if (!link.flow?.is_active) continue
-    try {
-      await insertEnrollment({
-        flowId: link.flow_id,
-        leadId,
-        enrolledBy: taggedBy,
-        source: 'bucket',
-        bucketLinkId: link.id,
-      })
-    } catch (e) {
-      if (e instanceof Error && (e as Error & { statusCode?: number }).statusCode === 409) continue
-      console.error('Auto-enroll from bucket tag failed', leadId, link.flow_id, e)
+  const { resolveAutomationBucketIdsForTag } = await import('@/backend/services/bucket.service')
+  const bucketIds = await resolveAutomationBucketIdsForTag(bucketId)
+  const seenFlows = new Set<string>()
+
+  for (const bid of bucketIds) {
+    const links = await listBucketLinks({ bucketId: bid, activeOnly: true })
+    for (const link of links) {
+      if (!link.flow?.is_active) continue
+      if (seenFlows.has(link.flow_id)) continue
+      seenFlows.add(link.flow_id)
+      try {
+        await insertEnrollment({
+          flowId: link.flow_id,
+          leadId,
+          enrolledBy: taggedBy,
+          source: 'bucket',
+          bucketLinkId: link.id,
+        })
+      } catch (e) {
+        if (e instanceof Error && (e as Error & { statusCode?: number }).statusCode === 409) continue
+        console.error('Auto-enroll from bucket tag failed', leadId, link.flow_id, e)
+      }
     }
   }
 }

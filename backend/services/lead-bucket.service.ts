@@ -4,9 +4,10 @@ export interface LeadBucket {
   id: string
   name: string
   description: string | null
-  color: string
+  color: string | null
   sort_order: number
   is_active: boolean
+  parent_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -40,6 +41,7 @@ export interface CreateLeadBucketInput {
   color?: string
   sort_order?: number
   is_active?: boolean
+  parent_id?: string | null
   created_by: string
 }
 
@@ -49,6 +51,7 @@ export interface UpdateLeadBucketInput {
   color?: string
   sort_order?: number
   is_active?: boolean
+  parent_id?: string | null
 }
 
 const BUCKET_SELECT = `
@@ -58,6 +61,7 @@ const BUCKET_SELECT = `
   color,
   sort_order,
   is_active,
+  parent_id,
   created_by,
   created_at,
   updated_at
@@ -174,50 +178,26 @@ export async function getLeadBucketDetail(
 }
 
 export async function createLeadBucket(input: CreateLeadBucketInput): Promise<LeadBucket> {
-  const supabase = createServiceClient()
-  const { data, error } = await supabase
-    .from('lead_buckets')
-    // @ts-ignore
-    .insert({
-      name: input.name.trim(),
-      description: input.description?.trim() || null,
-      color: input.color || '#6366f1',
-      sort_order: input.sort_order ?? 0,
-      is_active: input.is_active !== undefined ? input.is_active : true,
-      created_by: input.created_by,
-    })
-    .select(BUCKET_SELECT)
-    .single()
-
-  if (error) throw new Error(`Failed to create lead bucket: ${error.message}`)
-  return data as LeadBucket
+  const { createBucket } = await import('@/backend/services/bucket.service')
+  return createBucket({
+    name: input.name,
+    description: input.description,
+    color: input.color,
+    sort_order: input.sort_order,
+    is_active: input.is_active,
+    parent_id: input.parent_id,
+    created_by: input.created_by,
+  })
 }
 
 export async function updateLeadBucket(id: string, input: UpdateLeadBucketInput): Promise<LeadBucket> {
-  const supabase = createServiceClient()
-  const updateData: Record<string, unknown> = {}
-  if (input.name !== undefined) updateData.name = input.name.trim()
-  if (input.description !== undefined) updateData.description = input.description?.trim() || null
-  if (input.color !== undefined) updateData.color = input.color
-  if (input.sort_order !== undefined) updateData.sort_order = input.sort_order
-  if (input.is_active !== undefined) updateData.is_active = input.is_active
-
-  const { data, error } = await supabase
-    .from('lead_buckets')
-    // @ts-ignore
-    .update(updateData)
-    .eq('id', id)
-    .select(BUCKET_SELECT)
-    .single()
-
-  if (error) throw new Error(`Failed to update lead bucket: ${error.message}`)
-  return data as LeadBucket
+  const { updateBucket } = await import('@/backend/services/bucket.service')
+  return updateBucket(id, input)
 }
 
 export async function deleteLeadBucket(id: string): Promise<void> {
-  const supabase = createServiceClient()
-  const { error } = await supabase.from('lead_buckets').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete lead bucket: ${error.message}`)
+  const { deleteBucket } = await import('@/backend/services/bucket.service')
+  return deleteBucket(id)
 }
 
 export async function getBucketsForLead(leadId: string): Promise<LeadBucket[]> {

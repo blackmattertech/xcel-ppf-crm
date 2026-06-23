@@ -21,9 +21,14 @@ interface BucketLink {
 interface BucketAutomationLinksProps {
   bucketId: string
   canEnroll: boolean
+  isParentWithChildren?: boolean
 }
 
-export function BucketAutomationLinks({ bucketId, canEnroll }: BucketAutomationLinksProps) {
+export function BucketAutomationLinks({
+  bucketId,
+  canEnroll,
+  isParentWithChildren = false,
+}: BucketAutomationLinksProps) {
   const [flows, setFlows] = useState<FlowOption[]>([])
   const [links, setLinks] = useState<BucketLink[]>([])
   const [loading, setLoading] = useState(true)
@@ -98,7 +103,11 @@ export function BucketAutomationLinks({ bucketId, canEnroll }: BucketAutomationL
   return (
     <div className="border-t border-gray-100 px-4 py-3 space-y-2 bg-slate-50/50">
       <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">WhatsApp automation</p>
-      <p className="text-[11px] text-gray-500">All leads in this bucket get flow messages. New tags auto-enroll.</p>
+      <p className="text-[11px] text-gray-500">
+        {isParentWithChildren
+          ? 'Leads in this bucket and all sub-buckets get flow messages. New sub-bucket tags auto-enroll too.'
+          : 'Leads in this bucket get flow messages. New tags auto-enroll. Sub-bucket tags also match a parent link.'}
+      </p>
 
       {activeLinks.length > 0 ? (
         <ul className="space-y-1">

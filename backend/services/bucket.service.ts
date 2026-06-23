@@ -7,6 +7,7 @@ export interface LeadBucket {
   color: string | null
   is_active: boolean
   sort_order: number
+  parent_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -19,6 +20,9 @@ export interface LeadBucketWithStats extends LeadBucket {
 export interface BucketReportSummary {
   total_buckets: number
   active_buckets: number
+  parent_buckets: number
+  sub_buckets: number
+  parents_with_sub_buckets: number
   /** Unique leads with at least one bucket tag */
   unique_leads_tagged: number
   total_leads_in_system: number
@@ -52,6 +56,7 @@ export interface CreateBucketInput {
   color?: string
   is_active?: boolean
   sort_order?: number
+  parent_id?: string | null
   created_by: string
 }
 
@@ -61,6 +66,44 @@ export interface UpdateBucketInput {
   color?: string | null
   is_active?: boolean
   sort_order?: number
+  parent_id?: string | null
+}
+
+/** Sub-bucket IDs under a parent (active or inactive). */
+export async function getChildBucketIds(parentId: string): Promise<string[]> {
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('lead_buckets')
+    .select('id')
+    .eq('parent_id', parentId)
+
+  if (error) throw new Error(`Failed to fetch sub-buckets: ${error.message}`)
+  return ((data || []) as { id: string }[]).map((r) => r.id)
+}
+
+/** On lead tag: check flow links on this bucket and parent (if sub-bucket). */
+export async function resolveAutomationBucketIdsForTag(bucketId: string): Promise<string[]> {
+  const bucket = await getBucketById(bucketId)
+  if (!bucket) return [bucketId]
+  if (bucket.parent_id) return [...new Set([bucketId, bucket.parent_id])]
+  return [bucketId]
+}
+
+/** On flow link: enroll leads in bucket and all sub-buckets when parent is linked. */
+export async function resolveAutomationBucketIdsForEnrollment(bucketId: string): Promise<string[]> {
+  const bucket = await getBucketById(bucketId)
+  if (!bucket) return [bucketId]
+  if (bucket.parent_id) return [bucketId]
+  const children = await getChildBucketIds(bucketId)
+  return [...new Set([bucketId, ...children])]
+}
+
+async function assertValidParentBucket(parentId: string | null | undefined): Promise<void> {
+  if (!parentId) return
+  const parent = await getBucketById(parentId)
+  if (!parent) throw new Error('Parent bucket not found')
+  if (!parent.is_active) throw new Error('Parent bucket is inactive')
+  if (parent.parent_id) throw new Error('Sub-buckets cannot be nested more than one level')
 }
 
 function assertTeleCallerCanViewLead(
@@ -162,11 +205,17 @@ export async function getBucketReport(): Promise<BucketReportPayload> {
   const typedAssignments = (assignments || []) as { lead_id: string; bucket_id: string }[]
   const uniqueTagged = new Set(typedAssignments.map((r) => r.lead_id)).size
   const totalInSystem = totalLeads ?? 0
+  const parentBuckets = buckets.filter((b) => !b.parent_id)
+  const subBuckets = buckets.filter((b) => b.parent_id)
+  const parentIdsWithChildren = new Set(subBuckets.map((b) => b.parent_id as string))
 
   return {
     summary: {
       total_buckets: buckets.length,
       active_buckets: buckets.filter((b) => b.is_active).length,
+      parent_buckets: parentBuckets.length,
+      sub_buckets: subBuckets.length,
+      parents_with_sub_buckets: parentBuckets.filter((b) => parentIdsWithChildren.has(b.id)).length,
       unique_leads_tagged: uniqueTagged,
       total_leads_in_system: totalInSystem,
       untagged_leads: Math.max(0, totalInSystem - uniqueTagged),
@@ -231,6 +280,8 @@ export async function getBucketLeads(
 }
 
 export async function createBucket(input: CreateBucketInput): Promise<LeadBucket> {
+  await assertValidParentBucket(input.parent_id ?? null)
+
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('lead_buckets')
@@ -241,6 +292,7 @@ export async function createBucket(input: CreateBucketInput): Promise<LeadBucket
       color: input.color || DEFAULT_BUCKET_COLOR,
       is_active: input.is_active !== undefined ? input.is_active : true,
       sort_order: input.sort_order ?? 0,
+      parent_id: input.parent_id ?? null,
       created_by: input.created_by,
     })
     .select()
@@ -253,6 +305,11 @@ export async function createBucket(input: CreateBucketInput): Promise<LeadBucket
 }
 
 export async function updateBucket(id: string, input: UpdateBucketInput): Promise<LeadBucket> {
+  if (input.parent_id !== undefined) {
+    if (input.parent_id === id) throw new Error('Bucket cannot be its own parent')
+    await assertValidParentBucket(input.parent_id)
+  }
+
   const supabase = createServiceClient()
   const updateData: Record<string, unknown> = {}
   if (input.name !== undefined) updateData.name = input.name.trim()
@@ -260,6 +317,7 @@ export async function updateBucket(id: string, input: UpdateBucketInput): Promis
   if (input.color !== undefined) updateData.color = input.color
   if (input.is_active !== undefined) updateData.is_active = input.is_active
   if (input.sort_order !== undefined) updateData.sort_order = input.sort_order
+  if (input.parent_id !== undefined) updateData.parent_id = input.parent_id
 
   const { data, error } = await supabase
     .from('lead_buckets')
@@ -315,6 +373,7 @@ export async function getLeadBuckets(
         color,
         is_active,
         sort_order,
+        parent_id,
         created_by,
         created_at,
         updated_at
