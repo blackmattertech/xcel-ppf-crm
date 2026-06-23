@@ -37,6 +37,14 @@ const featureCards = [
     hoverBorder: 'hover:border-sky-300/50 hover:shadow-sky-500/10',
   },
   {
+    href: '/marketing/whatsapp/automation/analytics',
+    title: 'Flow analytics',
+    description: 'Enrollments, sends per trigger day, success rate, and failure log per automation flow.',
+    icon: BarChart2,
+    iconWrap: 'from-indigo-500/15 to-violet-600/10 text-indigo-700 ring-indigo-500/20',
+    hoverBorder: 'hover:border-indigo-300/50 hover:shadow-indigo-500/10',
+  },
+  {
     href: '/marketing/whatsapp/automation',
     title: 'Automation flows',
     description: 'Build 30-day drip loops with template or media messages; callers enroll leads and buckets.',

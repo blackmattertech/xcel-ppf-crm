@@ -16,7 +16,11 @@
 
 **Documentation:** `docs/API.md`, `docs/FLOWS.md`, `docs/DATABASE.md`, `docs/DEPLOYMENT.md`, `docs/DEBUGGING.md`, `docs/FLOWCHARTS.md`
 
-**Migration required:** Yes — run `051_whatsapp_automation.sql`
+## 2026-06-23 — Automation flow analytics
+
+**Feature:** Analytics dashboard at `/marketing/whatsapp/automation/analytics` — enrollments, sends over time, per trigger day stats, recent failures.
+
+**API:** `GET /api/automation/whatsapp/analytics?flowId=`
 
 ## 2026-06-23 — Cron jobs: FastCron
 

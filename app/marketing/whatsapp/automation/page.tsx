@@ -14,6 +14,7 @@ import {
   Video,
   MessageSquare,
   LayoutTemplate,
+  BarChart3,
 } from 'lucide-react'
 import { cachedFetch } from '@/lib/api-client'
 import type {
@@ -274,6 +275,13 @@ export default function WhatsAppAutomationPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Link
+            href="/marketing/whatsapp/automation/analytics"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Analytics
+          </Link>
           <button
             type="button"
             onClick={() => void loadFlows()}
