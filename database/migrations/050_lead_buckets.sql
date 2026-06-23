@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS public.lead_buckets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     description TEXT,
-    color TEXT NOT NULL DEFAULT '#6366f1',
+    color TEXT NOT NULL DEFAULT '#dd3f3c',
     sort_order INTEGER NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,

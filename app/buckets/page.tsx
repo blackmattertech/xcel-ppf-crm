@@ -246,18 +246,21 @@ export default function BucketsPage() {
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-              <Layers className="w-7 h-7 text-indigo-600" />
+              <Layers className="w-7 h-7 text-[#dd3f3c]" />
               Lead Buckets
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Admin makes bucket names. Callers tag leads. Status journey not touched.
+              Admin makes bucket names. Callers tag leads. Status journey not touched.{' '}
+              <Link href="/reports" className="text-[#dd3f3c] hover:underline font-medium">
+                View bucket analytics →
+              </Link>
             </p>
           </div>
           {canManage && (
             <button
               type="button"
               onClick={openCreateModal}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#dd3f3c] text-white text-sm font-medium rounded-lg hover:bg-[#c93532]"
             >
               <Plus className="w-4 h-4" />
               New bucket
@@ -294,11 +297,11 @@ export default function BucketsPage() {
                 <div
                   key={bucket.id}
                   className={`bg-white border rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-colors ${
-                    detailBucket?.id === bucket.id ? 'border-indigo-400 ring-1 ring-indigo-200' : 'border-gray-200 hover:border-indigo-200'
+                    detailBucket?.id === bucket.id ? 'border-[#dd3f3c] ring-1 ring-[rgba(248,229,231,0.8)]' : 'border-gray-200 hover:border-[rgba(221,63,60,0.35)]'
                   }`}
                   onClick={() => void openBucketDetail(bucket)}
                 >
-                  <span className="w-2 h-10 rounded-full shrink-0" style={{ backgroundColor: bucket.color || '#6366f1' }} />
+                  <span className="w-2 h-10 rounded-full shrink-0" style={{ backgroundColor: bucket.color || '#dd3f3c' }} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-gray-900 truncate">{bucket.name}</p>
@@ -314,7 +317,7 @@ export default function BucketsPage() {
                   </div>
                   {canManage && (
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => openEditModal(bucket)} className="p-2 text-gray-400 hover:text-indigo-600 rounded-lg">
+                      <button type="button" onClick={() => openEditModal(bucket)} className="p-2 text-gray-400 hover:text-[#dd3f3c] rounded-lg">
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button type="button" onClick={() => void handleDelete(bucket)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg">
@@ -322,7 +325,7 @@ export default function BucketsPage() {
                       </button>
                     </div>
                   )}
-                  <Eye className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <Eye className="w-4 h-4 text-[#dd3f3c] shrink-0" />
                 </div>
               ))
             )}
@@ -337,7 +340,7 @@ export default function BucketsPage() {
             ) : (
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div className="p-4 border-b border-gray-100 flex items-center gap-3">
-                  <span className="w-2 h-8 rounded-full" style={{ backgroundColor: detailBucket.color || '#6366f1' }} />
+                  <span className="w-2 h-8 rounded-full" style={{ backgroundColor: detailBucket.color || '#dd3f3c' }} />
                   <div>
                     <p className="font-semibold text-gray-900">{detailBucket.name}</p>
                     <p className="text-xs text-gray-500">{detailBucket.lead_count} leads tagged</p>
@@ -354,12 +357,12 @@ export default function BucketsPage() {
                         <div className="min-w-0">
                           <p className="font-medium text-gray-900 truncate">{lead.name}</p>
                           <p className="text-xs text-gray-400">{lead.lead_id} · {lead.phone || '—'}</p>
-                          <p className="text-xs text-indigo-600 mt-0.5">
+                          <p className="text-xs text-[#dd3f3c] mt-0.5">
                             {LEAD_STATUS_LABELS[lead.status as keyof typeof LEAD_STATUS_LABELS] || lead.status}
                             {lead.assigned_user?.name ? ` · ${lead.assigned_user.name}` : ''}
                           </p>
                         </div>
-                        <Link href={`/leads/${lead.id}`} className="text-sm text-indigo-600 hover:underline shrink-0">
+                        <Link href={`/leads/${lead.id}`} className="text-sm text-[#dd3f3c] hover:underline shrink-0">
                           Open
                         </Link>
                       </div>
@@ -438,7 +441,7 @@ export default function BucketsPage() {
                 <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg disabled:opacity-50">
+                <button type="submit" disabled={submitting} className="px-4 py-2 text-sm font-medium bg-[#dd3f3c] text-white rounded-lg disabled:opacity-50">
                   {submitting ? 'Saving…' : editingBucket ? 'Update' : 'Create'}
                 </button>
               </div>

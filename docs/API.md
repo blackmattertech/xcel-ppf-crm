@@ -51,4 +51,25 @@ Replace lead's bucket tags. Requires `leads.update`.
 
 Also accepts `bucket_ids` (snake_case).
 
+## `GET /api/reports/buckets`
+
+Bucket analytics for Reports page.
+
+**Response:**
+```json
+{
+  "summary": {
+    "total_buckets": 3,
+    "active_buckets": 3,
+    "unique_leads_tagged": 42,
+    "total_leads_in_system": 100,
+    "untagged_leads": 58,
+    "total_assignments": 45
+  },
+  "buckets": [{ "id": "...", "name": "...", "lead_count": 12, "color": "#dd3f3c" }]
+}
+```
+
+**Auth:** admin, `reports.read`, or `buckets.read`
+
 **Note:** Does not modify `leads.status`, assignment, or `meta_data`.

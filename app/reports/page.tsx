@@ -8,7 +8,10 @@ import { useAuthContext } from '@/components/AuthProvider'
 import { cachedFetch } from '@/lib/api-client'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { PERMISSIONS } from '@/shared/constants/permissions'
-import { Phone, User, Calendar, BarChart3, ChevronRight, PhoneMissed } from 'lucide-react'
+import { Phone, User, Calendar, BarChart3, ChevronRight, PhoneMissed, Layers } from 'lucide-react'
+import BucketAnalyticsReport from '@/components/reports/BucketAnalyticsReport'
+
+type ReportTab = 'calls' | 'buckets'
 
 function todayLocalYmd(): string {
   const d = new Date()
@@ -108,13 +111,28 @@ export default function ReportsPage() {
   const [outcomeFilter, setOutcomeFilter] = useState<'connected' | 'not_reachable'>('connected')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reportTab, setReportTab] = useState<ReportTab>('calls')
 
-  const canAccessReports = useMemo(() => {
+  const canAccessCallsReport = useMemo(() => {
     const rn = role?.name?.toLowerCase() ?? ''
     if (rn === SYSTEM_ROLES.SUPER_ADMIN || rn === SYSTEM_ROLES.ADMIN) return true
     const perms = role?.permissions ?? []
     return perms.includes(PERMISSIONS.REPORTS_READ) || perms.includes(PERMISSIONS.REPORTS_MANAGE)
   }, [role])
+
+  const canAccessBucketReport = useMemo(() => {
+    const rn = role?.name?.toLowerCase() ?? ''
+    if (rn === SYSTEM_ROLES.SUPER_ADMIN || rn === SYSTEM_ROLES.ADMIN) return true
+    const perms = role?.permissions ?? []
+    return (
+      perms.includes(PERMISSIONS.REPORTS_READ) ||
+      perms.includes(PERMISSIONS.REPORTS_MANAGE) ||
+      perms.includes(PERMISSIONS.BUCKETS_READ) ||
+      perms.includes(PERMISSIONS.BUCKETS_MANAGE)
+    )
+  }, [role])
+
+  const canAccessReports = canAccessCallsReport || canAccessBucketReport
 
   const canViewAllCallers = useMemo(() => {
     const rn = role?.name?.toLowerCase() ?? ''
@@ -133,8 +151,12 @@ export default function ReportsPage() {
     }
     if (!canAccessReports) {
       router.push('/dashboard')
+      return
     }
-  }, [authLoading, isAuthenticated, canAccessReports, router])
+    if (!canAccessCallsReport && canAccessBucketReport) {
+      setReportTab('buckets')
+    }
+  }, [authLoading, isAuthenticated, canAccessReports, canAccessCallsReport, canAccessBucketReport, router])
 
   useEffect(() => {
     if (!isAuthenticated || !canViewAllCallers) return
@@ -152,7 +174,7 @@ export default function ReportsPage() {
   }, [isAuthenticated, canViewAllCallers])
 
   const fetchReport = useCallback(async () => {
-    if (!canAccessReports) return
+    if (!canAccessCallsReport) return
     const rangeErr = reportRangeError(fromDate, toDate)
     if (rangeErr) {
       setError(rangeErr)
@@ -183,15 +205,15 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [fromDate, toDate, agentFilter, canAccessReports, canViewAllCallers])
+  }, [fromDate, toDate, agentFilter, canAccessCallsReport, canViewAllCallers])
 
   const showDateInTimeColumn = fromDate !== toDate
 
   useEffect(() => {
-    if (!authLoading && isAuthenticated && canAccessReports) {
+    if (!authLoading && isAuthenticated && canAccessCallsReport && reportTab === 'calls') {
       void fetchReport()
     }
-  }, [authLoading, isAuthenticated, canAccessReports, fetchReport])
+  }, [authLoading, isAuthenticated, canAccessCallsReport, reportTab, fetchReport])
 
   if (authLoading || !isAuthenticated || !canAccessReports) {
     return (
@@ -205,8 +227,52 @@ export default function ReportsPage() {
     <Layout mobileTitle="Reports">
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Call reports</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
           <p className="text-gray-600 mt-1 text-sm md:text-base">
+            Call activity and lead bucket analytics.
+          </p>
+        </div>
+
+        {canAccessCallsReport && canAccessBucketReport ? (
+          <div className="flex gap-1 border-b border-gray-200">
+            <button
+              type="button"
+              onClick={() => setReportTab('calls')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                reportTab === 'calls'
+                  ? 'border-[#dd3f3c] text-[#dd3f3c]'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Phone className="w-4 h-4" />
+                Call reports
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportTab('buckets')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                reportTab === 'buckets'
+                  ? 'border-[#dd3f3c] text-[#dd3f3c]'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Layers className="w-4 h-4" />
+                Bucket analytics
+              </span>
+            </button>
+          </div>
+        ) : null}
+
+        {reportTab === 'buckets' && canAccessBucketReport ? (
+          <BucketAnalyticsReport />
+        ) : canAccessCallsReport ? (
+        <>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Call reports</h2>
+          <p className="text-gray-600 mt-1 text-sm">
             MCUBE-dialed calls only: activity, leads contacted, and recordings when available from MCUBE or sync.
           </p>
         </div>
@@ -484,6 +550,10 @@ export default function ReportsPage() {
             })()}
           </div>
         </div>
+        </>
+        ) : (
+          <BucketAnalyticsReport />
+        )}
       </div>
     </Layout>
   )

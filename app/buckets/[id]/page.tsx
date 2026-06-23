@@ -14,22 +14,20 @@ interface BucketLead {
   id: string
   lead_id: string
   name: string
-  phone: string
-  email: string | null
+  phone: string | null
   status: string
-  assigned_to: string | null
+  assigned_user?: { id: string; name: string | null } | null
   created_at: string
-  tagged_at: string
-  assigned_user: { id: string; name: string } | null
 }
 
 interface BucketDetail {
-  id: string
-  name: string
-  description: string | null
-  color: string
-  is_active: boolean
-  lead_count: number
+  bucket: {
+    id: string
+    name: string
+    description: string | null
+    color: string | null
+    is_active: boolean
+  }
   leads: BucketLead[]
 }
 
@@ -38,7 +36,7 @@ export default function BucketDetailPage() {
   const params = useParams()
   const bucketId = params?.id as string
   const { role, loading: authLoading, isAuthenticated } = useAuthContext()
-  const [bucket, setBucket] = useState<BucketDetail | null>(null)
+  const [data, setData] = useState<BucketDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -51,21 +49,21 @@ export default function BucketDetailPage() {
       userRole === SYSTEM_ROLES.ADMIN ||
       userRole === SYSTEM_ROLES.SUPER_ADMIN ||
       userRole === SYSTEM_ROLES.TELE_CALLER ||
-      permissions.includes('lead_buckets.read') ||
-      permissions.includes('lead_buckets.manage')
+      permissions.includes('buckets.read') ||
+      permissions.includes('buckets.manage')
     )
   }, [userRole, permissions])
 
   const fetchBucket = useCallback(async () => {
     if (!bucketId) return
     try {
-      const res = await cachedFetch(`/api/buckets/${bucketId}?with_leads=true`)
+      const res = await cachedFetch(`/api/buckets/${bucketId}?include=leads`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         setError(err.error || 'Failed to load bucket')
         return
       }
-      setBucket(await res.json())
+      setData(await res.json())
     } catch {
       setError('Failed to load bucket')
     } finally {
@@ -86,6 +84,9 @@ export default function BucketDetailPage() {
     void fetchBucket()
   }, [authLoading, isAuthenticated, canView, router, fetchBucket])
 
+  const bucket = data?.bucket
+  const leads = data?.leads ?? []
+
   if (authLoading || loading) {
     return (
       <Layout>
@@ -98,7 +99,7 @@ export default function BucketDetailPage() {
     return (
       <Layout>
         <div className="p-6 max-w-3xl mx-auto">
-          <Link href="/buckets" className="text-sm text-indigo-600 hover:underline flex items-center gap-1 mb-4">
+          <Link href="/buckets" className="text-sm text-[#dd3f3c] hover:underline flex items-center gap-1 mb-4">
             <ArrowLeft className="w-4 h-4" />
             Back to buckets
           </Link>
@@ -111,32 +112,35 @@ export default function BucketDetailPage() {
   return (
     <Layout>
       <div className="p-6 max-w-5xl mx-auto">
-        <Link href="/buckets" className="text-sm text-indigo-600 hover:underline flex items-center gap-1 mb-4">
+        <Link href="/buckets" className="text-sm text-[#dd3f3c] hover:underline flex items-center gap-1 mb-4">
           <ArrowLeft className="w-4 h-4" />
           All buckets
         </Link>
 
         <div className="flex items-start gap-4 mb-6">
-          <span className="w-2 h-14 rounded-full shrink-0 mt-1" style={{ backgroundColor: bucket.color }} />
+          <span
+            className="w-2 h-14 rounded-full shrink-0 mt-1"
+            style={{ backgroundColor: bucket.color || '#dd3f3c' }}
+          />
           <div>
             <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-              <FolderOpen className="w-7 h-7 text-indigo-600" />
+              <FolderOpen className="w-7 h-7 text-[#dd3f3c]" />
               {bucket.name}
             </h1>
             {bucket.description && <p className="text-sm text-gray-500 mt-1">{bucket.description}</p>}
             <p className="text-sm text-gray-600 mt-2">
-              <span className="font-semibold">{bucket.lead_count}</span> lead{bucket.lead_count !== 1 ? 's' : ''} in this bucket
+              <span className="font-semibold text-[#dd3f3c]">{leads.length}</span> lead{leads.length !== 1 ? 's' : ''} in this bucket
               {userRole === SYSTEM_ROLES.TELE_CALLER && ' (your assigned leads only)'}
             </p>
           </div>
         </div>
 
-        {bucket.leads.length === 0 ? (
+        {leads.length === 0 ? (
           <div className="bg-white border border-dashed border-gray-300 rounded-xl p-12 text-center text-gray-500">
             No leads tagged in this bucket yet.
           </div>
         ) : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -144,12 +148,11 @@ export default function BucketDetailPage() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Phone</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Assigned to</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Tagged</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {bucket.leads.map((lead) => (
+                {leads.map((lead) => (
                   <tr key={lead.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{lead.name}</p>
@@ -158,11 +161,11 @@ export default function BucketDetailPage() {
                     <td className="px-4 py-3 text-gray-600">
                       <span className="inline-flex items-center gap-1">
                         <Phone className="w-3.5 h-3.5" />
-                        {lead.phone}
+                        {lead.phone || '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
+                      <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-[rgba(248,229,231,0.6)] text-[#dd3f3c]">
                         {LEAD_STATUS_LABELS[lead.status as keyof typeof LEAD_STATUS_LABELS] || lead.status}
                       </span>
                     </td>
@@ -174,11 +177,8 @@ export default function BucketDetailPage() {
                         </span>
                       ) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {new Date(lead.tagged_at).toLocaleDateString()}
-                    </td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/leads/${lead.id}`} className="text-indigo-600 hover:underline font-medium">
+                      <Link href={`/leads/${lead.id}`} className="text-[#dd3f3c] hover:underline font-medium">
                         Open
                       </Link>
                     </td>

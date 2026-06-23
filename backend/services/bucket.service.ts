@@ -16,6 +16,24 @@ export interface LeadBucketWithStats extends LeadBucket {
   lead_count: number
 }
 
+export interface BucketReportSummary {
+  total_buckets: number
+  active_buckets: number
+  /** Unique leads with at least one bucket tag */
+  unique_leads_tagged: number
+  total_leads_in_system: number
+  untagged_leads: number
+  /** Sum of all bucket assignments (lead in 2 buckets = 2) */
+  total_assignments: number
+}
+
+export interface BucketReportPayload {
+  summary: BucketReportSummary
+  buckets: LeadBucketWithStats[]
+}
+
+export const DEFAULT_BUCKET_COLOR = '#dd3f3c'
+
 export interface BucketLeadSummary {
   id: string
   lead_id: string
@@ -121,6 +139,43 @@ export async function getBucketsWithStats(): Promise<LeadBucketWithStats[]> {
   }))
 }
 
+export async function getBucketReport(): Promise<BucketReportPayload> {
+  const supabase = createServiceClient()
+  const buckets = await getBucketsWithStats()
+
+  const { count: totalLeads, error: leadsError } = await supabase
+    .from('leads')
+    .select('id', { count: 'exact', head: true })
+
+  if (leadsError) {
+    throw new Error(`Failed to count leads: ${leadsError.message}`)
+  }
+
+  const { data: assignments, error: assignError } = await supabase
+    .from('lead_bucket_assignments')
+    .select('lead_id, bucket_id')
+
+  if (assignError) {
+    throw new Error(`Failed to fetch bucket assignments: ${assignError.message}`)
+  }
+
+  const typedAssignments = (assignments || []) as { lead_id: string; bucket_id: string }[]
+  const uniqueTagged = new Set(typedAssignments.map((r) => r.lead_id)).size
+  const totalInSystem = totalLeads ?? 0
+
+  return {
+    summary: {
+      total_buckets: buckets.length,
+      active_buckets: buckets.filter((b) => b.is_active).length,
+      unique_leads_tagged: uniqueTagged,
+      total_leads_in_system: totalInSystem,
+      untagged_leads: Math.max(0, totalInSystem - uniqueTagged),
+      total_assignments: typedAssignments.length,
+    },
+    buckets,
+  }
+}
+
 export async function getBucketLeads(
   bucketId: string,
   userId?: string,
@@ -183,7 +238,7 @@ export async function createBucket(input: CreateBucketInput): Promise<LeadBucket
     .insert({
       name: input.name.trim(),
       description: input.description?.trim() || null,
-      color: input.color || '#6366f1',
+      color: input.color || DEFAULT_BUCKET_COLOR,
       is_active: input.is_active !== undefined ? input.is_active : true,
       sort_order: input.sort_order ?? 0,
       created_by: input.created_by,
