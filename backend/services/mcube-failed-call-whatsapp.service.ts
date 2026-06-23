@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import type { CallOutcome } from '@/shared/constants/lead-status'
 import type { AutomationMessageType } from '@/shared/whatsapp-automation-types'
 import { mapDialStatusToOutcome } from '@/backend/services/mcube.service'
+import { getLeadVehicleName } from '@/shared/utils/lead-meta'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import {
   BroadcastValidationError,
@@ -57,12 +58,24 @@ function parseMessageType(value: unknown): McubeFailedCallMessageType {
 }
 
 export function applyLeadNameToText(text: string, leadName: string | null): string {
-  const name = leadName?.trim() || 'there'
-  return text.replace(/\{\{lead_name\}\}/gi, name)
+  return applyLeadTokens(text, { name: leadName, car: null })
 }
 
-function applyLeadNameToken(params: string[], leadName: string | null): string[] {
-  return params.map((p) => applyLeadNameToText(p, leadName))
+export function applyLeadTokens(
+  text: string,
+  tokens: { name: string | null; car: string | null }
+): string {
+  const name = tokens.name?.trim() || 'there'
+  const car = tokens.car?.trim() || 'vehicle'
+  return text
+    .replace(/\{\{lead_name\}\}/gi, name)
+    .replace(/\{\{name\}\}/gi, name)
+    .replace(/\{\{lead_car\}\}/gi, car)
+    .replace(/\{\{car\}\}/gi, car)
+}
+
+function applyLeadNameToken(params: string[], leadName: string | null, leadCar: string | null): string[] {
+  return params.map((p) => applyLeadTokens(p, { name: leadName, car: leadCar }))
 }
 
 export function validateMcubeFailedCallWhatsAppConfig(
@@ -158,6 +171,7 @@ async function sendConfiguredMessage(params: {
   settings: McubeFailedCallWhatsAppSettings
   phone: string
   leadName: string | null
+  leadCar: string
   config: NonNullable<Awaited<ReturnType<typeof getResolvedWhatsAppConfig>>['config']>
   wabaConfig: NonNullable<Awaited<ReturnType<typeof getResolvedWhatsAppConfig>>['wabaConfig']>
 }): Promise<{
@@ -168,7 +182,7 @@ async function sendConfiguredMessage(params: {
   messageType: McubeFailedCallMessageType
   attachmentUrl?: string
 }> {
-  const { settings, phone, leadName, config, wabaConfig } = params
+  const { settings, phone, leadName, leadCar, config, wabaConfig } = params
   const messageType = settings.messageType
 
   if (messageType === 'template') {
@@ -176,10 +190,10 @@ async function sendConfiguredMessage(params: {
       return { result: { success: false, error: 'No template configured' }, chatBody: '', messageType }
     }
 
-    const bodyParameters = applyLeadNameToken(settings.bodyParameters, leadName)
+    const bodyParameters = applyLeadNameToken(settings.bodyParameters, leadName, leadCar)
     const headerParameters =
       settings.headerParameters.length > 0
-        ? applyLeadNameToken(settings.headerParameters, leadName)
+        ? applyLeadNameToken(settings.headerParameters, leadName, leadCar)
         : undefined
 
     let payload
@@ -225,7 +239,7 @@ async function sendConfiguredMessage(params: {
   }
 
   if (messageType === 'text') {
-    const body = applyLeadNameToText(settings.messageBody?.trim() || '', leadName)
+    const body = applyLeadTokens(settings.messageBody?.trim() || '', { name: leadName, car: leadCar })
     if (!body) {
       return { result: { success: false, error: 'Text message is empty' }, chatBody: '', messageType }
     }
@@ -239,7 +253,7 @@ async function sendConfiguredMessage(params: {
   }
 
   const caption = settings.messageBody?.trim()
-    ? applyLeadNameToText(settings.messageBody, leadName)
+    ? applyLeadTokens(settings.messageBody, { name: leadName, car: leadCar })
     : undefined
 
   const result = await sendWhatsAppMedia(
@@ -287,7 +301,7 @@ export async function maybeSendFailedCallWhatsAppTemplate(
 
   const { data: lead, error: leadErr } = await supabase
     .from('leads')
-    .select('id, phone, name')
+    .select('id, phone, name, meta_data, requirement')
     .eq('id', params.leadId)
     .maybeSingle()
   if (leadErr) throw new Error(leadErr.message)
@@ -295,6 +309,9 @@ export async function maybeSendFailedCallWhatsAppTemplate(
 
   const phone = (lead as { phone: string }).phone?.trim()
   const leadName = (lead as { name?: string | null }).name ?? null
+  const leadCar = getLeadVehicleName(
+    lead as { meta_data?: Record<string, unknown> | null; requirement?: string | null }
+  )
 
   if (!phone) {
     await recordFailedCallWhatsAppLog({
@@ -329,6 +346,7 @@ export async function maybeSendFailedCallWhatsAppTemplate(
     settings,
     phone,
     leadName,
+    leadCar,
     config,
     wabaConfig,
   })

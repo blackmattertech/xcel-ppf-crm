@@ -246,3 +246,16 @@ export function buildRequirementFromMeta(metaData: Record<string, any> | null): 
   if (carModel) parts.push(`Car Model: ${carModel}`)
   return parts.join(' | ')
 }
+
+/** Car / vehicle label for WhatsApp personalization (meta_data car fields, then requirement). */
+export function getLeadVehicleName(lead: {
+  meta_data?: Record<string, unknown> | null
+  requirement?: string | null
+}): string {
+  const meta = (lead.meta_data as Record<string, unknown> | null) ?? null
+  const fromMeta = getCarModelFromMeta(meta as Record<string, any> | null)
+  if (fromMeta) return fromMeta
+  const req = lead.requirement?.trim()
+  if (req) return req.replace(/_/g, ' ')
+  return 'vehicle'
+}

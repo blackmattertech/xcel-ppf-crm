@@ -339,14 +339,17 @@ export default function McubeSettings() {
               <label className="block text-sm max-w-xl">
                 <span className="font-medium text-gray-800">Template body parameters (optional)</span>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Comma-separated for {'{{1}}'}, {'{{2}}'}, etc. Use{' '}
-                  <code className="text-xs">{'{{lead_name}}'}</code> for lead name. Default: lead name
-                  for first variable.
+                  Comma-separated for {'{{1}}'}, {'{{2}}'}, etc. Tokens:{' '}
+                  <code className="text-xs">{'{{lead_name}}'}</code> or{' '}
+                  <code className="text-xs">{'{{name}}'}</code>,{' '}
+                  <code className="text-xs">{'{{lead_car}}'}</code> or{' '}
+                  <code className="text-xs">{'{{car}}'}</code> (from lead meta / requirement). Example:{' '}
+                  <code className="text-xs">{'{{lead_name}}, {{lead_car}}'}</code>
                 </p>
                 <input
                   type="text"
                   className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
-                  placeholder="{{lead_name}}"
+                  placeholder="{{lead_name}}, {{lead_car}}"
                   value={failedCallWhatsappBodyParameters}
                   onChange={(e) => setFailedCallWhatsappBodyParameters(e.target.value)}
                 />
