@@ -25,6 +25,7 @@ export type McubeFailedCallMessageType = AutomationMessageType
 
 export interface McubeFailedCallWhatsAppSettings {
   enabled: boolean
+  requireCallerApproval: boolean
   messageType: McubeFailedCallMessageType
   templateId: string | null
   bodyParameters: string[]
@@ -40,11 +41,26 @@ export interface MaybeSendFailedCallWhatsAppParams {
   leadId: string
   callId: string
   mcubeCallId: string
+  callerUserId: string | null
   outcome: CallOutcome
   dialStatus: string | null
   sessionId: string | null
   direction: 'inbound' | 'outbound' | null
   skipBecauseManualMerge?: boolean
+}
+
+export interface FailedCallWhatsAppPromptRow {
+  id: string
+  call_id: string | null
+  mcube_call_id: string
+  lead_id: string
+  caller_user_id: string
+  dial_status: string | null
+  status: string
+  message_preview: string | null
+  error: string | null
+  created_at: string
+  lead?: { id: string; name: string; phone: string | null; lead_id?: string } | null
 }
 
 function parseStringArrayJson(value: unknown): string[] {
@@ -107,6 +123,7 @@ export async function getMcubeFailedCallWhatsAppSettings(): Promise<McubeFailedC
     .select(
       `
       failed_call_whatsapp_enabled,
+      failed_call_whatsapp_require_caller_approval,
       failed_call_whatsapp_message_type,
       failed_call_whatsapp_template_id,
       failed_call_whatsapp_body_parameters,
@@ -125,6 +142,7 @@ export async function getMcubeFailedCallWhatsAppSettings(): Promise<McubeFailedC
 
   const row = data as {
     failed_call_whatsapp_enabled?: boolean
+    failed_call_whatsapp_require_caller_approval?: boolean
     failed_call_whatsapp_message_type?: string
     failed_call_whatsapp_template_id?: string | null
     failed_call_whatsapp_body_parameters?: unknown
@@ -138,6 +156,7 @@ export async function getMcubeFailedCallWhatsAppSettings(): Promise<McubeFailedC
 
   return {
     enabled: Boolean(row?.failed_call_whatsapp_enabled),
+    requireCallerApproval: row?.failed_call_whatsapp_require_caller_approval !== false,
     messageType: parseMessageType(row?.failed_call_whatsapp_message_type),
     templateId: row?.failed_call_whatsapp_template_id ?? null,
     bodyParameters: parseStringArrayJson(row?.failed_call_whatsapp_body_parameters),
@@ -277,7 +296,311 @@ async function sendConfiguredMessage(params: {
   }
 }
 
+export function buildFailedCallMessagePreview(
+  settings: McubeFailedCallWhatsAppSettings,
+  leadName: string | null,
+  leadCar: string,
+  templateName?: string | null
+): string {
+  switch (settings.messageType) {
+    case 'template':
+      return templateName
+        ? `WhatsApp template: ${templateName}`
+        : 'WhatsApp template message'
+    case 'text':
+      return applyLeadTokens(settings.messageBody?.trim() || DEFAULT_FAILED_CALL_TEXT, {
+        name: leadName,
+        car: leadCar,
+      })
+    case 'image':
+    case 'video': {
+      const caption = settings.messageBody?.trim()
+        ? applyLeadTokens(settings.messageBody, { name: leadName, car: leadCar })
+        : ''
+      return caption
+        ? `${settings.messageType === 'video' ? 'Video' : 'Image'} with caption: ${caption}`
+        : `${settings.messageType === 'video' ? 'Video' : 'Image'} message`
+    }
+    default:
+      return 'WhatsApp follow-up message'
+  }
+}
+
+const DEFAULT_FAILED_CALL_TEXT =
+  'Hi {{lead_name}}, we tried calling you but could not reach you. Please reply when you are available.'
+
+const PROMPT_EXPIRY_MS = 24 * 60 * 60 * 1000
+
+async function loadLeadForFailedCallWhatsApp(leadId: string) {
+  const supabase = createServiceClient()
+  const { data: lead, error: leadErr } = await supabase
+    .from('leads')
+    .select('id, lead_id, phone, name, meta_data, requirement')
+    .eq('id', leadId)
+    .maybeSingle()
+  if (leadErr) throw new Error(leadErr.message)
+  if (!lead) return null
+
+  const row = lead as {
+    id: string
+    lead_id?: string
+    phone: string
+    name?: string | null
+    meta_data?: Record<string, unknown> | null
+    requirement?: string | null
+  }
+
+  return {
+    id: row.id,
+    leadIdDisplay: row.lead_id ?? row.id,
+    phone: row.phone?.trim() || null,
+    name: row.name ?? null,
+    car: getLeadVehicleName(row),
+  }
+}
+
+async function getFailedCallWhatsAppLogStatus(
+  mcubeCallId: string
+): Promise<'sent' | 'failed' | 'dismissed' | null> {
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from('mcube_failed_call_whatsapp_log')
+    .select('status')
+    .eq('mcube_call_id', mcubeCallId)
+    .maybeSingle()
+  const status = (data as { status?: string } | null)?.status
+  if (status === 'sent' || status === 'failed' || status === 'dismissed') return status
+  return null
+}
+
+async function hasPendingFailedCallPrompt(mcubeCallId: string): Promise<boolean> {
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from('mcube_failed_call_whatsapp_prompts')
+    .select('id')
+    .eq('mcube_call_id', mcubeCallId)
+    .eq('status', 'pending')
+    .maybeSingle()
+  return Boolean(data)
+}
+
+/** Webhook entry: queue caller approval or send immediately based on settings. */
+export async function handleFailedCallWhatsApp(
+  params: MaybeSendFailedCallWhatsAppParams
+): Promise<{ sent: boolean; queued?: boolean; skipped?: string; error?: string }> {
+  if (!shouldSendFailedCallWhatsApp(params)) {
+    return { sent: false, skipped: 'conditions_not_met' }
+  }
+
+  const settings = await getMcubeFailedCallWhatsAppSettings()
+  if (!settings.enabled) return { sent: false, skipped: 'disabled' }
+
+  const configError = validateMcubeFailedCallWhatsAppConfig(settings)
+  if (configError) return { sent: false, skipped: 'not_configured', error: configError }
+
+  const logStatus = await getFailedCallWhatsAppLogStatus(params.mcubeCallId)
+  if (logStatus === 'sent' || logStatus === 'dismissed') {
+    return { sent: false, skipped: 'already_handled' }
+  }
+  if (await hasPendingFailedCallPrompt(params.mcubeCallId)) {
+    return { sent: false, skipped: 'already_queued' }
+  }
+
+  if (settings.requireCallerApproval) {
+    if (!params.callerUserId) {
+      return executeFailedCallWhatsAppSend(params)
+    }
+    const queued = await queueFailedCallWhatsAppPrompt(params, settings)
+    return queued ? { sent: false, queued: true } : { sent: false, skipped: 'queue_failed' }
+  }
+
+  return executeFailedCallWhatsAppSend(params)
+}
+
+async function queueFailedCallWhatsAppPrompt(
+  params: MaybeSendFailedCallWhatsAppParams,
+  settings: McubeFailedCallWhatsAppSettings
+): Promise<boolean> {
+  const lead = await loadLeadForFailedCallWhatsApp(params.leadId)
+  if (!lead || !params.callerUserId) return false
+
+  let templateName: string | null = null
+  if (settings.messageType === 'template' && settings.templateId) {
+    const templateRow = await getTemplateById(settings.templateId)
+    templateName = templateRow?.name ?? null
+  }
+
+  const preview = buildFailedCallMessagePreview(settings, lead.name, lead.car, templateName)
+  const supabase = createServiceClient()
+  const { error } = await supabase.from('mcube_failed_call_whatsapp_prompts').insert({
+    call_id: params.callId,
+    mcube_call_id: params.mcubeCallId,
+    lead_id: params.leadId,
+    caller_user_id: params.callerUserId,
+    dial_status: params.dialStatus,
+    status: 'pending',
+    message_preview: preview,
+  } as never)
+
+  if (error) {
+    console.error('[mcube-failed-call-whatsapp] prompt insert failed', error.message)
+    return false
+  }
+  return true
+}
+
+export async function getPendingFailedCallWhatsAppPromptsForUser(
+  userId: string
+): Promise<FailedCallWhatsAppPromptRow[]> {
+  const supabase = createServiceClient()
+  const expiryCutoff = new Date(Date.now() - PROMPT_EXPIRY_MS).toISOString()
+
+  await supabase
+    .from('mcube_failed_call_whatsapp_prompts')
+    .update({ status: 'expired', responded_at: new Date().toISOString() } as never)
+    .eq('caller_user_id', userId)
+    .eq('status', 'pending')
+    .lt('created_at', expiryCutoff)
+
+  const { data, error } = await supabase
+    .from('mcube_failed_call_whatsapp_prompts')
+    .select(
+      'id, call_id, mcube_call_id, lead_id, caller_user_id, dial_status, status, message_preview, error, created_at'
+    )
+    .eq('caller_user_id', userId)
+    .eq('status', 'pending')
+    .gte('created_at', expiryCutoff)
+    .order('created_at', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  const prompts = (data || []) as FailedCallWhatsAppPromptRow[]
+  if (prompts.length === 0) return []
+
+  const leadIds = [...new Set(prompts.map((p) => p.lead_id))]
+  const { data: leads } = await supabase
+    .from('leads')
+    .select('id, lead_id, name, phone')
+    .in('id', leadIds)
+
+  const leadById = new Map(
+    ((leads || []) as { id: string; lead_id: string; name: string; phone: string | null }[]).map((l) => [
+      l.id,
+      l,
+    ])
+  )
+
+  return prompts.map((p) => ({
+    ...p,
+    lead: leadById.get(p.lead_id) ?? null,
+  }))
+}
+
+export async function respondToFailedCallWhatsAppPrompt(params: {
+  promptId: string
+  userId: string
+  action: 'approve' | 'dismiss'
+}): Promise<{ ok: boolean; sent?: boolean; error?: string }> {
+  const supabase = createServiceClient()
+  const { data: prompt, error: promptErr } = await supabase
+    .from('mcube_failed_call_whatsapp_prompts')
+    .select('*')
+    .eq('id', params.promptId)
+    .maybeSingle()
+
+  if (promptErr) throw new Error(promptErr.message)
+  if (!prompt) return { ok: false, error: 'Prompt not found' }
+
+  const row = prompt as {
+    id: string
+    call_id: string | null
+    mcube_call_id: string
+    lead_id: string
+    caller_user_id: string
+    dial_status: string | null
+    status: string
+  }
+
+  if (row.caller_user_id !== params.userId) {
+    return { ok: false, error: 'Forbidden' }
+  }
+  if (row.status !== 'pending') {
+    return { ok: false, error: 'Prompt already handled' }
+  }
+
+  const now = new Date().toISOString()
+
+  if (params.action === 'dismiss') {
+    await supabase
+      .from('mcube_failed_call_whatsapp_prompts')
+      .update({
+        status: 'dismissed',
+        responded_at: now,
+        responded_by: params.userId,
+      } as never)
+      .eq('id', params.promptId)
+
+    const settings = await getMcubeFailedCallWhatsAppSettings()
+    await recordFailedCallWhatsAppLog({
+      callId: row.call_id ?? '',
+      mcubeCallId: row.mcube_call_id,
+      leadId: row.lead_id,
+      templateId: settings.templateId,
+      messageType: settings.messageType,
+      dialStatus: row.dial_status,
+      status: 'dismissed',
+    })
+
+    return { ok: true, sent: false }
+  }
+
+  await supabase
+    .from('mcube_failed_call_whatsapp_prompts')
+    .update({
+      status: 'approved',
+      responded_at: now,
+      responded_by: params.userId,
+    } as never)
+    .eq('id', params.promptId)
+
+  const sendResult = await executeFailedCallWhatsAppSend({
+    leadId: row.lead_id,
+    callId: row.call_id ?? '',
+    mcubeCallId: row.mcube_call_id,
+    callerUserId: row.caller_user_id,
+    outcome: 'not_reachable',
+    dialStatus: row.dial_status,
+    sessionId: null,
+    direction: 'outbound',
+  })
+
+  const finalStatus = sendResult.sent ? 'sent' : 'failed'
+  await supabase
+    .from('mcube_failed_call_whatsapp_prompts')
+    .update({
+      status: finalStatus,
+      error: sendResult.error ?? null,
+    } as never)
+    .eq('id', params.promptId)
+
+  return {
+    ok: sendResult.sent || !sendResult.error,
+    sent: sendResult.sent,
+    error: sendResult.error,
+  }
+}
+
 export async function maybeSendFailedCallWhatsAppTemplate(
+  params: MaybeSendFailedCallWhatsAppParams
+): Promise<{ sent: boolean; skipped?: string; error?: string }> {
+  const result = await handleFailedCallWhatsApp(params)
+  return {
+    sent: result.sent,
+    skipped: result.skipped,
+    error: result.error,
+  }
+}
+
+export async function executeFailedCallWhatsAppSend(
   params: MaybeSendFailedCallWhatsAppParams
 ): Promise<{ sent: boolean; skipped?: string; error?: string }> {
   if (!shouldSendFailedCallWhatsApp(params)) {
@@ -290,30 +613,18 @@ export async function maybeSendFailedCallWhatsAppTemplate(
   const configError = validateMcubeFailedCallWhatsAppConfig(settings)
   if (configError) return { sent: false, skipped: 'not_configured', error: configError }
 
-  const supabase = createServiceClient()
+  const logStatus = await getFailedCallWhatsAppLogStatus(params.mcubeCallId)
+  if (logStatus === 'sent') {
+    return { sent: false, skipped: 'already_sent' }
+  }
+  if (logStatus === 'dismissed') {
+    return { sent: false, skipped: 'dismissed' }
+  }
 
-  const { data: existingLog } = await supabase
-    .from('mcube_failed_call_whatsapp_log')
-    .select('id')
-    .eq('mcube_call_id', params.mcubeCallId)
-    .maybeSingle()
-  if (existingLog) return { sent: false, skipped: 'already_sent' }
-
-  const { data: lead, error: leadErr } = await supabase
-    .from('leads')
-    .select('id, phone, name, meta_data, requirement')
-    .eq('id', params.leadId)
-    .maybeSingle()
-  if (leadErr) throw new Error(leadErr.message)
+  const lead = await loadLeadForFailedCallWhatsApp(params.leadId)
   if (!lead) return { sent: false, skipped: 'lead_not_found' }
 
-  const phone = (lead as { phone: string }).phone?.trim()
-  const leadName = (lead as { name?: string | null }).name ?? null
-  const leadCar = getLeadVehicleName(
-    lead as { meta_data?: Record<string, unknown> | null; requirement?: string | null }
-  )
-
-  if (!phone) {
+  if (!lead.phone) {
     await recordFailedCallWhatsAppLog({
       callId: params.callId,
       mcubeCallId: params.mcubeCallId,
@@ -344,9 +655,9 @@ export async function maybeSendFailedCallWhatsAppTemplate(
 
   const sent = await sendConfiguredMessage({
     settings,
-    phone,
-    leadName,
-    leadCar,
+    phone: lead.phone,
+    leadName: lead.name,
+    leadCar: lead.car,
     config,
     wabaConfig,
   })
@@ -367,7 +678,7 @@ export async function maybeSendFailedCallWhatsAppTemplate(
 
   await saveOutgoingMessage({
     leadId: params.leadId,
-    phone,
+    phone: lead.phone,
     body: sent.chatBody,
     metaMessageId: sent.result.messageId ?? undefined,
     templateName: sent.templateName ?? null,
@@ -404,7 +715,7 @@ async function recordFailedCallWhatsAppLog(row: {
   templateId: string | null
   messageType: McubeFailedCallMessageType
   dialStatus: string | null
-  status: 'sent' | 'failed'
+  status: 'sent' | 'failed' | 'dismissed'
   wamid?: string | null
   error?: string | null
 }): Promise<void> {
@@ -421,7 +732,7 @@ async function recordFailedCallWhatsAppLog(row: {
       wamid: row.wamid ?? null,
       error: row.error ?? null,
     } as never,
-    { onConflict: 'mcube_call_id', ignoreDuplicates: true }
+    { onConflict: 'mcube_call_id' }
   )
   if (error) {
     console.error('[mcube-failed-call-whatsapp] log insert failed', error.message)

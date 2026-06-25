@@ -33,6 +33,7 @@ export default function McubeSettings() {
   const [success, setSuccess] = useState<string | null>(null)
   const [hideConnectedWhenLastMcubeNotConnected, setHideConnectedWhenLastMcubeNotConnected] = useState(true)
   const [failedCallWhatsappEnabled, setFailedCallWhatsappEnabled] = useState(false)
+  const [failedCallWhatsappRequireCallerApproval, setFailedCallWhatsappRequireCallerApproval] = useState(true)
   const [messageType, setMessageType] = useState<MessageType>('template')
   const [failedCallWhatsappTemplateId, setFailedCallWhatsappTemplateId] = useState('')
   const [failedCallWhatsappBodyParameters, setFailedCallWhatsappBodyParameters] = useState('')
@@ -72,6 +73,7 @@ export default function McubeSettings() {
       const s = data?.settings ?? {}
       setHideConnectedWhenLastMcubeNotConnected(Boolean(s.hideConnectedWhenLastMcubeNotConnected ?? true))
       setFailedCallWhatsappEnabled(Boolean(s.failedCallWhatsappEnabled))
+      setFailedCallWhatsappRequireCallerApproval(s.failedCallWhatsappRequireCallerApproval !== false)
       setMessageType(
         s.failedCallWhatsappMessageType === 'text' ||
           s.failedCallWhatsappMessageType === 'image' ||
@@ -181,6 +183,7 @@ export default function McubeSettings() {
         body: JSON.stringify({
           hideConnectedWhenLastMcubeNotConnected,
           failedCallWhatsappEnabled,
+          failedCallWhatsappRequireCallerApproval,
           failedCallWhatsappMessageType: messageType,
           failedCallWhatsappTemplateId:
             messageType === 'template' ? failedCallWhatsappTemplateId || null : null,
@@ -267,9 +270,9 @@ export default function McubeSettings() {
         </div>
         <p className="text-sm text-gray-600">
           When a caller dials a lead via MCUBE and the call is <strong>not answered</strong>,{' '}
-          <strong>not connected</strong>, or <strong>not reachable</strong>, automatically send the
-          configured WhatsApp message. Use <code className="text-xs">{'{{lead_name}}'}</code> — it is
-          replaced with the lead&apos;s name when the message sends.
+          <strong>not connected</strong>, or <strong>not reachable</strong>, send the configured
+          WhatsApp follow-up. By default the caller must approve in a popup before anything sends.
+          Use <code className="text-xs">{'{{lead_name}}'}</code> — replaced with the lead&apos;s name.
         </p>
 
         <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-md">
@@ -280,7 +283,20 @@ export default function McubeSettings() {
             onChange={(e) => setFailedCallWhatsappEnabled(e.target.checked)}
           />
           <span className="text-sm text-gray-800">
-            Enable automatic WhatsApp after failed MCUBE outbound calls
+            Enable WhatsApp follow-up after failed MCUBE outbound calls
+          </span>
+        </label>
+
+        <label className={`flex items-start gap-3 p-3 border border-gray-200 rounded-md ${failedCallWhatsappEnabled ? '' : 'opacity-60 pointer-events-none'}`}>
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={failedCallWhatsappRequireCallerApproval}
+            onChange={(e) => setFailedCallWhatsappRequireCallerApproval(e.target.checked)}
+          />
+          <span className="text-sm text-gray-800">
+            <strong>Ask caller before sending</strong> — show popup to the agent who made the call.
+            They choose Send or Don&apos;t send. Turn off to send automatically (old behavior).
           </span>
         </label>
 

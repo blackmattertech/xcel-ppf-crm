@@ -14,6 +14,10 @@ const PopupNotification = dynamic(() => import('./PopupNotification'), {
   ssr: false,
 })
 
+const FailedCallWhatsAppPrompt = dynamic(() => import('./FailedCallWhatsAppPrompt'), {
+  ssr: false,
+})
+
 interface LayoutProps {
   children: ReactNode
   mobileTitle?: string
@@ -73,6 +77,7 @@ export default function Layout({
         <main className={`flex-1 overflow-x-hidden transition-all duration-300 ${isCollapsed ? 'md:ml-16' : 'md:ml-60'} md:pt-0 pt-[65px] w-full`}>
           {/* <FollowUpNotifications /> */}
           {children}
+          <FailedCallWhatsAppPrompt />
           <PopupNotification />
         </main>
       </FollowupNotificationsProvider>

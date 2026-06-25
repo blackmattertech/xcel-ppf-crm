@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase/service'
 import { applyLeadJourneyAfterCall } from '@/backend/services/call-lead-journey.service'
-import { maybeSendFailedCallWhatsAppTemplate } from '@/backend/services/mcube-failed-call-whatsapp.service'
+import { handleFailedCallWhatsApp } from '@/backend/services/mcube-failed-call-whatsapp.service'
 import {
   parseMcubeTimestamp,
   parseAnsweredTimeToSeconds,
@@ -481,10 +481,11 @@ async function handleHangup(
   })
 
   try {
-    const waResult = await maybeSendFailedCallWhatsAppTemplate({
+    const waResult = await handleFailedCallWhatsApp({
       leadId,
       callId,
       mcubeCallId: payload.callid,
+      callerUserId: calledById,
       outcome,
       dialStatus: payload.dialstatus ?? null,
       sessionId,
@@ -494,6 +495,12 @@ async function handleHangup(
       console.info('[webhooks/mcube] failed_call_whatsapp sent', {
         callid: payload.callid,
         leadId,
+      })
+    } else if (waResult.queued) {
+      console.info('[webhooks/mcube] failed_call_whatsapp queued for caller approval', {
+        callid: payload.callid,
+        leadId,
+        callerUserId: calledById,
       })
     } else if (waResult.error) {
       console.warn('[webhooks/mcube] failed_call_whatsapp error', {

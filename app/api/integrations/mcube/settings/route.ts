@@ -11,6 +11,7 @@ const messageTypeSchema = z.enum(['template', 'text', 'image', 'video'])
 
 const updateSchema = z.object({
   hideConnectedWhenLastMcubeNotConnected: z.boolean().optional(),
+  failedCallWhatsappRequireCallerApproval: z.boolean().optional(),
   failedCallWhatsappEnabled: z.boolean().optional(),
   failedCallWhatsappMessageType: messageTypeSchema.optional(),
   failedCallWhatsappTemplateId: z.string().uuid().nullable().optional(),
@@ -30,6 +31,7 @@ function isAdminRole(roleName: string | null | undefined): boolean {
 type McubeSettingsRow = {
   hide_connected_when_last_mcube_not_connected: boolean
   failed_call_whatsapp_enabled: boolean
+  failed_call_whatsapp_require_caller_approval: boolean
   failed_call_whatsapp_message_type: string
   failed_call_whatsapp_template_id: string | null
   failed_call_whatsapp_body_parameters: unknown
@@ -52,6 +54,8 @@ function toApiSettings(row: McubeSettingsRow | null) {
     hideConnectedWhenLastMcubeNotConnected:
       row?.hide_connected_when_last_mcube_not_connected ?? true,
     failedCallWhatsappEnabled: Boolean(row?.failed_call_whatsapp_enabled),
+    failedCallWhatsappRequireCallerApproval:
+      row?.failed_call_whatsapp_require_caller_approval !== false,
     failedCallWhatsappMessageType:
       (messageType === 'text' || messageType === 'image' || messageType === 'video'
         ? messageType
@@ -70,6 +74,7 @@ function toApiSettings(row: McubeSettingsRow | null) {
 const SETTINGS_SELECT = `
   hide_connected_when_last_mcube_not_connected,
   failed_call_whatsapp_enabled,
+  failed_call_whatsapp_require_caller_approval,
   failed_call_whatsapp_message_type,
   failed_call_whatsapp_template_id,
   failed_call_whatsapp_body_parameters,
@@ -134,6 +139,9 @@ export async function PUT(request: NextRequest) {
     const current = toApiSettings(currentRow as McubeSettingsRow | null)
     const merged = {
       ...current,
+      ...(parsed.data.failedCallWhatsappRequireCallerApproval !== undefined
+        ? { failedCallWhatsappRequireCallerApproval: parsed.data.failedCallWhatsappRequireCallerApproval }
+        : {}),
       ...(parsed.data.failedCallWhatsappEnabled !== undefined
         ? { failedCallWhatsappEnabled: parsed.data.failedCallWhatsappEnabled }
         : {}),
@@ -203,6 +211,10 @@ export async function PUT(request: NextRequest) {
     if (parsed.data.hideConnectedWhenLastMcubeNotConnected !== undefined) {
       patch.hide_connected_when_last_mcube_not_connected =
         parsed.data.hideConnectedWhenLastMcubeNotConnected
+    }
+    if (parsed.data.failedCallWhatsappRequireCallerApproval !== undefined) {
+      patch.failed_call_whatsapp_require_caller_approval =
+        parsed.data.failedCallWhatsappRequireCallerApproval
     }
     if (parsed.data.failedCallWhatsappEnabled !== undefined) {
       patch.failed_call_whatsapp_enabled = parsed.data.failedCallWhatsappEnabled
