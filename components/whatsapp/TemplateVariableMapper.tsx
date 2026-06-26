@@ -2,6 +2,7 @@
 
 import {
   LEAD_TEMPLATE_TOKEN_OPTIONS,
+  getTemplateHeaderMediaFormat,
   getTemplateParameterSlotCounts,
 } from '@/shared/lead-template-tokens'
 
@@ -71,13 +72,15 @@ export function TemplateVariableMapper({
   headerParameters,
   onChange,
 }: TemplateVariableMapperProps) {
-  const { bodyCount, headerCount, headerIsMedia, headerMediaFormat } =
-    getTemplateParameterSlotCounts(template)
+  const { bodyCount, headerCount } = getTemplateParameterSlotCounts(template)
+  const headerMediaFormat = getTemplateHeaderMediaFormat(template)
 
   if (bodyCount === 0 && headerCount === 0) {
     return (
       <p className="text-xs text-slate-500 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-        This template has no variables — it will send as-is to every lead.
+        {headerMediaFormat
+          ? `${headerMediaFormat.toLowerCase()} header media and body text send automatically from the saved template — no mapping needed.`
+          : 'This template has no variables — it will send as-is to every lead.'}
       </p>
     )
   }
@@ -86,16 +89,12 @@ export function TemplateVariableMapper({
   while (body.length < bodyCount) body.push(body.length === 0 ? '{{lead_name}}' : body.length === 1 ? '{{lead_car}}' : '')
 
   const header = [...(headerParameters || [])]
-  if (headerIsMedia) {
-    while (header.length < headerCount) header.push(template.header_media_url?.trim() || '')
-  } else {
-    while (header.length < headerCount) header.push('{{lead_name}}')
-  }
+  while (header.length < headerCount) header.push('{{lead_name}}')
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-slate-600">
-        Map each template variable to a lead field. Values auto-fill per lead when the loop sends.
+        Map each {'{{1}}'}, {'{{2}}'} variable to a lead field. Media headers use the template&apos;s saved URL automatically.
       </p>
       {bodyCount > 0 && (
         <div className="space-y-2">
@@ -117,40 +116,7 @@ export function TemplateVariableMapper({
           ))}
         </div>
       )}
-      {headerCount > 0 && headerIsMedia && (
-        <div className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            Header media ({headerMediaFormat?.toLowerCase()})
-          </p>
-          <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
-            <p className="text-xs font-medium text-slate-600">
-              {headerMediaFormat === 'IMAGE'
-                ? 'Image URL'
-                : headerMediaFormat === 'VIDEO'
-                ? 'Video URL'
-                : 'Document URL'}
-            </p>
-            <input
-              type="text"
-              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-              placeholder="https://… public media URL or Meta media ID"
-              value={header[0] || ''}
-              onChange={(e) => {
-                const next = [...header]
-                next[0] = e.target.value
-                onChange({
-                  body_parameters: bodyCount > 0 ? body : null,
-                  header_parameters: next,
-                })
-              }}
-            />
-            <p className="text-[11px] text-slate-400">
-              Required by Meta for media-header templates. Must be a public https URL (or a Meta media ID).
-            </p>
-          </div>
-        </div>
-      )}
-      {headerCount > 0 && !headerIsMedia && (
+      {headerCount > 0 && (
         <div className="space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Header variables</p>
           {Array.from({ length: headerCount }, (_, i) => (

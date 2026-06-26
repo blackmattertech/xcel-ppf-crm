@@ -27,7 +27,7 @@ import type {
   AutomationRecipient,
   AutomationTrigger,
 } from '@/shared/whatsapp-automation-types'
-import { applyLeadTokens, resolveTemplateParameterValues } from '@/shared/lead-template-tokens'
+import { applyLeadTokens, resolveAutomationTemplateSendParams, resolveTemplateParameterValues } from '@/shared/lead-template-tokens'
 import { getLeadVehicleName } from '@/shared/utils/lead-meta'
 
 function envPositiveInt(name: string, fallback: number): number {
@@ -95,12 +95,16 @@ async function buildBatchPayload(
   if (trigger.message_type === 'template' && trigger.template_id) {
     const tpl = await getTemplateById(trigger.template_id)
     if (!tpl) throw new Error('Template not found for trigger')
+    const { bodyParameters, headerParameters } = resolveAutomationTemplateSendParams(tpl, {
+      body_parameters: trigger.body_parameters as string[] | null,
+      header_parameters: trigger.header_parameters as string[] | null,
+    })
     return {
       ...base,
       templateName: tpl.name,
       templateLanguage: tpl.language || 'en',
-      bodyParameters: (trigger.body_parameters as string[] | null) ?? undefined,
-      headerParameters: (trigger.header_parameters as string[] | null) ?? undefined,
+      bodyParameters,
+      headerParameters,
       headerFormat: tpl.header_format as AutomationBatchPayload['headerFormat'],
       headerMediaId: tpl.header_media_id,
     }

@@ -565,11 +565,10 @@ export default function WhatsAppAutomationPage() {
                               return
                             }
                             const { bodyCount, headerCount } = getTemplateParameterSlotCounts(tpl)
-                            const headerDefaults = defaultHeaderParameterValues(tpl)
                             upsertDayTrigger(selectedDay, {
                               template_id: templateId,
                               body_parameters: bodyCount > 0 ? defaultParameterValues(bodyCount) : null,
-                              header_parameters: headerCount > 0 ? headerDefaults : null,
+                              header_parameters: headerCount > 0 ? defaultHeaderParameterValues(tpl) : null,
                             })
                           }}
                         >

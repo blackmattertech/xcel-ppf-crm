@@ -68,15 +68,17 @@ export function getTemplateParameterSlotCounts(template: {
 }): TemplateParameterSlotCounts {
   const bodyCount = getTemplateBodyVariableCount(template.body_text || '')
   const headerMediaFormat = getTemplateHeaderMediaFormat(template)
-  if (headerMediaFormat) {
-    // Media header always needs exactly one parameter (URL or media ID) at send time.
-    return { bodyCount, headerCount: 1, headerIsMedia: true, headerMediaFormat }
-  }
+  // Only positional {{1}}, {{2}} in TEXT headers need user mapping (same as broadcast).
   const headerCount =
     template.header_format === 'TEXT' && template.header_text?.trim()
       ? getTemplateBodyVariableCount(template.header_text)
       : 0
-  return { bodyCount, headerCount, headerIsMedia: false, headerMediaFormat: null }
+  return {
+    bodyCount,
+    headerCount,
+    headerIsMedia: headerMediaFormat !== null,
+    headerMediaFormat,
+  }
 }
 
 export function defaultParameterValues(count: number): string[] {
@@ -88,20 +90,71 @@ export function defaultParameterValues(count: number): string[] {
 }
 
 /**
- * Default header parameters for a template. For a media header, prefill the
- * stored media URL so the loop sends correctly without extra typing.
+ * Default header parameters for TEXT header {{1}}, {{2}}, … slots only.
  */
 export function defaultHeaderParameterValues(template: {
   header_text?: string | null
   header_format?: string | null
-  header_media_url?: string | null
 }): string[] {
-  const { headerCount, headerIsMedia } = getTemplateParameterSlotCounts({
+  const { headerCount } = getTemplateParameterSlotCounts({
     body_text: '',
     header_text: template.header_text,
     header_format: template.header_format,
   })
   if (headerCount === 0) return []
-  if (headerIsMedia) return [template.header_media_url?.trim() || '']
   return defaultParameterValues(headerCount)
+}
+
+export interface TemplateSendParamSource {
+  body_text: string
+  header_text?: string | null
+  header_format?: string | null
+  header_media_url?: string | null
+  header_media_id?: string | null
+}
+
+/**
+ * Resolve body/header parameters for automation send — mirrors broadcast behavior:
+ * - Body/text header: use trigger mappings (or lead-field defaults for {{n}} slots).
+ * - Media header: auto from template header_media_url / header_media_id (no user input).
+ */
+export function resolveAutomationTemplateSendParams(
+  template: TemplateSendParamSource,
+  trigger: {
+    body_parameters?: string[] | null
+    header_parameters?: string[] | null
+  }
+): { bodyParameters?: string[]; headerParameters?: string[] } {
+  const { bodyCount, headerCount } = getTemplateParameterSlotCounts(template)
+  const headerMediaFormat = getTemplateHeaderMediaFormat(template)
+
+  let bodyParameters: string[] | undefined
+  if (bodyCount > 0) {
+    const params = [...(trigger.body_parameters || [])]
+    while (params.length < bodyCount) {
+      params.push(defaultParameterValues(bodyCount)[params.length] ?? '{{lead_name}}')
+    }
+    bodyParameters = params.slice(0, bodyCount)
+  }
+
+  let headerParameters: string[] | undefined
+  if (headerMediaFormat) {
+    const explicit = trigger.header_parameters?.map((p) => String(p).trim()).filter(Boolean)
+    if (explicit?.length) {
+      headerParameters = explicit
+    } else {
+      const url = template.header_media_url?.trim()
+      const id = template.header_media_id?.trim()
+      const hasUrl = url && /^https?:\/\//i.test(url)
+      headerParameters = hasUrl ? [url] : id ? [id] : undefined
+    }
+  } else if (headerCount > 0) {
+    const params = [...(trigger.header_parameters || [])]
+    while (params.length < headerCount) {
+      params.push(defaultParameterValues(headerCount)[params.length] ?? '{{lead_name}}')
+    }
+    headerParameters = params.slice(0, headerCount)
+  }
+
+  return { bodyParameters, headerParameters }
 }
