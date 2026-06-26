@@ -20,6 +20,10 @@ import {
 } from '@/backend/services/whatsapp.service'
 import { getTemplateById } from '@/backend/services/whatsapp-template.service'
 import { saveOutgoingMessage } from '@/backend/services/whatsapp-chat.service'
+import {
+  fetchMcubeSettingsRow,
+  toFailedCallWhatsAppSettings,
+} from '@/backend/services/mcube-settings.service'
 
 export type McubeFailedCallMessageType = AutomationMessageType
 
@@ -117,56 +121,8 @@ export function validateMcubeFailedCallWhatsAppConfig(
 }
 
 export async function getMcubeFailedCallWhatsAppSettings(): Promise<McubeFailedCallWhatsAppSettings> {
-  const supabase = createServiceClient()
-  const { data, error } = await supabase
-    .from('mcube_settings')
-    .select(
-      `
-      failed_call_whatsapp_enabled,
-      failed_call_whatsapp_require_caller_approval,
-      failed_call_whatsapp_message_type,
-      failed_call_whatsapp_template_id,
-      failed_call_whatsapp_body_parameters,
-      failed_call_whatsapp_header_parameters,
-      failed_call_whatsapp_message_body,
-      failed_call_whatsapp_media_url,
-      failed_call_whatsapp_media_mime_type,
-      failed_call_whatsapp_media_file_name,
-      failed_call_whatsapp_media_meta_id
-    `
-    )
-    .eq('id', true)
-    .maybeSingle()
-
-  if (error) throw new Error(`Failed to load MCube WhatsApp settings: ${error.message}`)
-
-  const row = data as {
-    failed_call_whatsapp_enabled?: boolean
-    failed_call_whatsapp_require_caller_approval?: boolean
-    failed_call_whatsapp_message_type?: string
-    failed_call_whatsapp_template_id?: string | null
-    failed_call_whatsapp_body_parameters?: unknown
-    failed_call_whatsapp_header_parameters?: unknown
-    failed_call_whatsapp_message_body?: string | null
-    failed_call_whatsapp_media_url?: string | null
-    failed_call_whatsapp_media_mime_type?: string | null
-    failed_call_whatsapp_media_file_name?: string | null
-    failed_call_whatsapp_media_meta_id?: string | null
-  } | null
-
-  return {
-    enabled: Boolean(row?.failed_call_whatsapp_enabled),
-    requireCallerApproval: row?.failed_call_whatsapp_require_caller_approval !== false,
-    messageType: parseMessageType(row?.failed_call_whatsapp_message_type),
-    templateId: row?.failed_call_whatsapp_template_id ?? null,
-    bodyParameters: parseStringArrayJson(row?.failed_call_whatsapp_body_parameters),
-    headerParameters: parseStringArrayJson(row?.failed_call_whatsapp_header_parameters),
-    messageBody: row?.failed_call_whatsapp_message_body ?? null,
-    mediaUrl: row?.failed_call_whatsapp_media_url ?? null,
-    mediaMimeType: row?.failed_call_whatsapp_media_mime_type ?? null,
-    mediaFileName: row?.failed_call_whatsapp_media_file_name ?? null,
-    mediaMetaId: row?.failed_call_whatsapp_media_meta_id ?? null,
-  }
+  const row = await fetchMcubeSettingsRow()
+  return toFailedCallWhatsAppSettings(row)
 }
 
 export function shouldSendFailedCallWhatsApp(params: {

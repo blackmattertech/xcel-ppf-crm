@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { resolveAutomationBucketIdsForEnrollment } from '@/backend/services/bucket.service'
 import { computeEnrollmentDay, todayIstDateString } from '@/shared/whatsapp-automation-ist'
 import { getTemplateById } from '@/backend/services/whatsapp-template.service'
+import { getTemplateParameterSlotCounts } from '@/shared/lead-template-tokens'
 import type {
   AutomationBucketLink,
   AutomationEnrollment,
@@ -193,6 +194,23 @@ async function validateTriggerInput(
       const tpl = await getTemplateById(input.template_id)
       if (!tpl) throw new Error('Template not found')
       if (tpl.status !== 'approved') throw new Error('Template must be APPROVED')
+      const { bodyCount, headerCount } = getTemplateParameterSlotCounts(tpl)
+      if (bodyCount > 0) {
+        const params = input.body_parameters || []
+        if (params.length < bodyCount || params.some((p) => !String(p).trim())) {
+          throw new Error(
+            `Day ${input.day_offset}: map all ${bodyCount} template body variable(s) (e.g. lead name, car)`
+          )
+        }
+      }
+      if (headerCount > 0) {
+        const params = input.header_parameters || []
+        if (params.length < headerCount || params.some((p) => !String(p).trim())) {
+          throw new Error(
+            `Day ${input.day_offset}: map all ${headerCount} template header variable(s)`
+          )
+        }
+      }
       break
     }
     case 'text': {

@@ -1,9 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { cachedFetch } from '@/lib/api-client'
 import { computeEnrollmentDay } from '@/shared/whatsapp-automation-ist'
+import {
+  useLeadInterestsSync,
+  type LeadAutomationEnrollmentSnapshot,
+} from '@/components/leads/LeadInterestsSync'
 
 interface FlowOption {
   id: string
@@ -11,14 +15,7 @@ interface FlowOption {
   cycle_days: number
 }
 
-interface Enrollment {
-  id: string
-  flow_id: string
-  status: string
-  started_at: string
-  cycle_number: number
-  flow?: { id: string; name: string; cycle_days: number }
-}
+type Enrollment = LeadAutomationEnrollmentSnapshot
 
 interface LeadAutomationEnrollProps {
   leadId: string
@@ -26,50 +23,87 @@ interface LeadAutomationEnrollProps {
 }
 
 export function LeadAutomationEnroll({ leadId, canEnroll }: LeadAutomationEnrollProps) {
+  const sync = useLeadInterestsSync()
   const [flows, setFlows] = useState<FlowOption[]>([])
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [selectedFlow, setSelectedFlow] = useState('')
+  const hasLoadedOnce = useRef(false)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [flowsRes, enrRes] = await Promise.all([
-        cachedFetch('/api/automation/whatsapp/flows?active_only=true'),
-        cachedFetch(`/api/automation/whatsapp/enrollments?leadId=${leadId}`),
-      ])
-      const flowsData = await flowsRes.json()
-      const enrData = await enrRes.json()
-      if (flowsRes.ok) setFlows(flowsData.flows || [])
-      if (enrRes.ok) setEnrollments(enrData.enrollments || [])
-    } finally {
-      setLoading(false)
-    }
-  }, [leadId])
+  const load = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!options?.silent && !hasLoadedOnce.current) {
+        setInitialLoading(true)
+      }
+      try {
+        const [flowsRes, enrRes] = await Promise.all([
+          cachedFetch('/api/automation/whatsapp/flows?active_only=true'),
+          cachedFetch(`/api/automation/whatsapp/enrollments?leadId=${leadId}`, undefined, 0),
+        ])
+        const flowsData = await flowsRes.json()
+        const enrData = await enrRes.json()
+        if (flowsRes.ok) setFlows(flowsData.flows || [])
+        if (enrRes.ok) {
+          setEnrollments(enrData.enrollments || [])
+          hasLoadedOnce.current = true
+        }
+      } finally {
+        setInitialLoading(false)
+      }
+    },
+    [leadId]
+  )
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (sync?.latestEnrollments) {
+      setEnrollments(sync.latestEnrollments)
+      hasLoadedOnce.current = true
+      setInitialLoading(false)
+      return
+    }
+    if (sync?.enrollmentsVersion) {
+      void load({ silent: true })
+    }
+  }, [sync?.enrollmentsVersion, sync?.latestEnrollments, load])
 
   const active = enrollments.filter((e) => e.status === 'active')
 
   async function enroll() {
     if (!selectedFlow) return
     setBusy(true)
+    const flow = flows.find((f) => f.id === selectedFlow)
     try {
-      const res = await cachedFetch('/api/automation/whatsapp/enrollments', {
+      const res = await fetch('/api/automation/whatsapp/enrollments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ flow_id: selectedFlow, lead_id: leadId }),
       })
+      const data = await res.json()
       if (!res.ok) {
-        const data = await res.json()
         alert(data.error || 'Enroll failed')
         return
       }
       setSelectedFlow('')
-      await load()
+      const nextEnrollment: Enrollment = {
+        ...data,
+        flow: flow
+          ? { id: flow.id, name: flow.name, cycle_days: flow.cycle_days }
+          : data.flow,
+      }
+      setEnrollments((prev) => {
+        const withoutDup = prev.filter(
+          (e) => !(e.flow_id === nextEnrollment.flow_id && e.status === 'active')
+        )
+        const next = [nextEnrollment, ...withoutDup]
+        sync?.pushEnrollments(next)
+        return next
+      })
+      void load({ silent: true })
     } finally {
       setBusy(false)
     }
@@ -77,23 +111,29 @@ export function LeadAutomationEnroll({ leadId, canEnroll }: LeadAutomationEnroll
 
   async function cancel(enrollmentId: string) {
     setBusy(true)
+    const previous = enrollments
+    setEnrollments((prev) =>
+      prev.map((e) => (e.id === enrollmentId ? { ...e, status: 'cancelled' } : e))
+    )
     try {
-      const res = await cachedFetch(
+      const res = await fetch(
         `/api/automation/whatsapp/enrollments?enrollmentId=${enrollmentId}`,
         { method: 'DELETE' }
       )
       if (!res.ok) {
         const data = await res.json()
+        setEnrollments(previous)
         alert(data.error || 'Cancel failed')
         return
       }
-      await load()
+      sync?.bumpEnrollments()
+      void load({ silent: true })
     } finally {
       setBusy(false)
     }
   }
 
-  if (loading) {
+  if (initialLoading && !hasLoadedOnce.current) {
     return (
       <div className="flex items-center gap-2 text-[11px] text-[#717d8a]">
         <Loader2 className="h-3 w-3 animate-spin" />
@@ -160,10 +200,7 @@ export function LeadAutomationEnroll({ leadId, canEnroll }: LeadAutomationEnroll
             onClick={() => void enroll()}
             className="text-[11px] px-2 py-1.5 rounded-[3px] bg-[#128C7E] text-white disabled:opacity-50"
           >
-            Enroll
-          </button>
-          <button type="button" onClick={() => void load()} className="p-1 text-[#717d8a]">
-            <RefreshCw className="h-3.5 w-3.5" />
+            {busy ? '…' : 'Enroll'}
           </button>
         </div>
       )}

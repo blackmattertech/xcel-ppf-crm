@@ -11,8 +11,9 @@ import { getTemplateById } from '@/backend/services/whatsapp-template.service'
 import { getResolvedWhatsAppConfig } from '@/backend/services/whatsapp-config.service'
 import {
   sendTemplateBulk,
-  sendWhatsAppBulk,
+  sendTemplateMessage,
   sendWhatsAppMedia,
+  sendWhatsAppText,
   type BulkSendResult,
   type WhatsAppConfig,
 } from '@/backend/services/whatsapp.service'
@@ -26,6 +27,8 @@ import type {
   AutomationRecipient,
   AutomationTrigger,
 } from '@/shared/whatsapp-automation-types'
+import { applyLeadTokens, resolveTemplateParameterValues } from '@/shared/lead-template-tokens'
+import { getLeadVehicleName } from '@/shared/utils/lead-meta'
 
 function envPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name]?.trim()
@@ -328,6 +331,72 @@ async function writeSendLog(params: {
   if (insertErr) throw new Error(`send_log insert failed: ${insertErr.message}`)
 }
 
+async function loadLeadTokensForRecipients(
+  recipients: AutomationRecipient[]
+): Promise<Map<string, { name: string | null; car: string }>> {
+  const supabase = createServiceClient()
+  const leadIds = [...new Set(recipients.map((r) => r.leadId).filter(Boolean))]
+  if (leadIds.length === 0) return new Map()
+
+  const { data } = await supabase
+    .from('leads')
+    .select('id, name, meta_data, requirement')
+    .in('id', leadIds)
+
+  const map = new Map<string, { name: string | null; car: string }>()
+  for (const row of data || []) {
+    const lead = row as {
+      id: string
+      name?: string | null
+      meta_data?: Record<string, unknown> | null
+      requirement?: string | null
+    }
+    map.set(lead.id, {
+      name: lead.name ?? recipients.find((r) => r.leadId === lead.id)?.name ?? null,
+      car: getLeadVehicleName(lead),
+    })
+  }
+  return map
+}
+
+async function resolveRecipientsForSend(
+  chunk: AutomationRecipient[],
+  payload: AutomationBatchPayload
+): Promise<
+  Array<{
+    phone: string
+    name?: string
+    bodyParameters?: string[]
+    headerParameters?: string[]
+  }>
+> {
+  const leadTokens = await loadLeadTokensForRecipients(chunk)
+
+  if (payload.messageType !== 'template') {
+    return chunk.map((r) => ({ phone: r.phone, name: r.name }))
+  }
+
+  const bodyTemplates = payload.bodyParameters
+  const headerTemplates = payload.headerParameters
+
+  return chunk.map((r) => {
+    const tokens = leadTokens.get(r.leadId) ?? {
+      name: r.name ?? null,
+      car: 'vehicle',
+    }
+    return {
+      phone: r.phone,
+      name: r.name,
+      bodyParameters: bodyTemplates?.length
+        ? resolveTemplateParameterValues(bodyTemplates, tokens)
+        : undefined,
+      headerParameters: headerTemplates?.length
+        ? resolveTemplateParameterValues(headerTemplates, tokens)
+        : undefined,
+    }
+  })
+}
+
 async function sendChunk(
   chunk: AutomationRecipient[],
   payload: AutomationBatchPayload,
@@ -335,16 +404,51 @@ async function sendChunk(
 ): Promise<BulkSendResult> {
   const delayMs = Math.max(50, envPositiveInt('WHATSAPP_SCHEDULED_MIN_DELAY_MS', 400))
   const defaultCountryCode = payload.defaultCountryCode ?? '91'
+  const resolved = await resolveRecipientsForSend(chunk, payload)
 
   if (payload.messageType === 'template' && payload.templateName) {
+    const headerTemplates = payload.headerParameters
+    const headerHasLeadTokens = headerTemplates?.some((p) => /\{\{/.test(p))
+
+    if (headerHasLeadTokens) {
+      const results: BulkSendResult['results'] = []
+      let sent = 0
+      let failed = 0
+      for (const r of resolved) {
+        const result = await sendTemplateMessage(
+          r.phone,
+          payload.templateName,
+          payload.templateLanguage || 'en',
+          {
+            bodyParameters: r.bodyParameters,
+            headerParameters: r.headerParameters,
+            headerFormat: payload.headerFormat,
+            headerMediaId: payload.headerMediaId ?? undefined,
+            defaultCountryCode,
+            config,
+          }
+        )
+        results.push({
+          phone: r.phone,
+          success: result.success,
+          error: result.error,
+          ...(result.messageId && { messageId: result.messageId }),
+        })
+        if (result.success) sent++
+        else failed++
+        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
+      return { sent, failed, results }
+    }
+
     return sendTemplateBulk(
-      chunk.map((r) => ({ phone: r.phone, name: r.name, bodyParameters: payload.bodyParameters })),
+      resolved.map((r) => ({ phone: r.phone, bodyParameters: r.bodyParameters })),
       payload.templateName,
       payload.templateLanguage || 'en',
       {
         delayMs,
         defaultCountryCode,
-        headerParameters: payload.headerParameters,
+        headerParameters: headerTemplates,
         headerFormat: payload.headerFormat,
         headerMediaId: payload.headerMediaId ?? undefined,
         config,
@@ -353,26 +457,47 @@ async function sendChunk(
   }
 
   if (payload.messageType === 'text') {
-    return sendWhatsAppBulk(
-      chunk.map((r) => ({ phone: r.phone })),
-      payload.messageBody || '',
-      { delayMs, defaultCountryCode, config }
-    )
+    const leadTokens = await loadLeadTokensForRecipients(chunk)
+    const results: BulkSendResult['results'] = []
+    let sent = 0
+    let failed = 0
+    const bodyTemplate = payload.messageBody || ''
+
+    for (const r of chunk) {
+      const tokens = leadTokens.get(r.leadId) ?? { name: r.name ?? null, car: 'vehicle' }
+      const message = applyLeadTokens(bodyTemplate, tokens)
+      const result = await sendWhatsAppText(r.phone, message, config, null, defaultCountryCode)
+      results.push({
+        phone: r.phone,
+        success: result.success,
+        error: result.error,
+        ...(result.messageId && { messageId: result.messageId }),
+        ...(result.errorCode !== undefined && { errorCode: result.errorCode }),
+      })
+      if (result.success) sent++
+      else failed++
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+    return { sent, failed, results }
   }
 
   const results: BulkSendResult['results'] = []
   let sent = 0
   let failed = 0
   const mediaType = payload.messageType === 'video' ? 'video' : 'image'
+  const leadTokens = await loadLeadTokensForRecipients(chunk)
+  const captionTemplate = payload.messageBody || ''
 
   for (const r of chunk) {
+    const tokens = leadTokens.get(r.leadId) ?? { name: r.name ?? null, car: 'vehicle' }
+    const caption = captionTemplate ? applyLeadTokens(captionTemplate, tokens) : undefined
     const result = await sendWhatsAppMedia(
       r.phone,
       {
         mediaType,
         mediaUrl: payload.mediaUrl || '',
         fileName: payload.mediaFileName,
-        caption: payload.messageBody,
+        caption,
         defaultCountryCode,
       },
       config

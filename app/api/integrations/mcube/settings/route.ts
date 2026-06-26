@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/backend/middleware/auth'
+import { validateMcubeFailedCallWhatsAppConfig } from '@/backend/services/mcube-failed-call-whatsapp.service'
 import {
-  validateMcubeFailedCallWhatsAppConfig,
-  type McubeFailedCallMessageType,
-} from '@/backend/services/mcube-failed-call-whatsapp.service'
+  fetchMcubeSettingsRow,
+  mcubeSettingsColumnExists,
+  toApiMcubeSettings,
+  type McubeSettingsRow,
+} from '@/backend/services/mcube-settings.service'
 import { createServiceClient } from '@/lib/supabase/service'
 import { z } from 'zod'
 
@@ -28,86 +31,33 @@ function isAdminRole(roleName: string | null | undefined): boolean {
   return roleName === 'admin' || roleName === 'super_admin'
 }
 
-type McubeSettingsRow = {
-  hide_connected_when_last_mcube_not_connected: boolean
-  failed_call_whatsapp_enabled: boolean
-  failed_call_whatsapp_require_caller_approval: boolean
-  failed_call_whatsapp_message_type: string
-  failed_call_whatsapp_template_id: string | null
-  failed_call_whatsapp_body_parameters: unknown
-  failed_call_whatsapp_header_parameters: unknown
-  failed_call_whatsapp_message_body: string | null
-  failed_call_whatsapp_media_url: string | null
-  failed_call_whatsapp_media_mime_type: string | null
-  failed_call_whatsapp_media_file_name: string | null
-  failed_call_whatsapp_media_meta_id: string | null
+function missingColumnError(column: string): string {
+  return `Database column "${column}" is missing. Run pending MCube migrations (052–055) in Supabase.`
 }
 
-function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((v): v is string => typeof v === 'string')
+function assertColumnOrSkip(
+  currentRow: McubeSettingsRow | null,
+  column: keyof McubeSettingsRow,
+  wantsValue: boolean
+): string | null {
+  if (mcubeSettingsColumnExists(currentRow, column)) return null
+  if (wantsValue) return missingColumnError(column)
+  return null
 }
-
-function toApiSettings(row: McubeSettingsRow | null) {
-  const messageType = row?.failed_call_whatsapp_message_type
-  return {
-    hideConnectedWhenLastMcubeNotConnected:
-      row?.hide_connected_when_last_mcube_not_connected ?? true,
-    failedCallWhatsappEnabled: Boolean(row?.failed_call_whatsapp_enabled),
-    failedCallWhatsappRequireCallerApproval:
-      row?.failed_call_whatsapp_require_caller_approval !== false,
-    failedCallWhatsappMessageType:
-      (messageType === 'text' || messageType === 'image' || messageType === 'video'
-        ? messageType
-        : 'template') as McubeFailedCallMessageType,
-    failedCallWhatsappTemplateId: row?.failed_call_whatsapp_template_id ?? null,
-    failedCallWhatsappBodyParameters: parseStringArray(row?.failed_call_whatsapp_body_parameters),
-    failedCallWhatsappHeaderParameters: parseStringArray(row?.failed_call_whatsapp_header_parameters),
-    failedCallWhatsappMessageBody: row?.failed_call_whatsapp_message_body ?? null,
-    failedCallWhatsappMediaUrl: row?.failed_call_whatsapp_media_url ?? null,
-    failedCallWhatsappMediaMimeType: row?.failed_call_whatsapp_media_mime_type ?? null,
-    failedCallWhatsappMediaFileName: row?.failed_call_whatsapp_media_file_name ?? null,
-    failedCallWhatsappMediaMetaId: row?.failed_call_whatsapp_media_meta_id ?? null,
-  }
-}
-
-const SETTINGS_SELECT = `
-  hide_connected_when_last_mcube_not_connected,
-  failed_call_whatsapp_enabled,
-  failed_call_whatsapp_require_caller_approval,
-  failed_call_whatsapp_message_type,
-  failed_call_whatsapp_template_id,
-  failed_call_whatsapp_body_parameters,
-  failed_call_whatsapp_header_parameters,
-  failed_call_whatsapp_message_body,
-  failed_call_whatsapp_media_url,
-  failed_call_whatsapp_media_mime_type,
-  failed_call_whatsapp_media_file_name,
-  failed_call_whatsapp_media_meta_id
-`
 
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAuth(request)
     if ('error' in authResult) return authResult.error
 
-    const supabase = createServiceClient()
-    const { data, error } = await supabase
-      .from('mcube_settings')
-      .select(SETTINGS_SELECT)
-      .eq('id', true)
-      .maybeSingle()
-
-    if (error && error.code !== 'PGRST116') {
-      return NextResponse.json({ error: 'Failed to load MCUBE settings' }, { status: 500 })
-    }
-
+    const row = await fetchMcubeSettingsRow()
     return NextResponse.json({
-      settings: toApiSettings(data as McubeSettingsRow | null),
+      settings: toApiMcubeSettings(row),
     })
   } catch (error) {
+    console.error('[mcube/settings] GET failed', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unexpected error' },
+      { error: error instanceof Error ? error.message : 'Failed to load MCUBE settings' },
       { status: 500 }
     )
   }
@@ -128,15 +78,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid input', details: parsed.error.flatten() }, { status: 400 })
     }
 
-    const supabase = createServiceClient()
-
-    const { data: currentRow } = await supabase
-      .from('mcube_settings')
-      .select(SETTINGS_SELECT)
-      .eq('id', true)
-      .maybeSingle()
-
-    const current = toApiSettings(currentRow as McubeSettingsRow | null)
+    const currentRow = await fetchMcubeSettingsRow()
+    const current = toApiMcubeSettings(currentRow)
     const merged = {
       ...current,
       ...(parsed.data.failedCallWhatsappRequireCallerApproval !== undefined
@@ -185,6 +128,7 @@ export async function PUT(request: NextRequest) {
         return NextResponse.json({ error: configError }, { status: 400 })
       }
 
+      const supabase = createServiceClient()
       if (merged.failedCallWhatsappMessageType === 'template' && merged.failedCallWhatsappTemplateId) {
         const { data: tpl } = await supabase
           .from('whatsapp_templates')
@@ -212,49 +156,112 @@ export async function PUT(request: NextRequest) {
       patch.hide_connected_when_last_mcube_not_connected =
         parsed.data.hideConnectedWhenLastMcubeNotConnected
     }
-    if (parsed.data.failedCallWhatsappRequireCallerApproval !== undefined) {
-      patch.failed_call_whatsapp_require_caller_approval =
-        parsed.data.failedCallWhatsappRequireCallerApproval
-    }
-    if (parsed.data.failedCallWhatsappEnabled !== undefined) {
-      patch.failed_call_whatsapp_enabled = parsed.data.failedCallWhatsappEnabled
-    }
-    if (parsed.data.failedCallWhatsappMessageType !== undefined) {
-      patch.failed_call_whatsapp_message_type = parsed.data.failedCallWhatsappMessageType
-    }
-    if (parsed.data.failedCallWhatsappTemplateId !== undefined) {
-      patch.failed_call_whatsapp_template_id = parsed.data.failedCallWhatsappTemplateId
-    }
-    if (parsed.data.failedCallWhatsappBodyParameters !== undefined) {
-      patch.failed_call_whatsapp_body_parameters = parsed.data.failedCallWhatsappBodyParameters
-    }
-    if (parsed.data.failedCallWhatsappHeaderParameters !== undefined) {
-      patch.failed_call_whatsapp_header_parameters = parsed.data.failedCallWhatsappHeaderParameters
-    }
-    if (parsed.data.failedCallWhatsappMessageBody !== undefined) {
-      patch.failed_call_whatsapp_message_body = parsed.data.failedCallWhatsappMessageBody
-    }
-    if (parsed.data.failedCallWhatsappMediaUrl !== undefined) {
-      patch.failed_call_whatsapp_media_url = parsed.data.failedCallWhatsappMediaUrl
-    }
-    if (parsed.data.failedCallWhatsappMediaMimeType !== undefined) {
-      patch.failed_call_whatsapp_media_mime_type = parsed.data.failedCallWhatsappMediaMimeType
-    }
-    if (parsed.data.failedCallWhatsappMediaFileName !== undefined) {
-      patch.failed_call_whatsapp_media_file_name = parsed.data.failedCallWhatsappMediaFileName
-    }
-    if (parsed.data.failedCallWhatsappMediaMetaId !== undefined) {
-      patch.failed_call_whatsapp_media_meta_id = parsed.data.failedCallWhatsappMediaMetaId
+
+    const failedCallFields: Array<{
+      parsedKey: keyof z.infer<typeof updateSchema>
+      column: keyof McubeSettingsRow
+      patchKey: string
+      value: unknown
+      requiresTruthy?: boolean
+    }> = [
+      {
+        parsedKey: 'failedCallWhatsappRequireCallerApproval',
+        column: 'failed_call_whatsapp_require_caller_approval',
+        patchKey: 'failed_call_whatsapp_require_caller_approval',
+        value: parsed.data.failedCallWhatsappRequireCallerApproval,
+      },
+      {
+        parsedKey: 'failedCallWhatsappEnabled',
+        column: 'failed_call_whatsapp_enabled',
+        patchKey: 'failed_call_whatsapp_enabled',
+        value: parsed.data.failedCallWhatsappEnabled,
+        requiresTruthy: true,
+      },
+      {
+        parsedKey: 'failedCallWhatsappMessageType',
+        column: 'failed_call_whatsapp_message_type',
+        patchKey: 'failed_call_whatsapp_message_type',
+        value: parsed.data.failedCallWhatsappMessageType,
+      },
+      {
+        parsedKey: 'failedCallWhatsappTemplateId',
+        column: 'failed_call_whatsapp_template_id',
+        patchKey: 'failed_call_whatsapp_template_id',
+        value: parsed.data.failedCallWhatsappTemplateId,
+      },
+      {
+        parsedKey: 'failedCallWhatsappBodyParameters',
+        column: 'failed_call_whatsapp_body_parameters',
+        patchKey: 'failed_call_whatsapp_body_parameters',
+        value: parsed.data.failedCallWhatsappBodyParameters,
+      },
+      {
+        parsedKey: 'failedCallWhatsappHeaderParameters',
+        column: 'failed_call_whatsapp_header_parameters',
+        patchKey: 'failed_call_whatsapp_header_parameters',
+        value: parsed.data.failedCallWhatsappHeaderParameters,
+      },
+      {
+        parsedKey: 'failedCallWhatsappMessageBody',
+        column: 'failed_call_whatsapp_message_body',
+        patchKey: 'failed_call_whatsapp_message_body',
+        value: parsed.data.failedCallWhatsappMessageBody,
+      },
+      {
+        parsedKey: 'failedCallWhatsappMediaUrl',
+        column: 'failed_call_whatsapp_media_url',
+        patchKey: 'failed_call_whatsapp_media_url',
+        value: parsed.data.failedCallWhatsappMediaUrl,
+      },
+      {
+        parsedKey: 'failedCallWhatsappMediaMimeType',
+        column: 'failed_call_whatsapp_media_mime_type',
+        patchKey: 'failed_call_whatsapp_media_mime_type',
+        value: parsed.data.failedCallWhatsappMediaMimeType,
+      },
+      {
+        parsedKey: 'failedCallWhatsappMediaFileName',
+        column: 'failed_call_whatsapp_media_file_name',
+        patchKey: 'failed_call_whatsapp_media_file_name',
+        value: parsed.data.failedCallWhatsappMediaFileName,
+      },
+      {
+        parsedKey: 'failedCallWhatsappMediaMetaId',
+        column: 'failed_call_whatsapp_media_meta_id',
+        patchKey: 'failed_call_whatsapp_media_meta_id',
+        value: parsed.data.failedCallWhatsappMediaMetaId,
+      },
+    ]
+
+    for (const field of failedCallFields) {
+      if (field.value === undefined) continue
+      const columnError = assertColumnOrSkip(
+        currentRow,
+        field.column,
+        field.requiresTruthy ? Boolean(field.value) : true
+      )
+      if (columnError) {
+        return NextResponse.json({ error: columnError }, { status: 400 })
+      }
+      if (mcubeSettingsColumnExists(currentRow, field.column)) {
+        patch[field.patchKey] = field.value
+      }
     }
 
+    const supabase = createServiceClient()
     const { error } = await supabase.from('mcube_settings').upsert(patch as never)
 
     if (error) {
-      return NextResponse.json({ error: 'Failed to update MCUBE settings' }, { status: 500 })
+      console.error('[mcube/settings] PUT failed', error)
+      return NextResponse.json(
+        { error: error.message || 'Failed to update MCUBE settings' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    console.error('[mcube/settings] PUT unexpected', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unexpected error' },
       { status: 500 }

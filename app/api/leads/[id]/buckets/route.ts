@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/backend/middleware/auth'
 import { PERMISSIONS } from '@/shared/constants/permissions'
 import { getBucketsForLead, setLeadBuckets } from '@/backend/services/lead-bucket.service'
+import { getEnrollmentsForLead } from '@/backend/services/whatsapp-automation.service'
 import { invalidateLeadCaches } from '@/lib/cache-invalidation'
 import { z } from 'zod'
 
@@ -44,8 +45,9 @@ export async function PUT(
     const bucketIds = validated.bucket_ids ?? validated.bucketIds ?? []
 
     const buckets = await setLeadBuckets(leadId, bucketIds, user.id, user.id, user.role.name)
+    const enrollments = await getEnrollmentsForLead(leadId)
     await invalidateLeadCaches(leadId)
-    return NextResponse.json({ buckets })
+    return NextResponse.json({ buckets, enrollments })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Validation error', details: error.issues }, { status: 400 })

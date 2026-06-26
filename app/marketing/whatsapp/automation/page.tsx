@@ -24,12 +24,20 @@ import type {
   AutomationTrigger,
   UpsertAutomationTriggerInput,
 } from '@/shared/whatsapp-automation-types'
+import {
+  defaultParameterValues,
+  getTemplateParameterSlotCounts,
+} from '@/shared/lead-template-tokens'
+import { TemplateVariableMapper } from '@/components/whatsapp/TemplateVariableMapper'
 
 interface WhatsAppTemplate {
   id: string
   name: string
   language: string
   status: string
+  body_text: string
+  header_text?: string | null
+  header_format?: string | null
 }
 
 type TriggerDraft = UpsertAutomationTriggerInput & { _key: string }
@@ -165,6 +173,28 @@ export default function WhatsAppAutomationPage() {
         .map(({ _key: _k, ...rest }) => rest)
 
       for (const t of triggersPayload) {
+        if (t.message_type === 'template' && t.template_id) {
+          const tpl = templates.find((x) => x.id === t.template_id)
+          if (tpl) {
+            const { bodyCount, headerCount } = getTemplateParameterSlotCounts(tpl)
+            if (bodyCount > 0) {
+              const params = t.body_parameters || []
+              if (params.length < bodyCount || params.some((p) => !String(p).trim())) {
+                throw new Error(
+                  `Day ${t.day_offset}: fill all ${bodyCount} template body variable(s) (lead name, car, etc.)`
+                )
+              }
+            }
+            if (headerCount > 0) {
+              const params = t.header_parameters || []
+              if (params.length < headerCount || params.some((p) => !String(p).trim())) {
+                throw new Error(
+                  `Day ${t.day_offset}: fill all ${headerCount} template header variable(s)`
+                )
+              }
+            }
+          }
+        }
         if (t.message_type === 'image' || t.message_type === 'video') {
           if (!t.media_url?.trim()) {
             throw new Error(
@@ -514,23 +544,52 @@ export default function WhatsAppAutomationPage() {
                   )}
 
                   {dayTrigger?.message_type === 'template' && (
-                    <label className="block text-sm">
-                      <span className="font-medium">Template</span>
-                      <select
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-                        value={dayTrigger.template_id || ''}
-                        onChange={(e) =>
-                          upsertDayTrigger(selectedDay, { template_id: e.target.value || null })
-                        }
-                      >
-                        <option value="">Select template</option>
-                        {templates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} ({t.language})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <>
+                      <label className="block text-sm">
+                        <span className="font-medium">Template</span>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                          value={dayTrigger.template_id || ''}
+                          onChange={(e) => {
+                            const templateId = e.target.value || null
+                            const tpl = templates.find((t) => t.id === templateId)
+                            if (!tpl) {
+                              upsertDayTrigger(selectedDay, {
+                                template_id: null,
+                                body_parameters: null,
+                                header_parameters: null,
+                              })
+                              return
+                            }
+                            const { bodyCount, headerCount } = getTemplateParameterSlotCounts(tpl)
+                            upsertDayTrigger(selectedDay, {
+                              template_id: templateId,
+                              body_parameters: bodyCount > 0 ? defaultParameterValues(bodyCount) : null,
+                              header_parameters: headerCount > 0 ? defaultParameterValues(headerCount) : null,
+                            })
+                          }}
+                        >
+                          <option value="">Select template</option>
+                          {templates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} ({t.language})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {dayTrigger.template_id && (() => {
+                        const tpl = templates.find((t) => t.id === dayTrigger.template_id)
+                        if (!tpl) return null
+                        return (
+                          <TemplateVariableMapper
+                            template={tpl}
+                            bodyParameters={dayTrigger.body_parameters ?? null}
+                            headerParameters={dayTrigger.header_parameters ?? null}
+                            onChange={(next) => upsertDayTrigger(selectedDay, next)}
+                          />
+                        )
+                      })()}
+                    </>
                   )}
 
                   {(dayTrigger?.message_type === 'text' ||
@@ -545,7 +604,11 @@ export default function WhatsAppAutomationPage() {
                         rows={4}
                         value={dayTrigger.message_body || ''}
                         onChange={(e) => upsertDayTrigger(selectedDay, { message_body: e.target.value })}
+                        placeholder="Hi {{lead_name}}, … Use {{lead_car}} for vehicle."
                       />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Tokens: <code>{'{{lead_name}}'}</code>, <code>{'{{lead_car}}'}</code> — filled per lead on send.
+                      </p>
                     </label>
                   )}
 

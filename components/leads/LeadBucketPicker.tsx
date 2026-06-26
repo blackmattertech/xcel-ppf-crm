@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { cachedFetch } from '@/lib/api-client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { cachedFetch, invalidateApiCache } from '@/lib/api-client'
 import { groupBucketsForPicker, type LeadBucketBase } from '@/shared/lead-buckets'
+import { useLeadInterestsSync } from '@/components/leads/LeadInterestsSync'
 import { ChevronDown, Loader2 } from 'lucide-react'
 
 export interface LeadBucketTag {
@@ -34,17 +35,62 @@ const selectClassName =
   'w-full text-[12px] font-semibold text-black leading-[1.3] border border-[#e0e0e0] rounded-[4px] px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#dd3f3c]/30 focus:border-[#dd3f3c] disabled:opacity-60 disabled:cursor-not-allowed'
 
 export default function LeadBucketPicker({ leadId, canEdit }: LeadBucketPickerProps) {
+  const sync = useLeadInterestsSync()
   const [allBuckets, setAllBuckets] = useState<LeadBucketTag[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const hasLoadedOnce = useRef(false)
+
+  const loadBuckets = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        if (!hasLoadedOnce.current) setInitialLoading(true)
+      }
+      setError('')
+      try {
+        invalidateApiCache('GET:/api/buckets?active_only=true')
+        invalidateApiCache(`GET:/api/leads/${leadId}/buckets`)
+
+        const [catalogRes, leadRes] = await Promise.all([
+          cachedFetch('/api/buckets?active_only=true', undefined, 0),
+          cachedFetch(`/api/leads/${leadId}/buckets`, undefined, 0),
+        ])
+
+        if (!catalogRes.ok || !leadRes.ok) {
+          throw new Error('Failed to load buckets')
+        }
+
+        const catalog = await catalogRes.json()
+        const leadData = await leadRes.json()
+        const activeCatalog = (Array.isArray(catalog) ? catalog : []).filter(
+          (b: LeadBucketTag) => b.is_active
+        )
+        const assigned = (leadData.buckets || []) as LeadBucketTag[]
+
+        setAllBuckets(activeCatalog)
+        setSelectedIds(new Set(assigned.map((b) => b.id)))
+        hasLoadedOnce.current = true
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load buckets')
+      } finally {
+        setInitialLoading(false)
+      }
+    },
+    [leadId]
+  )
 
   useEffect(() => {
     void loadBuckets()
-  }, [leadId])
+  }, [loadBuckets])
+
+  useEffect(() => {
+    if (!sync?.bucketsVersion) return
+    void loadBuckets({ silent: true })
+  }, [sync?.bucketsVersion, loadBuckets])
 
   useEffect(() => {
     if (!open) return
@@ -57,36 +103,8 @@ export default function LeadBucketPicker({ leadId, canEdit }: LeadBucketPickerPr
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [open])
 
-  async function loadBuckets() {
-    setLoading(true)
-    setError('')
-    try {
-      const [catalogRes, leadRes] = await Promise.all([
-        cachedFetch('/api/buckets?active_only=true'),
-        cachedFetch(`/api/leads/${leadId}/buckets`),
-      ])
-
-      if (!catalogRes.ok || !leadRes.ok) {
-        throw new Error('Failed to load buckets')
-      }
-
-      const catalog = await catalogRes.json()
-      const leadData = await leadRes.json()
-      const activeCatalog = (Array.isArray(catalog) ? catalog : []).filter(
-        (b: LeadBucketTag) => b.is_active
-      )
-      const assigned = (leadData.buckets || []) as LeadBucketTag[]
-
-      setAllBuckets(activeCatalog)
-      setSelectedIds(new Set(assigned.map((b) => b.id)))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load buckets')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   async function saveBuckets(next: Set<string>) {
+    const previous = new Set(selectedIds)
     setSelectedIds(next)
     setSaving(true)
     setError('')
@@ -96,13 +114,23 @@ export default function LeadBucketPicker({ leadId, canEdit }: LeadBucketPickerPr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bucketIds: [...next] }),
       })
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to save buckets')
+        throw new Error(typeof data.error === 'string' ? data.error : 'Failed to save buckets')
+      }
+
+      const saved = (data.buckets || []) as LeadBucketTag[]
+      setSelectedIds(new Set(saved.map((b) => b.id)))
+
+      if (Array.isArray(data.enrollments)) {
+        sync?.pushEnrollments(data.enrollments)
+      } else {
+        sync?.bumpEnrollments()
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
-      void loadBuckets()
+      setSelectedIds(previous)
+      void loadBuckets({ silent: true })
     } finally {
       setSaving(false)
     }
@@ -127,7 +155,7 @@ export default function LeadBucketPicker({ leadId, canEdit }: LeadBucketPickerPr
     }
   }
 
-  if (loading) {
+  if (initialLoading && !hasLoadedOnce.current) {
     return (
       <div className="flex items-center gap-2 text-[12px] text-[#717d8a] py-2">
         <Loader2 size={14} className="animate-spin" />
@@ -168,8 +196,12 @@ export default function LeadBucketPicker({ leadId, canEdit }: LeadBucketPickerPr
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="truncate">{displayValue}</span>
-        <ChevronDown size={14} className="shrink-0 text-[#717d8a]" />
+        <span className="truncate">{saving ? 'Saving…' : displayValue}</span>
+        {saving ? (
+          <Loader2 size={14} className="shrink-0 animate-spin text-[#717d8a]" />
+        ) : (
+          <ChevronDown size={14} className="shrink-0 text-[#717d8a]" />
+        )}
       </button>
       {open && (
         <ul
@@ -210,12 +242,6 @@ export default function LeadBucketPicker({ leadId, canEdit }: LeadBucketPickerPr
             </li>
           ))}
         </ul>
-      )}
-      {saving && (
-        <p className="text-[10px] text-[#717d8a] mt-1 flex items-center gap-1">
-          <Loader2 size={10} className="animate-spin" />
-          Saving...
-        </p>
       )}
     </div>
   )

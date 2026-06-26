@@ -51,6 +51,7 @@ import {
 import { cachedFetch, invalidateLeadGetCache, invalidateLeadsListGetCache } from '@/lib/api-client'
 import { LeadAutomationEnroll } from '@/components/whatsapp/LeadAutomationEnroll'
 import LeadBucketPicker from '@/components/leads/LeadBucketPicker'
+import { LeadInterestsSyncProvider } from '@/components/leads/LeadInterestsSync'
 import { useQuery } from '@tanstack/react-query'
 import { differenceInCalendarDays, format, isToday, isYesterday } from 'date-fns'
 
@@ -2223,18 +2224,21 @@ export default function LeadDetailPageContent({
                       </div>
                     </div>
                   )}
-                  <div>
-                    <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-2">Buckets</p>
-                    {leadId && (
-                      <LeadBucketPicker leadId={leadId} canEdit={canUpdateStatus} />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-2">WhatsApp automation</p>
-                    {leadId && (
-                      <LeadAutomationEnroll leadId={leadId} canEnroll={canUpdateStatus} />
-                    )}
-                  </div>
+                  {leadId && (
+                    <LeadInterestsSyncProvider
+                      leadId={leadId}
+                      active={embedded ? open : true}
+                    >
+                      <div>
+                        <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-2">Buckets</p>
+                        <LeadBucketPicker leadId={leadId} canEdit={canUpdateStatus} />
+                      </div>
+                      <div className="mt-3">
+                        <p className="text-[10px] text-[#717d8a] leading-[1.3] mb-2">WhatsApp automation</p>
+                        <LeadAutomationEnroll leadId={leadId} canEnroll={canUpdateStatus} />
+                      </div>
+                    </LeadInterestsSyncProvider>
+                  )}
                   <div>
                     <p className="text-[10px] text-[#717d8a] leading-[1.3]">Car model</p>
                     <p className="text-[12px] font-semibold text-black leading-[1.3]">{getLeadCarModel() || '—'}</p>
