@@ -24,7 +24,9 @@ import type {
   AutomationTrigger,
   UpsertAutomationTriggerInput,
 } from '@/shared/whatsapp-automation-types'
+import { MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS } from '@/shared/whatsapp-automation-types'
 import {
+  defaultHeaderParameterValues,
   defaultParameterValues,
   getTemplateParameterSlotCounts,
 } from '@/shared/lead-template-tokens'
@@ -38,6 +40,7 @@ interface WhatsAppTemplate {
   body_text: string
   header_text?: string | null
   header_format?: string | null
+  header_media_url?: string | null
 }
 
 type TriggerDraft = UpsertAutomationTriggerInput & { _key: string }
@@ -352,7 +355,7 @@ export default function WhatsAppAutomationPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">WhatsApp automation</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Up to 2 active flows · {activeCount}/2 active · 1–30 day cycles with flexible trigger days
+            Up to {MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS} active flows · {activeCount}/{MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS} active · 1–30 day cycles with flexible trigger days
           </p>
         </div>
         <div className="flex gap-2">
@@ -373,7 +376,7 @@ export default function WhatsAppAutomationPage() {
           </button>
           <button
             type="button"
-            disabled={saving || activeCount >= 2}
+            disabled={saving || activeCount >= MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS}
             onClick={() => void createFlow()}
             className="inline-flex items-center gap-2 rounded-lg bg-[#128C7E] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
@@ -562,10 +565,11 @@ export default function WhatsAppAutomationPage() {
                               return
                             }
                             const { bodyCount, headerCount } = getTemplateParameterSlotCounts(tpl)
+                            const headerDefaults = defaultHeaderParameterValues(tpl)
                             upsertDayTrigger(selectedDay, {
                               template_id: templateId,
                               body_parameters: bodyCount > 0 ? defaultParameterValues(bodyCount) : null,
-                              header_parameters: headerCount > 0 ? defaultParameterValues(headerCount) : null,
+                              header_parameters: headerCount > 0 ? headerDefaults : null,
                             })
                           }}
                         >

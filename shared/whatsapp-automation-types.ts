@@ -4,6 +4,9 @@ export type AutomationEnrollmentSource = 'direct' | 'bucket'
 export type AutomationBatchStatus = 'pending' | 'processing' | 'completed' | 'failed'
 export type AutomationSendLogStatus = 'sent' | 'failed' | 'retrying'
 
+/** Max concurrent active WhatsApp automation loops (enforced in app + DB trigger). */
+export const MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS = 3
+
 export interface AutomationFlow {
   id: string
   name: string

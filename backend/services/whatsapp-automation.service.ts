@@ -13,8 +13,7 @@ import type {
   UpdateAutomationFlowInput,
   UpsertAutomationTriggerInput,
 } from '@/shared/whatsapp-automation-types'
-
-const MAX_ACTIVE_FLOWS = 2
+import { MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS } from '@/shared/whatsapp-automation-types'
 
 const FLOW_SELECT = `
   id,
@@ -102,8 +101,8 @@ export async function createFlow(input: CreateAutomationFlowInput): Promise<Auto
   }
   if (input.is_active !== false) {
     const active = await countActiveFlows()
-    if (active >= MAX_ACTIVE_FLOWS) {
-      throw new Error(`Maximum ${MAX_ACTIVE_FLOWS} active automation flows allowed`)
+    if (active >= MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS) {
+      throw new Error(`Maximum ${MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS} active automation flows allowed`)
     }
   }
 
@@ -122,7 +121,9 @@ export async function createFlow(input: CreateAutomationFlowInput): Promise<Auto
     .single()
 
   if (error) {
-    if (error.message.includes('Maximum 2 active')) throw new Error(error.message)
+    if (error.message.includes('Maximum') && error.message.includes('active WhatsApp automation flows')) {
+      throw new Error(error.message)
+    }
     throw new Error(`Failed to create flow: ${error.message}`)
   }
   return data as AutomationFlow
@@ -147,8 +148,8 @@ export async function updateFlow(id: string, input: UpdateAutomationFlowInput): 
 
   if (input.is_active === true && !existing.is_active) {
     const active = await countActiveFlows()
-    if (active >= MAX_ACTIVE_FLOWS) {
-      throw new Error(`Maximum ${MAX_ACTIVE_FLOWS} active automation flows allowed`)
+    if (active >= MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS) {
+      throw new Error(`Maximum ${MAX_ACTIVE_WHATSAPP_AUTOMATION_FLOWS} active automation flows allowed`)
     }
   }
 
@@ -168,7 +169,9 @@ export async function updateFlow(id: string, input: UpdateAutomationFlowInput): 
     .single()
 
   if (error) {
-    if (error.message.includes('Maximum 2 active')) throw new Error(error.message)
+    if (error.message.includes('Maximum') && error.message.includes('active WhatsApp automation flows')) {
+      throw new Error(error.message)
+    }
     throw new Error(`Failed to update flow: ${error.message}`)
   }
   return data as AutomationFlow
