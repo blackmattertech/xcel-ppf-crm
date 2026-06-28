@@ -130,12 +130,35 @@ export async function queueTriggerBatchForEnrollments(params: {
   if (enrollments.length === 0) return null
 
   const supabase = createServiceClient()
-  const recipients: AutomationRecipient[] = []
 
-  for (const en of enrollments) {
-    const day = computeEnrollmentDay(en.started_at)
-    if (day !== trigger.day_offset) continue
-    if (en.cycle_number < 1) continue
+  // Enrollments whose current day matches this trigger's day_offset.
+  const matching = enrollments.filter(
+    (en) => en.cycle_number >= 1 && computeEnrollmentDay(en.started_at) === trigger.day_offset
+  )
+  if (matching.length === 0) return null
+
+  // Idempotency: skip enrollments that already received this trigger in this cycle,
+  // regardless of calendar date. Prevents duplicate sends across IST midnight / repeated cron runs
+  // (the day window spans 24h, so the same trigger may be evaluated many times).
+  const { data: sentLogs } = await supabase
+    .from('whatsapp_automation_send_log')
+    .select('enrollment_id, cycle_number')
+    .eq('trigger_id', trigger.id)
+    .eq('status', 'sent')
+    .in(
+      'enrollment_id',
+      matching.map((en) => en.id)
+    )
+  const alreadySent = new Set(
+    (sentLogs || []).map(
+      (r) =>
+        `${(r as { enrollment_id: string }).enrollment_id}:${(r as { cycle_number: number }).cycle_number}`
+    )
+  )
+
+  const recipients: AutomationRecipient[] = []
+  for (const en of matching) {
+    if (alreadySent.has(`${en.id}:${en.cycle_number}`)) continue
 
     const { data: lead } = await supabase
       .from('leads')
@@ -159,14 +182,18 @@ export async function queueTriggerBatchForEnrollments(params: {
 
   const cycleNumber = Math.max(...recipients.map((r) => r.cycleNumber))
 
-  const { data: existing } = await supabase
+  // Reuse a single batch per (flow, trigger, cycle) regardless of run_date so a trigger
+  // sends once per cycle. Filtering by run_date would create a fresh batch after midnight
+  // and re-send the same day's message.
+  const { data: existingBatches } = await supabase
     .from('whatsapp_automation_trigger_batches')
     .select('id, payload_json, result_json')
     .eq('flow_id', flow.id)
     .eq('trigger_id', trigger.id)
-    .eq('run_date', runDate)
     .eq('cycle_number', cycleNumber)
-    .maybeSingle()
+    .order('run_date', { ascending: false })
+    .limit(1)
+  const existing = existingBatches?.[0] ?? null
 
   if (existing) {
     const batchId = (existing as { id: string }).id
