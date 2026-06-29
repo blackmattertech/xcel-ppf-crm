@@ -233,10 +233,30 @@ export function getCountryFromMeta(metaData: Record<string, any> | null): string
   return ''
 }
 
-/**
- * Build requirement string from meta_data (e.g. from Meta Lead Ads field_data).
- * Use when creating a lead from Meta so car model and interested product are stored on the lead.
- */
+/** Strip "| Car Model: X" from requirement / product string. */
+export function stripCarModelFromRequirementString(s: string): string {
+  if (!s || typeof s !== 'string') return ''
+  return s.replace(/\|\s*Car Model:\s*[^|]+/gi, '').replace(/Car Model:\s*[^|]+/gi, '').trim()
+}
+
+/** Extract car model from requirement string (e.g. "PPF | Car Model: Creta"). */
+export function extractCarModelFromRequirementString(s: string): string {
+  if (!s || typeof s !== 'string') return ''
+  const match = s.match(/\|\s*Car Model:\s*([^|]+)/i) || s.match(/Car Model:\s*([^|]+)/i)
+  return match ? match[1].trim() : ''
+}
+
+/** Product / service interest only (not car model). */
+export function getLeadProductInterest(lead: {
+  requirement?: string | null
+  meta_data?: Record<string, unknown> | null
+}): string {
+  if (lead.requirement?.trim()) {
+    return stripCarModelFromRequirementString(lead.requirement.replace(/_/g, ' '))
+  }
+  return getInterestedProductFromMeta(lead.meta_data as Record<string, any> | null)
+}
+
 export function buildRequirementFromMeta(metaData: Record<string, any> | null): string {
   if (!metaData || typeof metaData !== 'object') return ''
   const service = getInterestedProductFromMeta(metaData)
@@ -247,7 +267,7 @@ export function buildRequirementFromMeta(metaData: Record<string, any> | null): 
   return parts.join(' | ')
 }
 
-/** Car / vehicle label for WhatsApp personalization (meta_data car fields, then requirement). */
+/** Car / vehicle label for WhatsApp personalization and exports (meta_data car fields, then requirement). */
 export function getLeadVehicleName(lead: {
   meta_data?: Record<string, unknown> | null
   requirement?: string | null
@@ -255,7 +275,12 @@ export function getLeadVehicleName(lead: {
   const meta = (lead.meta_data as Record<string, unknown> | null) ?? null
   const fromMeta = getCarModelFromMeta(meta as Record<string, any> | null)
   if (fromMeta) return fromMeta
-  const req = lead.requirement?.trim()
-  if (req) return req.replace(/_/g, ' ')
-  return 'vehicle'
+  const fromReq = extractCarModelFromRequirementString(lead.requirement || '')
+  if (fromReq) return fromReq
+  return ''
 }
+
+/**
+ * Build requirement string from meta_data (e.g. from Meta Lead Ads field_data).
+ * Use when creating a lead from Meta so car model and interested product are stored on the lead.
+ */

@@ -8,7 +8,7 @@ import { useAuthContext } from '@/components/AuthProvider'
 import { cachedFetch } from '@/lib/api-client'
 import { SYSTEM_ROLES } from '@/shared/constants/roles'
 import { LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
-import { ArrowLeft, FolderOpen, Phone, User } from 'lucide-react'
+import { ArrowLeft, FolderOpen, Phone, User, Download } from 'lucide-react'
 
 interface BucketLead {
   id: string
@@ -39,6 +39,7 @@ export default function BucketDetailPage() {
   const [data, setData] = useState<BucketDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   const userRole = role?.name
   const permissions = role?.permissions || []
@@ -70,6 +71,34 @@ export default function BucketDetailPage() {
       setLoading(false)
     }
   }, [bucketId])
+
+  async function downloadCsv() {
+    if (!bucket) return
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/buckets/${bucket.id}/export`, { credentials: 'include' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(typeof err.error === 'string' ? err.error : 'Failed to download CSV')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const disposition = res.headers.get('Content-Disposition')
+      const match = disposition?.match(/filename="([^"]+)"/)
+      link.download = match?.[1] || `${bucket.name}-leads.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Failed to download CSV')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   useEffect(() => {
     if (authLoading) return
@@ -117,22 +146,35 @@ export default function BucketDetailPage() {
           All buckets
         </Link>
 
-        <div className="flex items-start gap-4 mb-6">
-          <span
-            className="w-2 h-14 rounded-full shrink-0 mt-1"
-            style={{ backgroundColor: bucket.color || '#dd3f3c' }}
-          />
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-              <FolderOpen className="w-7 h-7 text-[#dd3f3c]" />
-              {bucket.name}
-            </h1>
-            {bucket.description && <p className="text-sm text-gray-500 mt-1">{bucket.description}</p>}
-            <p className="text-sm text-gray-600 mt-2">
-              <span className="font-semibold text-[#dd3f3c]">{leads.length}</span> lead{leads.length !== 1 ? 's' : ''} in this bucket
-              {userRole === SYSTEM_ROLES.TELE_CALLER && ' (your assigned leads only)'}
-            </p>
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="flex items-start gap-4 min-w-0">
+            <span
+              className="w-2 h-14 rounded-full shrink-0 mt-1"
+              style={{ backgroundColor: bucket.color || '#dd3f3c' }}
+            />
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
+                <FolderOpen className="w-7 h-7 text-[#dd3f3c]" />
+                {bucket.name}
+              </h1>
+              {bucket.description && <p className="text-sm text-gray-500 mt-1">{bucket.description}</p>}
+              <p className="text-sm text-gray-600 mt-2">
+                <span className="font-semibold text-[#dd3f3c]">{leads.length}</span> lead{leads.length !== 1 ? 's' : ''} in this bucket
+                {userRole === SYSTEM_ROLES.TELE_CALLER && ' (your assigned leads only)'}
+              </p>
+            </div>
           </div>
+          {leads.length > 0 && (
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => void downloadCsv()}
+              className="inline-flex items-center gap-2 shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#dd3f3c]/40 hover:text-[#dd3f3c] disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              {exporting ? 'Downloading…' : 'Download CSV'}
+            </button>
+          )}
         </div>
 
         {leads.length === 0 ? (

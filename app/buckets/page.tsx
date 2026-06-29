@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import Layout from '@/components/Layout'
 import { cachedFetch } from '@/lib/api-client'
 import { BUCKET_COLORS } from '@/components/leads/LeadBucketPicker'
-import { Layers, Plus, X, Pencil, Trash2, Users, Eye } from 'lucide-react'
+import { Layers, Plus, X, Pencil, Trash2, Users, Eye, Download } from 'lucide-react'
 import { LEAD_STATUS_LABELS } from '@/shared/constants/lead-status'
 import { BucketAutomationLinks } from '@/components/whatsapp/BucketAutomationLinks'
 
@@ -55,6 +55,7 @@ export default function BucketsPage() {
   const [detailLeads, setDetailLeads] = useState<BucketLead[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [exportingBucketId, setExportingBucketId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -162,6 +163,33 @@ export default function BucketsPage() {
       }
     } finally {
       setDetailLoading(false)
+    }
+  }
+
+  async function downloadBucketCsv(bucket: LeadBucket) {
+    setExportingBucketId(bucket.id)
+    try {
+      const response = await fetch(`/api/buckets/${bucket.id}/export`, { credentials: 'include' })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        alert(typeof err.error === 'string' ? err.error : 'Failed to download CSV')
+        return
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const disposition = response.headers.get('Content-Disposition')
+      const match = disposition?.match(/filename="([^"]+)"/)
+      link.download = match?.[1] || `${bucket.name}-leads.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Failed to download CSV')
+    } finally {
+      setExportingBucketId(null)
     }
   }
 
@@ -301,8 +329,20 @@ export default function BucketsPage() {
             {bucket.lead_count} lead{bucket.lead_count !== 1 ? 's' : ''}
           </p>
         </div>
-        {canManage && (
-          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {bucket.lead_count > 0 && (
+            <button
+              type="button"
+              title="Download leads CSV"
+              disabled={exportingBucketId === bucket.id}
+              onClick={() => void downloadBucketCsv(bucket)}
+              className="p-2 text-gray-400 hover:text-[#dd3f3c] rounded-lg disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          )}
+          {canManage && (
+            <>
             {!isSub && (
               <button
                 type="button"
@@ -319,8 +359,9 @@ export default function BucketsPage() {
             <button type="button" onClick={() => void handleDelete(bucket)} className="p-2 text-gray-400 hover:text-red-600 rounded-lg">
               <Trash2 className="w-4 h-4" />
             </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
         <Eye className="w-4 h-4 text-[#dd3f3c] shrink-0" />
       </div>
     )
@@ -404,16 +445,29 @@ export default function BucketsPage() {
               </div>
             ) : (
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div className="p-4 border-b border-gray-100 flex items-center gap-3">
-                  <span className="w-2 h-8 rounded-full" style={{ backgroundColor: detailBucket.color || '#dd3f3c' }} />
-                  <div>
-                    <p className="font-semibold text-gray-900">
-                      {detailBucket.parent_id
-                        ? `${buckets.find((b) => b.id === detailBucket.parent_id)?.name ?? 'Parent'} › ${detailBucket.name}`
-                        : detailBucket.name}
-                    </p>
-                    <p className="text-xs text-gray-500">{detailBucket.lead_count} leads tagged</p>
+                <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-2 h-8 rounded-full shrink-0" style={{ backgroundColor: detailBucket.color || '#dd3f3c' }} />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">
+                        {detailBucket.parent_id
+                          ? `${buckets.find((b) => b.id === detailBucket.parent_id)?.name ?? 'Parent'} › ${detailBucket.name}`
+                          : detailBucket.name}
+                      </p>
+                      <p className="text-xs text-gray-500">{detailBucket.lead_count} leads tagged</p>
+                    </div>
                   </div>
+                  {detailBucket.lead_count > 0 && (
+                    <button
+                      type="button"
+                      disabled={exportingBucketId === detailBucket.id}
+                      onClick={() => void downloadBucketCsv(detailBucket)}
+                      className="inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-[#dd3f3c]/40 hover:text-[#dd3f3c] disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {exportingBucketId === detailBucket.id ? 'Downloading…' : 'Download CSV'}
+                    </button>
+                  )}
                 </div>
                 {detailLoading ? (
                   <p className="p-6 text-sm text-gray-500">Loading leads…</p>

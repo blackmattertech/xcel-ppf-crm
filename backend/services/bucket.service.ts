@@ -1,4 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { rowsToCsv } from '@/shared/utils/csv'
+import { getLeadProductInterest, getLeadVehicleName } from '@/shared/utils/lead-meta'
 
 export interface LeadBucket {
   id: string
@@ -48,6 +50,13 @@ export interface BucketLeadSummary {
   assigned_to: string | null
   created_at: string
   assigned_user?: { id: string; name: string | null } | null
+}
+
+export interface BucketLeadExportRow {
+  name: string
+  car: string
+  interested_product: string
+  mobile_number: string
 }
 
 export interface CreateBucketInput {
@@ -277,6 +286,70 @@ export async function getBucketLeads(
   }
 
   return (data || []) as BucketLeadSummary[]
+}
+
+export async function getBucketLeadsForExport(
+  bucketId: string,
+  userId?: string,
+  userRole?: string
+): Promise<BucketLeadExportRow[]> {
+  const supabase = createServiceClient()
+
+  const bucket = await getBucketById(bucketId)
+  if (!bucket) {
+    throw new Error('Bucket not found')
+  }
+
+  const { data: assignmentRows, error: assignError } = await supabase
+    .from('lead_bucket_assignments')
+    .select('lead_id')
+    .eq('bucket_id', bucketId)
+
+  if (assignError) {
+    throw new Error(`Failed to fetch bucket leads: ${assignError.message}`)
+  }
+
+  const leadIds = (assignmentRows || []).map((r) => (r as { lead_id: string }).lead_id)
+  if (leadIds.length === 0) {
+    return []
+  }
+
+  let query = supabase
+    .from('leads')
+    .select('id, name, phone, requirement, meta_data')
+    .in('id', leadIds)
+    .order('created_at', { ascending: false })
+
+  if (userRole === 'tele_caller' && userId) {
+    query = query.eq('assigned_to', userId)
+  }
+
+  const { data, error } = await query
+  if (error) {
+    throw new Error(`Failed to fetch bucket leads: ${error.message}`)
+  }
+
+  return (data || []).map((row) => {
+    const lead = row as {
+      name: string
+      phone: string | null
+      requirement: string | null
+      meta_data: Record<string, unknown> | null
+    }
+    return {
+      name: lead.name?.trim() || '',
+      car: getLeadVehicleName(lead),
+      interested_product: getLeadProductInterest(lead),
+      mobile_number: lead.phone?.trim() || '',
+    }
+  })
+}
+
+export function buildBucketLeadsCsv(rows: BucketLeadExportRow[]): string {
+  return rowsToCsv(
+    ['Lead Name', 'Car', 'Interested Product', 'Mobile Number'],
+    rows.map((r) => [r.name, r.car, r.interested_product, r.mobile_number])
+  )
 }
 
 export async function createBucket(input: CreateBucketInput): Promise<LeadBucket> {
